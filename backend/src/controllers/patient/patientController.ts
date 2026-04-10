@@ -57,10 +57,7 @@ export const createPatient = async (req: Request, res: Response) => {
   });
 
   if (duplicate) {
-    if (duplicate.icOrPassport === parsed.data.icOrPassport) {
-      return res.status(409).json({ message: 'Patient with this IC/ID already exists.' });
-    }
-    return res.status(409).json({ message: 'Patient with this phone number already exists.' });
+    return res.status(409).json({ message: 'Patient already exists.' });
   }
 
   const patient = await prisma.patient.create({ data: parsed.data });
@@ -161,10 +158,7 @@ export const updatePatient = async (req: Request, res: Response) => {
   });
 
   if (duplicate) {
-    if (duplicate.icOrPassport === parsed.data.icOrPassport) {
-      return res.status(409).json({ message: 'Patient with this IC/ID already exists.' });
-    }
-    return res.status(409).json({ message: 'Patient with this phone number already exists.' });
+    return res.status(409).json({ message: 'Patient already exists.' });
   }
 
   const patient = await prisma.patient.update({ where: { patientId: id }, data: parsed.data });

@@ -302,6 +302,19 @@ export const PatientsPage = () => {
             <button type="submit" disabled={saving}>
               {saving ? 'Saving...' : editingId ? 'Update Patient' : 'Save / Register'}
             </button>
+            {!editingId && (
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => {
+                  setForm(initialForm);
+                  setError(null);
+                  setSuccess(null);
+                }}
+              >
+                Cancel Registration
+              </button>
+            )}
             {editingId && (
               <button className="btn-secondary" type="button" onClick={onCancelEdit}>
                 Cancel
@@ -437,7 +450,7 @@ export const PatientsPage = () => {
       )}
 
       {!loading && patients.length === 0 && activeSearch && (
-        <p className="muted">No patient matched that IC/ID or phone search.</p>
+        <p className="muted">No record found</p>
       )}
     </section>
   );
