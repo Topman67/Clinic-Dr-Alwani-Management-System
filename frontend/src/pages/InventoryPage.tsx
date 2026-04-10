@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import { subscribeInAppDataSync } from '../lib/sync';
 
 type Medicine = {
   medicineId: number;
@@ -66,7 +67,7 @@ export const InventoryPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadMedicines = async (q = '') => {
+  const loadMedicines = useCallback(async (q = '') => {
     setLoading(true);
     setError(null);
     try {
@@ -77,11 +78,17 @@ export const InventoryPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadMedicines();
-  }, []);
+  }, [loadMedicines]);
+
+  useEffect(() => {
+    return subscribeInAppDataSync(() => {
+      void loadMedicines(query);
+    });
+  }, [loadMedicines, query]);
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();

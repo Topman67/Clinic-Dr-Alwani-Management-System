@@ -28,6 +28,12 @@ enum PaymentStatus {
   CANCELLED
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
 model User {
   userId      Int          @id @default(autoincrement())
   username    String       @unique
@@ -45,6 +51,9 @@ model Patient {
   name          String
   icOrPassport  String          @unique
   phone         String
+  address       String?
+  gender        Gender?
+  dateOfBirth   DateTime?
   createdAt     DateTime        @default(now())
   prescriptions Prescription[]
   payments      Payment[]

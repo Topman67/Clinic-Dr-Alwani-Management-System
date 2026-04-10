@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import { subscribeInAppDataSync } from '../lib/sync';
 
 type AuditLog = {
   logId: number;
@@ -59,7 +60,7 @@ export const AuditLogsPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -70,11 +71,17 @@ export const AuditLogsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadLogs();
-  }, []);
+  }, [loadLogs]);
+
+  useEffect(() => {
+    return subscribeInAppDataSync(() => {
+      void loadLogs();
+    });
+  }, [loadLogs]);
 
   const filteredLogs = useMemo(() => {
     const userQ = normalizeText(queryUser);

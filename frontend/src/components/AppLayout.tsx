@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { roleModules, roleBasePath } from '../config/rbac';
+import { getCurrentTabId, notifyInAppDataSync, subscribeDataChanged } from '../lib/sync';
 
 const prettify = (slug: string) => slug.replace('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -28,6 +29,14 @@ export const AppLayout = () => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('cms_theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const currentTabId = getCurrentTabId();
+    return subscribeDataChanged((payload) => {
+      if (payload.sourceTabId === currentTabId) return;
+      notifyInAppDataSync(payload);
+    });
+  }, []);
 
   if (!role) return null;
 

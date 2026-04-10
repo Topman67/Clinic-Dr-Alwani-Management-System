@@ -28,6 +28,20 @@ const TOKEN_KEY = 'cms_token';
 const ROLE_KEY = 'cms_role';
 const USERNAME_KEY = 'cms_username';
 
+const getStorageValue = (key: string) => {
+  const sessionValue = sessionStorage.getItem(key);
+  if (sessionValue !== null) return sessionValue;
+
+  const localValue = localStorage.getItem(key);
+  if (localValue !== null) {
+    sessionStorage.setItem(key, localValue);
+    localStorage.removeItem(key);
+    return localValue;
+  }
+
+  return null;
+};
+
 const isUserRole = (value: unknown): value is UserRole => {
   return value === 'DOCTOR' || value === 'RECEPTIONIST' || value === 'PHARMACIST';
 };
@@ -46,9 +60,9 @@ const parseJwtPayload = (token: string): Record<string, unknown> | null => {
 };
 
 const getInitialAuthState = (): AuthState => {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const storedRole = localStorage.getItem(ROLE_KEY);
-  const storedUsername = localStorage.getItem(USERNAME_KEY);
+  const token = getStorageValue(TOKEN_KEY);
+  const storedRole = getStorageValue(ROLE_KEY);
+  const storedUsername = getStorageValue(USERNAME_KEY);
 
   if (!token) {
     return { token: null, role: null, username: null };
@@ -81,9 +95,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const response = await api.post('/auth/login', { username, password });
     const data = response.data as { token: string; role: UserRole; username: string };
 
-    localStorage.setItem(TOKEN_KEY, data.token);
-    localStorage.setItem(ROLE_KEY, data.role);
-    localStorage.setItem(USERNAME_KEY, data.username);
+    sessionStorage.setItem(TOKEN_KEY, data.token);
+    sessionStorage.setItem(ROLE_KEY, data.role);
+    sessionStorage.setItem(USERNAME_KEY, data.username);
+
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ROLE_KEY);
+    localStorage.removeItem(USERNAME_KEY);
 
     setToken(data.token);
     setRole(data.role);
@@ -91,6 +109,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(ROLE_KEY);
+    sessionStorage.removeItem(USERNAME_KEY);
+
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ROLE_KEY);
     localStorage.removeItem(USERNAME_KEY);

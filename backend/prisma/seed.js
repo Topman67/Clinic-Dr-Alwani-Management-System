@@ -1,4 +1,4 @@
-import { PrismaClient, Role, UserStatus, PaymentType, PaymentStatus } from '@prisma/client';
+import { PrismaClient, Role, UserStatus, PaymentType, PaymentStatus, Gender } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 async function main() {
@@ -40,6 +40,9 @@ async function main() {
             name: 'John Doe',
             icOrPassport: 'P-0001',
             phone: '0123456789',
+            address: 'No. 10, Jalan Klinik, Kuala Lumpur',
+            gender: Gender.MALE,
+            dateOfBirth: new Date('1990-05-15'),
         },
     });
     const med = await prisma.medicine.upsert({

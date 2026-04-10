@@ -11,6 +11,7 @@ const createToken = (payload: Record<string, unknown>): string => {
 describe('Auth persistence on refresh', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   afterEach(() => {
@@ -18,7 +19,7 @@ describe('Auth persistence on refresh', () => {
   });
 
   it('keeps user on protected page after refresh when token exists', () => {
-    localStorage.setItem('cms_token', createToken({ role: 'DOCTOR', username: 'doctor' }));
+    sessionStorage.setItem('cms_token', createToken({ role: 'DOCTOR', username: 'doctor' }));
 
     render(
       <MemoryRouter initialEntries={['/doctor/dashboard']}>
@@ -33,8 +34,8 @@ describe('Auth persistence on refresh', () => {
       </MemoryRouter>,
     );
 
-  expect(screen.getByText('Dashboard')).toBeTruthy();
-  expect(screen.queryByText('Login')).toBeNull();
+    expect(screen.getByText('Dashboard')).toBeTruthy();
+    expect(screen.queryByText('Login')).toBeNull();
   });
 
   it('redirects to login when token is missing', () => {

@@ -25,7 +25,7 @@ export const LoginPage = () => {
     setError(null);
     try {
       await login({ username, password });
-      const nextRole = role ?? (localStorage.getItem('cms_role') as keyof typeof roleBasePath | null);
+      const nextRole = role ?? (sessionStorage.getItem('cms_role') as keyof typeof roleBasePath | null);
       if (nextRole) {
         navigate(`${roleBasePath[nextRole]}/dashboard`, { replace: true });
       }

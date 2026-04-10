@@ -7,9 +7,11 @@ import { Role } from '@prisma/client';
 const router = Router();
 
 router.use(authMiddleware, rbac([Role.DOCTOR, Role.RECEPTIONIST, Role.PHARMACIST]));
-router.post('/', createPatient);
+
 router.get('/', listPatients);
 router.get('/:id', getPatient);
-router.put('/:id', updatePatient);
+
+router.post('/', rbac([Role.RECEPTIONIST]), createPatient);
+router.put('/:id', rbac([Role.RECEPTIONIST]), updatePatient);
 
 export default router;

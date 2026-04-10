@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import { subscribeInAppDataSync } from '../lib/sync';
 
 type Patient = {
   patientId: number;
@@ -80,14 +81,14 @@ export const PaymentsPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recorderId = useMemo(() => parseUserIdFromToken(localStorage.getItem('cms_token')), []);
+  const recorderId = useMemo(() => parseUserIdFromToken(sessionStorage.getItem('cms_token')), []);
 
-  const loadPatients = async () => {
+  const loadPatients = useCallback(async () => {
     const response = await api.get('/patients');
     setPatients(response.data as Patient[]);
-  };
+  }, []);
 
-  const loadPayments = async (filters?: {
+  const loadPayments = useCallback(async (filters?: {
     patientId?: number;
     type?: PaymentType;
     dateFrom?: string;
@@ -110,7 +111,16 @@ export const PaymentsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const buildCurrentFilters = useCallback(() => {
+    return {
+      patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
+      type: queryType || undefined,
+      dateFrom: queryDateFrom || undefined,
+      dateTo: queryDateTo || undefined,
+    };
+  }, [queryDateFrom, queryDateTo, queryPatientId, queryType]);
 
   useEffect(() => {
     void (async () => {
@@ -121,16 +131,24 @@ export const PaymentsPage = () => {
         setError('Failed to load required data');
       }
     })();
-  }, []);
+  }, [loadPatients, loadPayments]);
+
+  useEffect(() => {
+    return subscribeInAppDataSync(() => {
+      void (async () => {
+        try {
+          await loadPatients();
+          await loadPayments(buildCurrentFilters());
+        } catch {
+          setError('Failed to sync latest data');
+        }
+      })();
+    });
+  }, [buildCurrentFilters, loadPatients, loadPayments]);
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
-    await loadPayments({
-      patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
-      type: queryType || undefined,
-      dateFrom: queryDateFrom || undefined,
-      dateTo: queryDateTo || undefined,
-    });
+    await loadPayments(buildCurrentFilters());
   };
 
   const onSubmit = async (e: FormEvent) => {
@@ -162,12 +180,7 @@ export const PaymentsPage = () => {
       });
 
       setForm(initialForm);
-      await loadPayments({
-        patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
-        type: queryType || undefined,
-        dateFrom: queryDateFrom || undefined,
-        dateTo: queryDateTo || undefined,
-      });
+      await loadPayments(buildCurrentFilters());
     } catch {
       setError('Failed to record payment');
     } finally {

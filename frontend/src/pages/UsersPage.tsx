@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import { subscribeInAppDataSync } from '../lib/sync';
 
 type Role = 'DOCTOR' | 'RECEPTIONIST' | 'PHARMACIST';
 type UserStatus = 'ACTIVE' | 'INACTIVE';
@@ -64,7 +65,7 @@ export const UsersPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -75,11 +76,17 @@ export const UsersPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadUsers();
-  }, []);
+  }, [loadUsers]);
+
+  useEffect(() => {
+    return subscribeInAppDataSync(() => {
+      void loadUsers();
+    });
+  }, [loadUsers]);
 
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();

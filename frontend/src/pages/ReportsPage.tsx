@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import { subscribeInAppDataSync } from '../lib/sync';
 
 type PaymentType = 'CONSULTATION' | 'APPOINTMENT';
 
@@ -135,6 +136,12 @@ export const ReportsPage = () => {
     void (async () => {
       await Promise.all([loadPaymentSummary(), loadReceipts(), loadInventoryReports()]);
     })();
+  }, [loadInventoryReports, loadPaymentSummary, loadReceipts]);
+
+  useEffect(() => {
+    return subscribeInAppDataSync(() => {
+      void Promise.all([loadPaymentSummary(), loadReceipts(), loadInventoryReports()]);
+    });
   }, [loadInventoryReports, loadPaymentSummary, loadReceipts]);
 
   const onPaymentSearch = async (e: FormEvent) => {

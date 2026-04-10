@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { subscribeInAppDataSync } from '../lib/sync';
 
 type Patient = {
   patientId: number;
@@ -98,18 +99,18 @@ export const PrescriptionsPage = () => {
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const doctorId = useMemo(() => parseUserIdFromToken(localStorage.getItem('cms_token')), []);
+  const doctorId = useMemo(() => parseUserIdFromToken(sessionStorage.getItem('cms_token')), []);
 
-  const loadLookups = async () => {
+  const loadLookups = useCallback(async () => {
     const [patientsRes, medicinesRes] = await Promise.all([
       api.get('/patients'),
       api.get('/medicine'),
     ]);
     setPatients(patientsRes.data as Patient[]);
     setMedicines(medicinesRes.data as Medicine[]);
-  };
+  }, []);
 
-  const loadPrescriptions = async (filters?: { patientId?: number; dateFrom?: string; dateTo?: string }) => {
+  const loadPrescriptions = useCallback(async (filters?: { patientId?: number; dateFrom?: string; dateTo?: string }) => {
     setLoading(true);
     setError(null);
     try {
@@ -126,7 +127,7 @@ export const PrescriptionsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -137,7 +138,20 @@ export const PrescriptionsPage = () => {
         setError('Failed to load required data');
       }
     })();
-  }, []);
+  }, [loadLookups, loadPrescriptions]);
+
+  useEffect(() => {
+    return subscribeInAppDataSync(() => {
+      void (async () => {
+        await loadLookups();
+        await loadPrescriptions({
+          patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
+          dateFrom: queryDateFrom || undefined,
+          dateTo: queryDateTo || undefined,
+        });
+      })();
+    });
+  }, [loadLookups, loadPrescriptions, queryDateFrom, queryDateTo, queryPatientId]);
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
