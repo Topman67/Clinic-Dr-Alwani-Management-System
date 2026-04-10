@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files
+.env
+.env.example
+
+# Build outputs
+dist/
+**/dist/
+
+# Explicit workspace folders
+backend/.env
+backend/.env.example
+backend/dist/
+frontend/dist/
