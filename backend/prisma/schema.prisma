@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  DOCTOR
+  RECEPTIONIST
+  PHARMACIST
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PaymentType {
+  CONSULTATION
+  APPOINTMENT
+}
+
+enum PaymentStatus {
+  PAID
+  CANCELLED
+}
+
+model User {
+  userId      Int          @id @default(autoincrement())
+  username    String       @unique
+  passwordHash String
+  role        Role
+  status      UserStatus   @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  prescriptions Prescription[] @relation("PrescriptionDoctor")
+  payments    Payment[]    @relation("PaymentRecorder")
+  auditLogs   AuditLog[]
+}
+
+model Patient {
+  patientId     Int             @id @default(autoincrement())
+  name          String
+  icOrPassport  String          @unique
+  phone         String
+  createdAt     DateTime        @default(now())
+  prescriptions Prescription[]
+  payments      Payment[]
+}
+
+model Medicine {
+  medicineId  Int       @id @default(autoincrement())
+  name        String
+  batchNumber String
+  quantity    Int
+  expiryDate  DateTime
+  price       Decimal   @db.Decimal(10,2)
+  createdAt   DateTime  @default(now())
+  prescriptionItems PrescriptionMedicine[]
+
+  @@unique([name, batchNumber])
+}
+
+model Prescription {
+  prescriptionId Int       @id @default(autoincrement())
+  patient        Patient    @relation(fields: [patientId], references: [patientId])
+  patientId      Int
+  doctor         User       @relation("PrescriptionDoctor", fields: [doctorId], references: [userId])
+  doctorId       Int
+  date           DateTime   @default(now())
+  notes          String?
+  items          PrescriptionMedicine[]
+}
+
+model PrescriptionMedicine {
+  pmId          Int          @id @default(autoincrement())
+  prescription  Prescription @relation(fields: [prescriptionId], references: [prescriptionId])
+  prescriptionId Int
+  medicine      Medicine     @relation(fields: [medicineId], references: [medicineId])
+  medicineId    Int
+  dosage        String
+  frequency     String
+  duration      String
+  qty           Int
+}
+
+model Payment {
+  paymentId  Int        @id @default(autoincrement())
+  patient    Patient    @relation(fields: [patientId], references: [patientId])
+  patientId  Int
+  recordedBy User       @relation("PaymentRecorder", fields: [recordedById], references: [userId])
+  recordedById Int
+  type       PaymentType
+  amount     Decimal    @db.Decimal(10,2)
+  date       DateTime   @default(now())
+  status     PaymentStatus @default(PAID)
+  receipt    Receipt?
+}
+
+model Receipt {
+  receiptId    Int      @id @default(autoincrement())
+  payment      Payment  @relation(fields: [paymentId], references: [paymentId])
+  paymentId    Int      @unique
+  receiptNo    String   @unique
+  date         DateTime @default(now())
+  totalAmount  Decimal  @db.Decimal(10,2)
+}
+
+model AuditLog {
+  logId        Int      @id @default(autoincrement())
+  user         User?    @relation(fields: [userId], references: [userId])
+  userId       Int?
+  activityType String
+  timestamp    DateTime @default(now())
+}
