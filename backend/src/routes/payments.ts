@@ -5,8 +5,9 @@ import { rbac } from '../middleware/rbac';
 import { Role } from '@prisma/client';
 
 const router = Router();
-router.use(authMiddleware, rbac([Role.DOCTOR, Role.RECEPTIONIST]));
-router.post('/', recordPayment);
-router.get('/', listPayments);
+router.use(authMiddleware);
+
+router.get('/', rbac([Role.DOCTOR]), listPayments);
+router.post('/', rbac([Role.RECEPTIONIST]), recordPayment);
 
 export default router;

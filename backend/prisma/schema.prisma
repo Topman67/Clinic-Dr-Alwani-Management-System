@@ -28,6 +28,13 @@ enum PaymentStatus {
   CANCELLED
 }
 
+enum PaymentMethod {
+  CASH
+  CARD
+  ONLINE_TRANSFER
+  E_WALLET
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -103,6 +110,8 @@ model Payment {
   recordedById Int
   type       PaymentType
   amount     Decimal    @db.Decimal(10,2)
+  paymentMethod PaymentMethod @default(CASH)
+  remarks    String?
   date       DateTime   @default(now())
   status     PaymentStatus @default(PAID)
   receipt    Receipt?

@@ -244,7 +244,7 @@ body {
 
 .payments-grid {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 1fr auto;
+  grid-template-columns: 1.8fr 1.2fr 1fr 1.2fr auto;
   gap: 10px;
   align-items: center;
 }
@@ -469,7 +469,7 @@ body {
 
 .filters-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
   gap: 10px;
   align-items: center;
 }
