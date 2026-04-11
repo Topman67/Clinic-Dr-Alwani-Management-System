@@ -143,6 +143,57 @@ body {
   }
 }
 
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .prescription-print-area,
+  .prescription-print-area * {
+    visibility: visible;
+  }
+
+  .prescription-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    color: #fff;
+  }
+
+  .prescription-print-area .muted,
+  .prescription-print-area dt,
+  .prescription-print-area dd,
+  .prescription-print-area p,
+  .prescription-print-area h3,
+  .prescription-print-area td,
+  .prescription-print-area th,
+  .prescription-print-area li {
+    color: #fff !important;
+  }
+
+  .prescription-print-actions,
+  .prescription-print-button {
+    display: none !important;
+  }
+
+  .prescription-print-area .data-table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .prescription-print-area .data-table th,
+  .prescription-print-area .data-table td {
+    border: 1px solid #fff;
+    padding: 6px;
+  }
+}
+
 .bottom-nav {
   display: none;
 }

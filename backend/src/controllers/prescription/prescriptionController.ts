@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
 
+const isNonEmptyText = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
+
 export const createPrescription = async (req: Request, res: Response) => {
   const { patientId, doctorId, notes, items } = req.body as {
     patientId: number;
@@ -9,6 +11,43 @@ export const createPrescription = async (req: Request, res: Response) => {
     notes?: string;
     items: { medicineId: number; dosage: string; frequency: string; duration: string; qty: number }[];
   };
+
+  if (!Number.isInteger(patientId) || patientId <= 0) {
+    return res.status(400).json({ message: 'Incomplete prescription data.' });
+  }
+
+  if (!Number.isInteger(doctorId) || doctorId <= 0) {
+    return res.status(400).json({ message: 'Incomplete prescription data.' });
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: 'Incomplete prescription data.' });
+  }
+
+  const hasInvalidItem = items.some(
+    (item) =>
+      !Number.isInteger(item.medicineId) ||
+      item.medicineId <= 0 ||
+      !isNonEmptyText(item.dosage) ||
+      !isNonEmptyText(item.frequency) ||
+      !isNonEmptyText(item.duration) ||
+      !Number.isInteger(item.qty) ||
+      item.qty <= 0,
+  );
+
+  if (hasInvalidItem) {
+    return res.status(400).json({ message: 'Incomplete prescription data.' });
+  }
+
+  const patient = await prisma.patient.findUnique({ where: { patientId } });
+  if (!patient) {
+    return res.status(404).json({ message: 'Patient record not found.' });
+  }
+
+  const doctor = await prisma.user.findUnique({ where: { userId: doctorId } });
+  if (!doctor) {
+    return res.status(400).json({ message: 'Incomplete prescription data.' });
+  }
 
   const prescription = await prisma.prescription.create({
     data: {
