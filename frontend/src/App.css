@@ -540,6 +540,36 @@ textarea {
   transition: border-color 170ms ease, box-shadow 170ms ease;
 }
 
+.field-block {
+  display: grid;
+  gap: 6px;
+}
+
+.field-invalid {
+  border-color: var(--danger) !important;
+  background: #fff5f5;
+}
+
+:root[data-theme='dark'] .field-invalid {
+  background: #2a1217;
+}
+
+.field-invalid:focus {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.18) !important;
+}
+
+:root[data-theme='dark'] .field-invalid:focus {
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.22) !important;
+}
+
+.field-helper {
+  margin: 0 2px;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  color: var(--danger);
+}
+
 input:focus,
 select:focus,
 textarea:focus,

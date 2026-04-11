@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { useAuth } from '../context/AuthContext';
 
 type Medicine = {
   medicineId: number;
@@ -59,13 +60,28 @@ const expiryClass = (expiryDate: string) => {
 };
 
 export const InventoryPage = () => {
+  const { role } = useAuth();
+  const canManage = role === 'PHARMACIST';
+
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [query, setQuery] = useState('');
   const [form, setForm] = useState<MedicineForm>(initialForm);
+  const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const getApiErrorMessage = (err: unknown, fallback: string) => {
+    if (typeof err === 'object' && err !== null) {
+      const response = (err as { response?: { data?: { message?: string } } }).response;
+      const message = response?.data?.message;
+      if (typeof message === 'string' && message.trim()) return message;
+    }
+    return fallback;
+  };
 
   const loadMedicines = useCallback(async (q = '') => {
     setLoading(true);
@@ -95,17 +111,38 @@ export const InventoryPage = () => {
     await loadMedicines(query);
   };
 
+  const validateForm = () => {
+    const nextErrors: Record<string, boolean> = {};
+
+    if (!form.name.trim()) nextErrors.name = true;
+    if (!form.batchNumber.trim()) nextErrors.batchNumber = true;
+    if (!form.expiryDate) nextErrors.expiryDate = true;
+    if (!Number.isFinite(form.quantity) || form.quantity < 0) nextErrors.quantity = true;
+    if (!Number.isFinite(form.price) || form.price < 0) nextErrors.price = true;
+
+    setFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const updateField = <K extends keyof MedicineForm>(key: K, value: MedicineForm[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setFieldErrors((prev) => {
+      if (!prev[String(key)]) return prev;
+      const next = { ...prev };
+      delete next[String(key)];
+      return next;
+    });
+  };
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
+
     setError(null);
+    setSuccess(null);
 
-    if (!form.expiryDate) {
-      setError('Please set an expiry date.');
-      return;
-    }
-
-    if (form.quantity < 0 || form.price < 0) {
-      setError('Quantity and price must be zero or above.');
+    if (!validateForm()) {
+      setError('Missing or invalid fields.');
       return;
     }
 
@@ -113,21 +150,29 @@ export const InventoryPage = () => {
     try {
       if (editingId) {
         await api.put(`/medicine/${editingId}`, form);
+        setSuccess('Medicine Updated Successfully');
       } else {
         await api.post('/medicine', form);
+        setSuccess('Medicine Added Successfully');
       }
       setForm(initialForm);
       setEditingId(null);
+      setFieldErrors({});
+      setShowForm(false);
       await loadMedicines(query);
-    } catch {
-      setError('Failed to save medicine');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to save medicine'));
     } finally {
       setSaving(false);
     }
   };
 
   const onEdit = (medicine: Medicine) => {
+    if (!canManage) return;
     setEditingId(medicine.medicineId);
+    setShowForm(true);
+    setError(null);
+    setSuccess(null);
     setForm({
       name: medicine.name,
       batchNumber: medicine.batchNumber,
@@ -138,25 +183,32 @@ export const InventoryPage = () => {
   };
 
   const onDelete = async (medicineId: number) => {
+    if (!canManage) return;
     const confirmed = window.confirm('Delete this medicine record?');
     if (!confirmed) return;
 
     setError(null);
+    setSuccess(null);
     try {
       await api.delete(`/medicine/${medicineId}`);
       if (editingId === medicineId) {
         setEditingId(null);
         setForm(initialForm);
       }
+      setSuccess('Medicine Deleted Successfully');
       await loadMedicines(query);
-    } catch {
-      setError('Failed to delete medicine');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to delete medicine'));
     }
   };
 
   const onCancelEdit = () => {
     setEditingId(null);
     setForm(initialForm);
+    setFieldErrors({});
+    setError(null);
+    setSuccess(null);
+    setShowForm(false);
   };
 
   const lowStockCount = useMemo(() => medicines.filter((m) => m.quantity <= 20).length, [medicines]);
@@ -166,7 +218,11 @@ export const InventoryPage = () => {
     <section className="card">
       <div className="section-head">
         <h1>Manage Inventory</h1>
-        <p className="muted">Track medicine stock, expiry dates, and pricing for safe dispensing.</p>
+        <p className="muted">
+          {canManage
+            ? 'Pharmacist can add, update, and delete medicine records.'
+            : 'Doctor can view current medicine list, stock quantity, batch number, and expiry date.'}
+        </p>
       </div>
 
       <div className="stats-row">
@@ -184,60 +240,109 @@ export const InventoryPage = () => {
         <button type="submit" className="btn-secondary">Search</button>
       </form>
 
-      <form onSubmit={onSubmit} className="form-grid" style={{ marginTop: 14 }}>
-        <div className="section-head">
-          <h3>{editingId ? 'Update Medicine' : 'Add Medicine'}</h3>
-        </div>
-
-        <div className="inventory-grid">
-          <input
-            value={form.name}
-            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-            placeholder="Medicine name"
-            required
-          />
-          <input
-            value={form.batchNumber}
-            onChange={(e) => setForm((prev) => ({ ...prev, batchNumber: e.target.value }))}
-            placeholder="Batch number"
-            required
-          />
-          <input
-            type="number"
-            min={0}
-            value={form.quantity}
-            onChange={(e) => setForm((prev) => ({ ...prev, quantity: Number(e.target.value) || 0 }))}
-            placeholder="Quantity"
-            required
-          />
-          <input
-            type="date"
-            value={form.expiryDate}
-            onChange={(e) => setForm((prev) => ({ ...prev, expiryDate: e.target.value }))}
-            required
-          />
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={form.price}
-            onChange={(e) => setForm((prev) => ({ ...prev, price: Number(e.target.value) || 0 }))}
-            placeholder="Price"
-            required
-          />
-        </div>
-
-        <div className="action-row">
-          <button type="submit" disabled={saving}>{saving ? 'Saving...' : editingId ? 'Update Medicine' : 'Add Medicine'}</button>
-          {editingId && (
+      {canManage && (
+        <div className="action-row" style={{ marginTop: 12 }}>
+          {!showForm ? (
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(true);
+                setEditingId(null);
+                setForm(initialForm);
+                setFieldErrors({});
+                setError(null);
+                setSuccess(null);
+              }}
+            >
+              Add Medicine
+            </button>
+          ) : (
             <button type="button" className="btn-secondary" onClick={onCancelEdit}>
               Cancel
             </button>
           )}
         </div>
-      </form>
+      )}
+
+      {canManage && showForm && (
+        <form onSubmit={onSubmit} className="form-grid" style={{ marginTop: 14 }}>
+          <div className="section-head">
+            <h3>{editingId ? 'Update Medicine' : 'Add Medicine'}</h3>
+          </div>
+
+          <div className="inventory-grid">
+            <div className="field-block">
+              <input
+                value={form.name}
+                onChange={(e) => updateField('name', e.target.value)}
+                placeholder="Medicine name"
+                className={fieldErrors.name ? 'field-invalid' : undefined}
+                required
+              />
+              {fieldErrors.name && <small className="field-helper">Medicine name is required.</small>}
+            </div>
+
+            <div className="field-block">
+              <input
+                value={form.batchNumber}
+                onChange={(e) => updateField('batchNumber', e.target.value)}
+                placeholder="Batch number"
+                className={fieldErrors.batchNumber ? 'field-invalid' : undefined}
+                required
+              />
+              {fieldErrors.batchNumber && <small className="field-helper">Batch number is required.</small>}
+            </div>
+
+            <div className="field-block">
+              <input
+                type="number"
+                min={0}
+                value={form.quantity}
+                onChange={(e) => updateField('quantity', Number(e.target.value) || 0)}
+                placeholder="Quantity"
+                className={fieldErrors.quantity ? 'field-invalid' : undefined}
+                required
+              />
+              {fieldErrors.quantity && <small className="field-helper">Quantity must be 0 or higher.</small>}
+            </div>
+
+            <div className="field-block">
+              <input
+                type="date"
+                value={form.expiryDate}
+                onChange={(e) => updateField('expiryDate', e.target.value)}
+                className={fieldErrors.expiryDate ? 'field-invalid' : undefined}
+                required
+              />
+              {fieldErrors.expiryDate && <small className="field-helper">Expiry date is required.</small>}
+            </div>
+
+            <div className="field-block">
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.price}
+                onChange={(e) => updateField('price', Number(e.target.value) || 0)}
+                placeholder="Price"
+                className={fieldErrors.price ? 'field-invalid' : undefined}
+                required
+              />
+              {fieldErrors.price && <small className="field-helper">Price must be 0 or higher.</small>}
+            </div>
+          </div>
+
+          <div className="action-row">
+            <button type="submit" disabled={saving}>{saving ? 'Saving...' : editingId ? 'Update/Save' : 'Save'}</button>
+            <button type="button" className="btn-secondary" onClick={onCancelEdit}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       {error && <p className="error">{error}</p>}
+      {success && <p className="muted" style={{ color: 'var(--primary)' }}>{success}</p>}
       {loading && <p className="muted">Loading...</p>}
 
       <div className="table-wrap">
@@ -265,14 +370,18 @@ export const InventoryPage = () => {
                 </td>
                 <td>{formatMoney(medicine.price)}</td>
                 <td>
-                  <div className="action-row">
-                    <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
-                      Edit
-                    </button>
-                    <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
-                      Delete
-                    </button>
-                  </div>
+                  {canManage ? (
+                    <div className="action-row">
+                      <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
+                        Delete
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="muted">View only</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -302,14 +411,18 @@ export const InventoryPage = () => {
                 <dd>RM {formatMoney(medicine.price)}</dd>
               </div>
             </dl>
-            <div className="action-row" style={{ marginTop: 10 }}>
-              <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
-                Edit
-              </button>
-              <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
-                Delete
-              </button>
-            </div>
+            {canManage ? (
+              <div className="action-row" style={{ marginTop: 10 }}>
+                <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
+                  Edit
+                </button>
+                <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
+                  Delete
+                </button>
+              </div>
+            ) : (
+              <p className="muted" style={{ marginTop: 10 }}>View only</p>
+            )}
           </article>
         ))}
       </div>
