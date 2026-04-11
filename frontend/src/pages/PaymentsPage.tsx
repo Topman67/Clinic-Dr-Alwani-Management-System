@@ -181,11 +181,29 @@ export const PaymentsPage = () => {
   const onSearchPatients = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     try {
-      await loadPatients(patientSearch);
+      const response = await api.get('/patients', { params: { query: patientSearch || undefined } });
+      const result = response.data as Patient[];
+      setPatients(result);
+
+      if (patientSearch.trim() && result.length === 0) {
+        setError('Patient record not found.');
+        setForm(initialForm);
+        setFieldErrors({});
+        return;
+      }
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to search patients'));
     }
+  };
+
+  const onCancelPayment = () => {
+    setForm(initialForm);
+    setFieldErrors({});
+    setError(null);
+    setSuccess(null);
+    setSelectedPayment(null);
   };
 
   const onSearch = async (e: FormEvent) => {
@@ -379,6 +397,9 @@ export const PaymentsPage = () => {
               </select>
 
               <button type="submit" disabled={saving}>{saving ? 'Processing...' : 'Confirm / Pay'}</button>
+              <button type="button" className="btn-secondary" onClick={onCancelPayment} disabled={saving}>
+                Cancel
+              </button>
             </div>
 
             <textarea
