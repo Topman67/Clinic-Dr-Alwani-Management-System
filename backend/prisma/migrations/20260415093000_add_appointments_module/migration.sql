@@ -1,0 +1,2 @@
+-- No-op migration placeholder restored to keep migration chain consistent.
+-- This migration directory previously existed without SQL.

@@ -21,6 +21,7 @@ enum UserStatus {
 enum PaymentType {
   CONSULTATION
   APPOINTMENT
+  MEDICINE
 }
 
 enum PaymentStatus {
@@ -75,6 +76,7 @@ model Medicine {
   price       Decimal   @db.Decimal(10,2)
   createdAt   DateTime  @default(now())
   prescriptionItems PrescriptionMedicine[]
+  saleItems   PaymentMedicineItem[]
 
   @@unique([name, batchNumber])
 }
@@ -115,6 +117,21 @@ model Payment {
   date       DateTime   @default(now())
   status     PaymentStatus @default(PAID)
   receipt    Receipt?
+  medicineItems PaymentMedicineItem[]
+}
+
+model PaymentMedicineItem {
+  itemId      Int      @id @default(autoincrement())
+  payment     Payment  @relation(fields: [paymentId], references: [paymentId])
+  paymentId   Int
+  medicine    Medicine @relation(fields: [medicineId], references: [medicineId])
+  medicineId  Int
+  qty         Int
+  unitPrice   Decimal  @db.Decimal(10,2)
+  subtotal    Decimal  @db.Decimal(10,2)
+
+  @@index([paymentId])
+  @@index([medicineId])
 }
 
 model Receipt {

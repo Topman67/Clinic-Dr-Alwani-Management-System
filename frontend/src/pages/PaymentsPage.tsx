@@ -19,7 +19,7 @@ type Receipt = {
   totalAmount: number | string;
 };
 
-type PaymentType = 'CONSULTATION' | 'APPOINTMENT';
+type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
 type PaymentMethod = 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET';
 
 type PaymentStatus = 'PAID' | 'CANCELLED';
@@ -36,7 +36,34 @@ type Payment = {
   status: PaymentStatus;
   patient?: { name: string; icOrPassport?: string; phone?: string; address?: string | null };
   receipt?: Receipt | null;
+  medicineItems?: Array<{
+    itemId: number;
+    qty: number;
+    unitPrice: number | string;
+    subtotal: number | string;
+    medicine?: {
+      medicineId: number;
+      name: string;
+      batchNumber: string;
+    };
+  }>;
 };
+
+type WalkInMedicine = {
+  medicineId: number;
+  name: string;
+  batchNumber: string;
+  quantity: number;
+  price: number | string;
+  expiryDate: string;
+};
+
+type WalkInFormItem = {
+  medicineId: number;
+  qty: number;
+};
+
+type ReceptionPaymentMode = 'STANDARD' | 'WALKIN';
 
 type PaymentForm = {
   patientId: number;
@@ -59,7 +86,11 @@ const formatMoney = (value: number | string) => {
   return Number.isFinite(n) ? n.toFixed(2) : '0.00';
 };
 
-const prettifyType = (t: PaymentType) => (t === 'CONSULTATION' ? 'Consultation Fee' : 'Appointment Fee');
+const prettifyType = (t: PaymentType) => {
+  if (t === 'CONSULTATION') return 'Consultation Fee';
+  if (t === 'APPOINTMENT') return 'Appointment Fee';
+  return 'Medicine Sale';
+};
 
 const prettifyMethod = (method: PaymentMethod) => {
   if (method === 'ONLINE_TRANSFER') return 'Online Transfer';
@@ -84,8 +115,14 @@ export const PaymentsPage = () => {
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [walkInSaving, setWalkInSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [walkInMedicines, setWalkInMedicines] = useState<WalkInMedicine[]>([]);
+  const [walkInItems, setWalkInItems] = useState<WalkInFormItem[]>([]);
+  const [walkInMethod, setWalkInMethod] = useState<PaymentMethod>('CASH');
+  const [walkInRemarks, setWalkInRemarks] = useState('');
+  const [receptionMode, setReceptionMode] = useState<ReceptionPaymentMode>('STANDARD');
 
   const getApiErrorMessage = (err: unknown, fallback: string) => {
     if (typeof err === 'object' && err !== null) {
@@ -100,6 +137,20 @@ export const PaymentsPage = () => {
     const response = await api.get('/patients', { params: { query: q || undefined } });
     setPatients(response.data as Patient[]);
   }, []);
+
+  const loadWalkInMedicines = useCallback(async () => {
+    if (!isReceptionist) {
+      setWalkInMedicines([]);
+      return;
+    }
+
+    try {
+      const response = await api.get('/payments/walkin-medicines');
+      setWalkInMedicines(response.data as WalkInMedicine[]);
+    } catch {
+      setWalkInMedicines([]);
+    }
+  }, [isReceptionist]);
 
   const loadPayments = useCallback(async (filters?: {
     patientId?: number;
@@ -142,11 +193,14 @@ export const PaymentsPage = () => {
         if (isDoctor) {
           await loadPayments();
         }
+        if (isReceptionist) {
+          await loadWalkInMedicines();
+        }
       } catch {
         setError('Failed to load required data');
       }
     })();
-  }, [isDoctor, loadPatients, loadPayments]);
+  }, [isDoctor, isReceptionist, loadPatients, loadPayments, loadWalkInMedicines]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
@@ -156,12 +210,15 @@ export const PaymentsPage = () => {
           if (isDoctor) {
             await loadPayments(buildCurrentFilters());
           }
+          if (isReceptionist) {
+            await loadWalkInMedicines();
+          }
         } catch {
           setError('Failed to sync latest data');
         }
       })();
     });
-  }, [buildCurrentFilters, isDoctor, loadPatients, loadPayments, patientSearch]);
+  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPatients, loadPayments, loadWalkInMedicines, patientSearch]);
 
   const selectedPatient = useMemo(() => {
     if (!form.patientId) return null;
@@ -204,6 +261,91 @@ export const PaymentsPage = () => {
     setError(null);
     setSuccess(null);
     setSelectedPayment(null);
+  };
+
+  const getWalkInMedicineById = (medicineId: number) => {
+    return walkInMedicines.find((m) => m.medicineId === medicineId) ?? null;
+  };
+
+  const addWalkInItem = () => {
+    setWalkInItems((prev) => [...prev, { medicineId: 0, qty: 1 }]);
+  };
+
+  const removeWalkInItem = (index: number) => {
+    setWalkInItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateWalkInItem = (index: number, patch: Partial<WalkInFormItem>) => {
+    setWalkInItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  };
+
+  const walkInTotal = useMemo(() => {
+    return walkInItems.reduce((sum, item) => {
+      const medicine = walkInMedicines.find((m) => m.medicineId === item.medicineId);
+      if (!medicine) return sum;
+      return sum + Number(medicine.price) * item.qty;
+    }, 0);
+  }, [walkInItems, walkInMedicines]);
+
+  const onSubmitWalkInSale = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!isReceptionist) return;
+
+    setError(null);
+    setSuccess(null);
+
+    const normalizedItems = walkInItems
+      .map((item) => ({
+        medicineId: Number(item.medicineId),
+        qty: Math.trunc(Number(item.qty)),
+      }))
+      .filter((item) => Number.isInteger(item.medicineId) && item.medicineId > 0 && Number.isInteger(item.qty) && item.qty > 0);
+
+    if (normalizedItems.length === 0) {
+      setError('Please add at least one medicine item.');
+      return;
+    }
+
+    setWalkInSaving(true);
+    try {
+      const response = await api.post('/payments/walkin-medicine', {
+        patientId: form.patientId > 0 ? form.patientId : undefined,
+        paymentMethod: walkInMethod,
+        remarks: walkInRemarks.trim() || undefined,
+        items: normalizedItems,
+      });
+
+      const data = response.data as {
+        message?: string;
+        payment: Payment;
+        receipt: Receipt;
+        patient: Patient;
+        items?: Payment['medicineItems'];
+      };
+
+      const createdPayment: Payment = {
+        ...data.payment,
+        patient: {
+          name: data.patient.name,
+          icOrPassport: data.patient.icOrPassport,
+          phone: data.patient.phone,
+          address: data.patient.address,
+        },
+        receipt: data.receipt,
+        medicineItems: data.items,
+      };
+
+      setSuccess(data.message || 'Walk-in Medicine Sale Successful');
+      setSelectedPayment(createdPayment);
+      setWalkInItems([]);
+      setWalkInRemarks('');
+      setWalkInMethod('CASH');
+      await loadWalkInMedicines();
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to record walk-in medicine sale'));
+    } finally {
+      setWalkInSaving(false);
+    }
   };
 
   const onSearch = async (e: FormEvent) => {
@@ -314,126 +456,245 @@ export const PaymentsPage = () => {
 
       {isReceptionist && (
         <>
-          <form onSubmit={onSearchPatients} className="form-row" style={{ marginTop: 14 }}>
-            <input
-              value={patientSearch}
-              onChange={(e) => setPatientSearch(e.target.value)}
-              placeholder="Search patient by name / IC / phone"
-            />
-            <button type="submit" className="btn-secondary">Search Patient</button>
-          </form>
+          <div className="action-row" style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              className={receptionMode === 'STANDARD' ? '' : 'btn-secondary'}
+              onClick={() => {
+                setReceptionMode('STANDARD');
+                setError(null);
+                setSuccess(null);
+              }}
+            >
+              Standard Payment
+            </button>
+            <button
+              type="button"
+              className={receptionMode === 'WALKIN' ? '' : 'btn-secondary'}
+              onClick={() => {
+                setReceptionMode('WALKIN');
+                setError(null);
+                setSuccess(null);
+              }}
+            >
+              Walk-in Medicine Sale
+            </button>
+          </div>
 
-          <form onSubmit={onSubmit} className="form-grid" style={{ marginTop: 14 }}>
-            <div className="section-head">
-              <h3>Record Payment</h3>
-            </div>
-
-            <div className="payments-grid">
-              <div className="field-block">
-                <select
-                  value={form.patientId || ''}
-                  onChange={(e) => {
-                    const patientId = Number(e.target.value) || 0;
-                    setForm((prev) => ({ ...prev, patientId }));
-                    setFieldErrors((prev) => {
-                      if (!prev.patientId) return prev;
-                      const next = { ...prev };
-                      delete next.patientId;
-                      return next;
-                    });
-                  }}
-                  className={fieldErrors.patientId ? 'field-invalid' : undefined}
-                  required
-                >
-                  <option value="">Select patient</option>
-                  {patients.map((p) => (
-                    <option key={p.patientId} value={p.patientId}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                {fieldErrors.patientId && <small className="field-helper">Patient selection is required.</small>}
-              </div>
-
-              <select
-                value={form.type}
-                onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value as PaymentType }))}
-              >
-                <option value="CONSULTATION">Consultation Fee</option>
-                <option value="APPOINTMENT">Appointment Fee</option>
-              </select>
-
-              <div className="field-block">
+          {receptionMode === 'STANDARD' && (
+            <>
+              <form onSubmit={onSearchPatients} className="form-row" style={{ marginTop: 14 }}>
                 <input
-                  type="number"
-                  min={0.01}
-                  step="0.01"
-                  value={form.amount}
-                  onChange={(e) => {
-                    const amount = Number(e.target.value) || 0;
-                    setForm((prev) => ({ ...prev, amount }));
-                    setFieldErrors((prev) => {
-                      if (!prev.amount) return prev;
-                      const next = { ...prev };
-                      delete next.amount;
-                      return next;
-                    });
-                  }}
-                  placeholder="Amount"
-                  className={fieldErrors.amount ? 'field-invalid' : undefined}
-                  required
+                  value={patientSearch}
+                  onChange={(e) => setPatientSearch(e.target.value)}
+                  placeholder="Search patient by name / IC / phone"
                 />
-                {fieldErrors.amount && <small className="field-helper">Amount must be greater than 0.</small>}
+                <button type="submit" className="btn-secondary">Search Patient</button>
+              </form>
+
+              <form onSubmit={onSubmit} className="form-grid" style={{ marginTop: 14 }}>
+                <div className="section-head">
+                  <h3>Record Payment</h3>
+                </div>
+
+                <div className="payments-grid">
+                  <div className="field-block">
+                    <select
+                      value={form.patientId || ''}
+                      onChange={(e) => {
+                        const patientId = Number(e.target.value) || 0;
+                        setForm((prev) => ({ ...prev, patientId }));
+                        setFieldErrors((prev) => {
+                          if (!prev.patientId) return prev;
+                          const next = { ...prev };
+                          delete next.patientId;
+                          return next;
+                        });
+                      }}
+                      className={fieldErrors.patientId ? 'field-invalid' : undefined}
+                      required
+                    >
+                      <option value="">Select patient</option>
+                      {patients.map((p) => (
+                        <option key={p.patientId} value={p.patientId}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    {fieldErrors.patientId && <small className="field-helper">Patient selection is required.</small>}
+                  </div>
+
+                  <select
+                    value={form.type}
+                    onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value as PaymentType }))}
+                  >
+                    <option value="CONSULTATION">Consultation Fee</option>
+                    <option value="APPOINTMENT">Appointment Fee</option>
+                  </select>
+
+                  <div className="field-block">
+                    <input
+                      type="number"
+                      min={0.01}
+                      step="0.01"
+                      value={form.amount}
+                      onChange={(e) => {
+                        const amount = Number(e.target.value) || 0;
+                        setForm((prev) => ({ ...prev, amount }));
+                        setFieldErrors((prev) => {
+                          if (!prev.amount) return prev;
+                          const next = { ...prev };
+                          delete next.amount;
+                          return next;
+                        });
+                      }}
+                      placeholder="Amount"
+                      className={fieldErrors.amount ? 'field-invalid' : undefined}
+                      required
+                    />
+                    {fieldErrors.amount && <small className="field-helper">Amount must be greater than 0.</small>}
+                  </div>
+
+                  <select
+                    value={form.paymentMethod}
+                    onChange={(e) => setForm((prev) => ({ ...prev, paymentMethod: e.target.value as PaymentMethod }))}
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="CARD">Card</option>
+                    <option value="ONLINE_TRANSFER">Online Transfer</option>
+                    <option value="E_WALLET">E-Wallet</option>
+                  </select>
+
+                  <button type="submit" disabled={saving}>{saving ? 'Processing...' : 'Confirm / Pay'}</button>
+                  <button type="button" className="btn-secondary" onClick={onCancelPayment} disabled={saving}>
+                    Cancel
+                  </button>
+                </div>
+
+                <textarea
+                  value={form.remarks}
+                  onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
+                  placeholder="Remarks (optional)"
+                  rows={3}
+                  maxLength={500}
+                />
+
+                {selectedPatient && (
+                  <div className="report-card">
+                    <h4 style={{ marginTop: 0 }}>Patient Details</h4>
+                    <dl className="kv">
+                      <div>
+                        <dt>Name</dt>
+                        <dd>{selectedPatient.name}</dd>
+                      </div>
+                      <div>
+                        <dt>IC / Passport</dt>
+                        <dd>{selectedPatient.icOrPassport || '-'}</dd>
+                      </div>
+                      <div>
+                        <dt>Phone</dt>
+                        <dd>{selectedPatient.phone || '-'}</dd>
+                      </div>
+                      <div>
+                        <dt>Address</dt>
+                        <dd>{selectedPatient.address || '-'}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                )}
+              </form>
+            </>
+          )}
+
+          {receptionMode === 'WALKIN' && (
+            <form onSubmit={onSubmitWalkInSale} className="form-grid" style={{ marginTop: 14 }}>
+              <div className="section-head">
+                <h3>Walk-in Medicine Sale</h3>
+                <p className="muted">Select medicine items and quantity, then confirm sale for a walk-in customer.</p>
               </div>
 
-              <select
-                value={form.paymentMethod}
-                onChange={(e) => setForm((prev) => ({ ...prev, paymentMethod: e.target.value as PaymentMethod }))}
-              >
-                <option value="CASH">Cash</option>
-                <option value="CARD">Card</option>
-                <option value="ONLINE_TRANSFER">Online Transfer</option>
-                <option value="E_WALLET">E-Wallet</option>
-              </select>
-
-              <button type="submit" disabled={saving}>{saving ? 'Processing...' : 'Confirm / Pay'}</button>
-              <button type="button" className="btn-secondary" onClick={onCancelPayment} disabled={saving}>
-                Cancel
-              </button>
-            </div>
-
-            <textarea
-              value={form.remarks}
-              onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
-              placeholder="Remarks (optional)"
-              rows={3}
-              maxLength={500}
-            />
-
-            {selectedPatient && (
               <div className="report-card">
-                <h4 style={{ marginTop: 0 }}>Patient Details</h4>
-                <dl className="kv">
-                  <div>
-                    <dt>Name</dt>
-                    <dd>{selectedPatient.name}</dd>
-                  </div>
-                  <div>
-                    <dt>IC / Passport</dt>
-                    <dd>{selectedPatient.icOrPassport || '-'}</dd>
-                  </div>
-                  <div>
-                    <dt>Phone</dt>
-                    <dd>{selectedPatient.phone || '-'}</dd>
-                  </div>
-                  <div>
-                    <dt>Address</dt>
-                    <dd>{selectedPatient.address || '-'}</dd>
-                  </div>
-                </dl>
+                <small className="muted">This flow is recorded automatically under Walk-in Customer.</small>
               </div>
-            )}
-          </form>
+
+              <div className="action-row">
+                <button type="button" className="btn-secondary" onClick={addWalkInItem}>Add Medicine Item</button>
+              </div>
+
+              {walkInItems.map((item, index) => {
+                const selectedMedicine = getWalkInMedicineById(item.medicineId);
+                const itemSubtotal = selectedMedicine ? Number(selectedMedicine.price) * item.qty : 0;
+
+                return (
+                  <div key={`walkin-item-${index}`} className="payments-grid">
+                    <select
+                      value={item.medicineId || ''}
+                      onChange={(e) => updateWalkInItem(index, { medicineId: Number(e.target.value) || 0 })}
+                      required
+                    >
+                      <option value="">Select medicine</option>
+                      {walkInMedicines.map((medicine) => (
+                        <option key={`${medicine.medicineId}-${medicine.batchNumber}`} value={medicine.medicineId}>
+                          {medicine.name} ({medicine.batchNumber}) - Stock: {medicine.quantity}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="number"
+                      min={1}
+                      value={item.qty}
+                      onChange={(e) => updateWalkInItem(index, { qty: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })}
+                      placeholder="Qty"
+                      required
+                    />
+
+                    <input
+                      value={selectedMedicine ? `RM ${formatMoney(selectedMedicine.price)}` : '-'}
+                      readOnly
+                      placeholder="Unit Price"
+                    />
+
+                    <input
+                      value={`RM ${formatMoney(itemSubtotal)}`}
+                      readOnly
+                      placeholder="Subtotal"
+                    />
+
+                    <button type="button" className="btn-danger" onClick={() => removeWalkInItem(index)}>
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+
+              <div className="payments-grid">
+                <select
+                  value={walkInMethod}
+                  onChange={(e) => setWalkInMethod(e.target.value as PaymentMethod)}
+                >
+                  <option value="CASH">Cash</option>
+                  <option value="CARD">Card</option>
+                  <option value="ONLINE_TRANSFER">Online Transfer</option>
+                  <option value="E_WALLET">E-Wallet</option>
+                </select>
+
+                <input value={`Total: RM ${formatMoney(walkInTotal)}`} readOnly />
+              </div>
+
+              <textarea
+                value={walkInRemarks}
+                onChange={(e) => setWalkInRemarks(e.target.value)}
+                placeholder="Remarks for walk-in medicine sale (optional)"
+                rows={3}
+                maxLength={500}
+              />
+
+              <div className="action-row">
+                <button type="submit" disabled={walkInSaving}>{walkInSaving ? 'Processing...' : 'Confirm Walk-in Sale'}</button>
+              </div>
+            </form>
+          )}
         </>
       )}
 
@@ -569,6 +830,19 @@ export const PaymentsPage = () => {
               <dt>Total</dt>
               <dd>RM {selectedPayment.receipt ? formatMoney(selectedPayment.receipt.totalAmount) : formatMoney(selectedPayment.amount)}</dd>
             </div>
+            {selectedPayment.medicineItems && selectedPayment.medicineItems.length > 0 && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt>Medicine Items</dt>
+                <dd>
+                  {selectedPayment.medicineItems
+                    .map(
+                      (item) =>
+                        `${item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`} (${item.medicine?.batchNumber ?? '-'}) x${item.qty} = RM ${formatMoney(item.subtotal)}`,
+                    )
+                    .join(' | ')}
+                </dd>
+              </div>
+            )}
           </dl>
 
           <div className="action-row" style={{ marginTop: 10 }}>
