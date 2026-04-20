@@ -673,6 +673,11 @@ button:disabled {
   background: #1e293b;
 }
 
+.sales-view-btn {
+  padding: 7px 12px;
+  font-size: 0.84rem;
+}
+
 .btn-warning {
   background: #d97706;
 }

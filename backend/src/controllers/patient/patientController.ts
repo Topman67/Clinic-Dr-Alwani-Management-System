@@ -71,6 +71,7 @@ export const createPatient = async (req: Request, res: Response) => {
 
 export const listPatients = async (req: Request, res: Response) => {
   const query = (req.query.query as string) || '';
+
   const patients = await prisma.patient.findMany({
     where: {
       OR: [
@@ -78,6 +79,9 @@ export const listPatients = async (req: Request, res: Response) => {
         { icOrPassport: { contains: query, mode: 'insensitive' } },
         { phone: { contains: query, mode: 'insensitive' } },
       ],
+      NOT: {
+        icOrPassport: { startsWith: 'WALKIN-', mode: 'insensitive' },
+      },
     },
     orderBy: { createdAt: 'desc' },
     include: {

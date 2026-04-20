@@ -122,6 +122,9 @@ export const PaymentsPage = () => {
   const [walkInItems, setWalkInItems] = useState<WalkInFormItem[]>([]);
   const [walkInMethod, setWalkInMethod] = useState<PaymentMethod>('CASH');
   const [walkInRemarks, setWalkInRemarks] = useState('');
+  const [walkInCustomerName, setWalkInCustomerName] = useState('');
+  const [walkInCustomerPhone, setWalkInCustomerPhone] = useState('');
+  const [walkInCustomerId, setWalkInCustomerId] = useState('');
   const [receptionMode, setReceptionMode] = useState<ReceptionPaymentMode>('STANDARD');
 
   const getApiErrorMessage = (err: unknown, fallback: string) => {
@@ -310,6 +313,9 @@ export const PaymentsPage = () => {
     try {
       const response = await api.post('/payments/walkin-medicine', {
         patientId: form.patientId > 0 ? form.patientId : undefined,
+        customerName: walkInCustomerName.trim() || undefined,
+        customerPhone: walkInCustomerPhone.trim() || undefined,
+        customerId: walkInCustomerId.trim() || undefined,
         paymentMethod: walkInMethod,
         remarks: walkInRemarks.trim() || undefined,
         items: normalizedItems,
@@ -335,11 +341,14 @@ export const PaymentsPage = () => {
         medicineItems: data.items,
       };
 
-      setSuccess(data.message || 'Walk-in Medicine Sale Successful');
+      setSuccess(`${data.message || 'Walk-in Medicine Sale Successful'} (Customer ID: ${data.patient.icOrPassport || '-'})`);
       setSelectedPayment(createdPayment);
       setWalkInItems([]);
       setWalkInRemarks('');
       setWalkInMethod('CASH');
+      setWalkInCustomerName('');
+      setWalkInCustomerPhone('');
+      setWalkInCustomerId('');
       await loadWalkInMedicines();
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to record walk-in medicine sale'));
@@ -614,7 +623,30 @@ export const PaymentsPage = () => {
               </div>
 
               <div className="report-card">
-                <small className="muted">This flow is recorded automatically under Walk-in Customer.</small>
+                <small className="muted">Enter customer info (optional). If customer ID is blank, system auto-generates one.</small>
+              </div>
+
+              <div className="payments-grid">
+                <input
+                  value={walkInCustomerName}
+                  onChange={(e) => setWalkInCustomerName(e.target.value)}
+                  placeholder="Customer name (optional)"
+                  maxLength={120}
+                />
+
+                <input
+                  value={walkInCustomerPhone}
+                  onChange={(e) => setWalkInCustomerPhone(e.target.value)}
+                  placeholder="Customer phone (optional)"
+                  maxLength={30}
+                />
+
+                <input
+                  value={walkInCustomerId}
+                  onChange={(e) => setWalkInCustomerId(e.target.value)}
+                  placeholder="Customer ID (optional)"
+                  maxLength={60}
+                />
               </div>
 
               <div className="action-row">
@@ -793,6 +825,10 @@ export const PaymentsPage = () => {
             <div>
               <dt>Patient</dt>
               <dd>{selectedPayment.patient?.name ?? `Patient #${selectedPayment.patientId}`}</dd>
+            </div>
+            <div>
+              <dt>Customer ID</dt>
+              <dd>{selectedPayment.patient?.icOrPassport || '-'}</dd>
             </div>
             <div>
               <dt>Date</dt>

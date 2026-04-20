@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
-import { PaymentMethod, PaymentStatus, PaymentType } from '@prisma/client';
+import { PaymentMethod, PaymentStatus, PaymentType, Prisma } from '@prisma/client';
 import { generateReceiptNo } from '../../utils/receipt';
 import { logActivity } from '../../utils/audit';
 
@@ -9,9 +9,9 @@ type WalkInMedicineInput = {
   qty?: number | string;
 };
 
-const WALKIN_CUSTOMER_IC = 'WALKIN-CUSTOMER';
 const WALKIN_CUSTOMER_NAME = 'Walk-in Customer';
 const WALKIN_CUSTOMER_PHONE = 'N/A';
+const WALKIN_CUSTOMER_ID_PREFIX = 'WALKIN';
 
 const isPaymentType = (value: unknown): value is PaymentType => {
   return value === PaymentType.CONSULTATION || value === PaymentType.APPOINTMENT;
@@ -36,6 +36,90 @@ const normalizeRemarks = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeWalkInCustomerName = (value: unknown): string => {
+  if (typeof value !== 'string') return WALKIN_CUSTOMER_NAME;
+  const trimmed = value.trim();
+  if (!trimmed) return WALKIN_CUSTOMER_NAME;
+  return trimmed.slice(0, 120);
+};
+
+const normalizeWalkInCustomerPhone = (value: unknown): string => {
+  if (typeof value !== 'string') return WALKIN_CUSTOMER_PHONE;
+  const trimmed = value.trim();
+  if (!trimmed) return WALKIN_CUSTOMER_PHONE;
+  return trimmed.slice(0, 30);
+};
+
+const normalizeWalkInCustomerId = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toUpperCase();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 60);
+};
+
+const ensureWalkInCustomerScopedId = (value: string | null) => {
+  if (!value) return null;
+  if (value.startsWith(`${WALKIN_CUSTOMER_ID_PREFIX}-`)) return value;
+  return `${WALKIN_CUSTOMER_ID_PREFIX}-${value}`;
+};
+
+const buildWalkInCustomerId = () => {
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomPart = Math.floor(1000 + Math.random() * 9000);
+  return `${WALKIN_CUSTOMER_ID_PREFIX}-${datePart}-${randomPart}`;
+};
+
+const generateUniqueWalkInCustomerId = async () => {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = buildWalkInCustomerId();
+    const existing = await prisma.patient.findUnique({
+      where: { icOrPassport: candidate },
+      select: { patientId: true },
+    });
+    if (!existing) return candidate;
+  }
+
+  return `${WALKIN_CUSTOMER_ID_PREFIX}-${Date.now()}`;
+};
+
+const isReceiptNoUniqueConflict = (error: unknown) => {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code !== 'P2002') return false;
+
+  const target = (error.meta as { target?: unknown } | undefined)?.target;
+  if (Array.isArray(target)) {
+    return target.some((field) => String(field) === 'receiptNo');
+  }
+
+  return typeof target === 'string' && target.includes('receiptNo');
+};
+
+const createReceiptWithRetry = async (
+  tx: Prisma.TransactionClient,
+  paymentId: number,
+  totalAmount: number,
+  maxAttempts = 6,
+) => {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await tx.receipt.create({
+        data: {
+          paymentId,
+          receiptNo: generateReceiptNo(),
+          totalAmount,
+        },
+      });
+    } catch (error) {
+      if (isReceiptNoUniqueConflict(error) && attempt < maxAttempts) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Failed to create receipt number. Please retry.');
 };
 
 const parseWalkInItems = (value: unknown): Array<{ medicineId: number; qty: number }> | null => {
@@ -79,11 +163,14 @@ export const listWalkInMedicines = async (_req: Request, res: Response) => {
 };
 
 export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
-  const { patientId: patientIdRaw, paymentMethod, remarks, items: itemsRaw } = req.body as {
+  const { patientId: patientIdRaw, paymentMethod, remarks, items: itemsRaw, customerName, customerPhone, customerId } = req.body as {
     patientId?: number | string;
     paymentMethod?: PaymentMethod;
     remarks?: string;
     items?: unknown;
+    customerName?: string;
+    customerPhone?: string;
+    customerId?: string;
   };
 
   const parsedPatientId = Number(patientIdRaw);
@@ -107,6 +194,15 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Remarks must be 500 characters or less.' });
   }
 
+  const normalizedCustomerName = normalizeWalkInCustomerName(customerName);
+  const normalizedCustomerPhone = normalizeWalkInCustomerPhone(customerPhone);
+  const normalizedCustomerId = normalizeWalkInCustomerId(customerId);
+  const resolvedWalkInCustomerId = ensureWalkInCustomerScopedId(normalizedCustomerId) ?? (await generateUniqueWalkInCustomerId());
+
+  if (normalizedCustomerId && normalizedCustomerId.length < 4) {
+    return res.status(400).json({ message: 'Customer ID must be at least 4 characters.' });
+  }
+
   const requestedItems = parseWalkInItems(itemsRaw);
   if (!requestedItems) {
     return res.status(400).json({ message: 'Please add at least one medicine item.' });
@@ -118,15 +214,17 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
         select: { patientId: true, name: true, icOrPassport: true, phone: true, address: true },
       })
     : await prisma.patient.upsert({
-        where: { icOrPassport: WALKIN_CUSTOMER_IC },
+        where: {
+          icOrPassport: resolvedWalkInCustomerId,
+        },
         update: {
-          name: WALKIN_CUSTOMER_NAME,
-          phone: WALKIN_CUSTOMER_PHONE,
+          name: normalizedCustomerName,
+          phone: normalizedCustomerPhone,
         },
         create: {
-          name: WALKIN_CUSTOMER_NAME,
-          icOrPassport: WALKIN_CUSTOMER_IC,
-          phone: WALKIN_CUSTOMER_PHONE,
+          name: normalizedCustomerName,
+          icOrPassport: resolvedWalkInCustomerId,
+          phone: normalizedCustomerPhone,
           address: null,
         },
         select: { patientId: true, name: true, icOrPassport: true, phone: true, address: true },
@@ -230,13 +328,7 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
       ),
     );
 
-    const receipt = await tx.receipt.create({
-      data: {
-        paymentId: payment.paymentId,
-        receiptNo: generateReceiptNo(),
-        totalAmount: amount,
-      },
-    });
+    const receipt = await createReceiptWithRetry(tx, payment.paymentId, amount);
 
     return { payment, receipt, paymentItems };
   });
@@ -313,13 +405,7 @@ export const recordPayment = async (req: Request, res: Response) => {
         status: PaymentStatus.PAID,
       },
     });
-    const receipt = await tx.receipt.create({
-      data: {
-        paymentId: payment.paymentId,
-        receiptNo: generateReceiptNo(),
-        totalAmount: payment.amount,
-      },
-    });
+    const receipt = await createReceiptWithRetry(tx, payment.paymentId, Number(payment.amount));
     return { payment, receipt };
   });
 
@@ -362,6 +448,7 @@ export const listPayments = async (req: Request, res: Response) => {
               medicineId: true,
               name: true,
               batchNumber: true,
+              quantity: true,
             },
           },
         },
@@ -377,4 +464,76 @@ export const listPayments = async (req: Request, res: Response) => {
     orderBy: { date: 'desc' },
   });
   res.json(payments);
+};
+
+export const listWalkInSales = async (req: Request, res: Response) => {
+  const { dateFrom, dateTo, customerId, type, status } = req.query as {
+    dateFrom?: string;
+    dateTo?: string;
+    customerId?: string;
+    type?: string;
+    status?: string;
+  };
+
+  const customerIdQuery = typeof customerId === 'string' ? customerId.trim() : '';
+  const paymentTypeFilter =
+    type === PaymentType.CONSULTATION || type === PaymentType.APPOINTMENT || type === PaymentType.MEDICINE
+      ? (type as PaymentType)
+      : undefined;
+  const paymentStatusFilter =
+    status === PaymentStatus.PAID || status === PaymentStatus.CANCELLED
+      ? (status as PaymentStatus)
+      : undefined;
+
+  const sales = await prisma.payment.findMany({
+    where: {
+      type: paymentTypeFilter,
+      status: paymentStatusFilter,
+      date: {
+        gte: dateFrom ? new Date(dateFrom) : undefined,
+        lte: dateTo ? new Date(dateTo) : undefined,
+      },
+      patient: customerIdQuery
+        ? {
+            is: {
+              icOrPassport: {
+                contains: customerIdQuery,
+                mode: 'insensitive',
+              },
+            },
+          }
+        : undefined,
+    },
+    include: {
+      patient: {
+        select: {
+          patientId: true,
+          name: true,
+          icOrPassport: true,
+          phone: true,
+        },
+      },
+      receipt: true,
+      medicineItems: {
+        include: {
+          medicine: {
+            select: {
+              medicineId: true,
+              name: true,
+              batchNumber: true,
+            },
+          },
+        },
+      },
+      recordedBy: {
+        select: {
+          userId: true,
+          username: true,
+        },
+      },
+    },
+    orderBy: { date: 'desc' },
+  });
+
+  return res.json(sales);
 };

@@ -3,6 +3,7 @@ import {
 	recordPayment,
 	listPayments,
 	listWalkInMedicines,
+	listWalkInSales,
 	recordWalkInMedicineSale,
 } from '../controllers/payment/paymentController';
 import { authMiddleware } from '../middleware/auth';
@@ -14,6 +15,8 @@ router.use(authMiddleware);
 
 router.get('/walkin-medicines', rbac([Role.RECEPTIONIST]), listWalkInMedicines);
 router.post('/walkin-medicine', rbac([Role.RECEPTIONIST]), recordWalkInMedicineSale);
+router.get('/sales', rbac([Role.RECEPTIONIST, Role.PHARMACIST]), listWalkInSales);
+router.get('/walkin-sales', rbac([Role.RECEPTIONIST, Role.PHARMACIST]), listWalkInSales);
 router.get('/', rbac([Role.DOCTOR]), listPayments);
 router.post('/', rbac([Role.RECEPTIONIST]), recordPayment);
 

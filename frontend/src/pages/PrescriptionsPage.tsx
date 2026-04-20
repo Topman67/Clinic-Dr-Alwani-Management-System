@@ -59,6 +59,8 @@ type PrescriptionForm = {
   items: ItemForm[];
 };
 
+const WALKIN_CUSTOMER_IC = 'WALKIN-CUSTOMER';
+
 const emptyItem = (): ItemForm => ({
   medicineId: 0,
   dosage: '',
@@ -116,6 +118,7 @@ const parseUserIdFromToken = (token: string | null): number | null => {
 
 export const PrescriptionsPage = () => {
   const { role } = useAuth();
+  const isDoctor = role === 'DOCTOR';
   const canCreate = role === 'DOCTOR';
   const canViewDetails = role === 'DOCTOR' || role === 'PHARMACIST';
 
@@ -141,14 +144,22 @@ export const PrescriptionsPage = () => {
 
   const doctorId = useMemo(() => parseUserIdFromToken(sessionStorage.getItem('cms_token')), []);
 
+  const filterPatientsForRole = useCallback(
+    (list: Patient[]) => {
+      if (!isDoctor) return list;
+      return list.filter((p) => p.icOrPassport !== WALKIN_CUSTOMER_IC);
+    },
+    [isDoctor],
+  );
+
   const loadLookups = useCallback(async () => {
     const [patientsRes, medicinesRes] = await Promise.all([
       api.get('/patients'),
       api.get('/medicine'),
     ]);
-    setPatients(patientsRes.data as Patient[]);
+    setPatients(filterPatientsForRole(patientsRes.data as Patient[]));
     setMedicines(medicinesRes.data as Medicine[]);
-  }, []);
+  }, [filterPatientsForRole]);
 
   const loadPatientDetails = useCallback(async (patientId: number) => {
     try {
@@ -220,7 +231,7 @@ export const PrescriptionsPage = () => {
     setPatientLookupLoading(true);
     try {
       const response = await api.get('/patients', { params: { query } });
-      const results = response.data as Patient[];
+      const results = filterPatientsForRole(response.data as Patient[]);
       setMatchedPatients(results);
       if (results.length === 0) {
         setError('Patient record not found.');

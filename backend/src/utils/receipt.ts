@@ -1,10 +1,9 @@
 import { format } from 'date-fns';
 
-let counter = 1;
-
 export const generateReceiptNo = () => {
-  const datePart = format(new Date(), 'yyyyMMdd');
-  const suffix = counter.toString().padStart(4, '0');
-  counter += 1;
-  return `RCP-${datePart}-${suffix}`;
+  const dateTimePart = format(new Date(), 'yyyyMMdd-HHmmssSSS');
+  const randomSuffix = Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, '0');
+  return `RCP-${dateTimePart}-${randomSuffix}`;
 };

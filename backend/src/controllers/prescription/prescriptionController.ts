@@ -3,6 +3,7 @@ import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
 
 const isNonEmptyText = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
+const WALKIN_CUSTOMER_PREFIX = 'WALKIN-';
 
 export const createPrescription = async (req: Request, res: Response) => {
   const { patientId, doctorId, notes, items } = req.body as {
@@ -44,6 +45,10 @@ export const createPrescription = async (req: Request, res: Response) => {
     return res.status(404).json({ message: 'Patient record not found.' });
   }
 
+  if (patient.icOrPassport?.toUpperCase().startsWith(WALKIN_CUSTOMER_PREFIX)) {
+    return res.status(400).json({ message: 'Walk-in sales customers are not available in prescription module.' });
+  }
+
   const doctor = await prisma.user.findUnique({ where: { userId: doctorId } });
   if (!doctor) {
     return res.status(400).json({ message: 'Incomplete prescription data.' });
@@ -69,9 +74,19 @@ export const createPrescription = async (req: Request, res: Response) => {
 
 export const listPrescriptions = async (req: Request, res: Response) => {
   const { patientId, dateFrom, dateTo } = req.query as { patientId?: string; dateFrom?: string; dateTo?: string };
+
   const prescriptions = await prisma.prescription.findMany({
     where: {
       patientId: patientId ? Number(patientId) : undefined,
+      patient: {
+        is: {
+          icOrPassport: {
+            not: {
+              startsWith: WALKIN_CUSTOMER_PREFIX,
+            },
+          },
+        },
+      },
       date: {
         gte: dateFrom ? new Date(dateFrom) : undefined,
         lte: dateTo ? new Date(dateTo) : undefined,
@@ -85,8 +100,20 @@ export const listPrescriptions = async (req: Request, res: Response) => {
 
 export const getPrescription = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const prescription = await prisma.prescription.findUnique({
-    where: { prescriptionId: id },
+
+  const prescription = await prisma.prescription.findFirst({
+    where: {
+      prescriptionId: id,
+      patient: {
+        is: {
+          icOrPassport: {
+            not: {
+              startsWith: WALKIN_CUSTOMER_PREFIX,
+            },
+          },
+        },
+      },
+    },
     include: { patient: true, items: { include: { medicine: true } } },
   });
   if (!prescription) return res.status(404).json({ message: 'Not found' });

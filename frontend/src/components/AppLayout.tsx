@@ -13,6 +13,7 @@ const moduleIcons: Record<string, string> = {
   prescriptions: '📝',
   inventory: '📦',
   payments: '💳',
+  sales: '🧾',
   reports: '📊',
   'audit-logs': '🛡️',
 };

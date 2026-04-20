@@ -12,6 +12,7 @@ import { PaymentsPage } from './pages/PaymentsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { UsersPage } from './pages/UsersPage';
+import { SalesPage } from './pages/SalesPage';
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="patients" element={<PatientsPage />} />
           <Route path="payments" element={<PaymentsPage />} />
+          <Route path="sales" element={<SalesPage />} />
           <Route path="reports" element={<ReportsPage />} />
         </Route>
       </Route>
@@ -44,6 +46,7 @@ function App() {
         <Route path="/pharmacist" element={<AppLayout />}>
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="patients" element={<PatientsPage />} />
+          <Route path="sales" element={<SalesPage />} />
           <Route path="prescriptions" element={<PrescriptionsPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="reports" element={<ReportsPage />} />
