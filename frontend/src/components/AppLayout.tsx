@@ -10,6 +10,7 @@ const moduleIcons: Record<string, string> = {
   dashboard: '🏠',
   users: '👥',
   patients: '🧑‍⚕️',
+  appointments: '📅',
   prescriptions: '📝',
   inventory: '📦',
   payments: '💳',

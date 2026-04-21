@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
@@ -118,6 +119,7 @@ const parseUserIdFromToken = (token: string | null): number | null => {
 
 export const PrescriptionsPage = () => {
   const { role } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isDoctor = role === 'DOCTOR';
   const canCreate = role === 'DOCTOR';
   const canViewDetails = role === 'DOCTOR' || role === 'PHARMACIST';
@@ -141,8 +143,11 @@ export const PrescriptionsPage = () => {
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [linkedAppointmentId, setLinkedAppointmentId] = useState<number | null>(null);
 
   const doctorId = useMemo(() => parseUserIdFromToken(sessionStorage.getItem('cms_token')), []);
+  const initialPatientIdFromQuery = useMemo(() => Number(searchParams.get('patientId') || 0), [searchParams]);
+  const initialAppointmentIdFromQuery = useMemo(() => Number(searchParams.get('appointmentId') || 0), [searchParams]);
 
   const filterPatientsForRole = useCallback(
     (list: Patient[]) => {
@@ -217,6 +222,24 @@ export const PrescriptionsPage = () => {
     });
   }, [loadLookups, loadPatientDetails, loadPrescriptions, queryDateFrom, queryDateTo, queryPatientId, selectedPatientId]);
 
+  useEffect(() => {
+    if (!canCreate) return;
+    if (initialPatientIdFromQuery <= 0 || initialAppointmentIdFromQuery <= 0) return;
+
+    setSelectedPatientId(initialPatientIdFromQuery);
+    setQueryPatientId(initialPatientIdFromQuery);
+    setForm((prev) => ({ ...prev, patientId: initialPatientIdFromQuery }));
+    setLinkedAppointmentId(initialAppointmentIdFromQuery);
+    void loadPatientDetails(initialPatientIdFromQuery);
+    void loadPrescriptions({ patientId: initialPatientIdFromQuery });
+  }, [
+    canCreate,
+    initialAppointmentIdFromQuery,
+    initialPatientIdFromQuery,
+    loadPatientDetails,
+    loadPrescriptions,
+  ]);
+
   const onSearchPatient = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -259,6 +282,10 @@ export const PrescriptionsPage = () => {
     setQueryPatientId(patientId);
     if (canCreate) {
       setForm((prev) => ({ ...prev, patientId }));
+      if (linkedAppointmentId) {
+        setLinkedAppointmentId(null);
+        setSearchParams({});
+      }
     }
     await loadPatientDetails(patientId);
     await loadPrescriptions({ patientId });
@@ -346,10 +373,13 @@ export const PrescriptionsPage = () => {
       await api.post('/prescriptions', {
         patientId: form.patientId,
         doctorId,
+        appointmentId: linkedAppointmentId ?? undefined,
         notes: form.notes || undefined,
         items: form.items,
       });
       resetForm();
+      setLinkedAppointmentId(null);
+      setSearchParams({});
       setFieldErrors({});
       setSuccess('Prescription Saved Successfully');
       await loadPrescriptions({
@@ -373,6 +403,12 @@ export const PrescriptionsPage = () => {
         <h1>Manage Prescription</h1>
         <p className="muted">Doctors create prescriptions. Pharmacists can view and fulfill details.</p>
       </div>
+
+      {linkedAppointmentId && (
+        <p className="muted" style={{ color: 'var(--primary)', marginBottom: 12 }}>
+          Consultation started from Appointment #{linkedAppointmentId}. Saving this prescription will mark it completed.
+        </p>
+      )}
 
       <form onSubmit={onSearchPatient} className="form-row">
         <input

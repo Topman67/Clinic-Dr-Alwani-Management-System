@@ -13,6 +13,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SalesPage } from './pages/SalesPage';
+import { AppointmentsPage } from './pages/AppointmentsPage';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="patients" element={<PatientsPage />} />
+          <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="prescriptions" element={<PrescriptionsPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="payments" element={<PaymentsPage />} />
@@ -36,6 +38,7 @@ function App() {
         <Route path="/receptionist" element={<AppLayout />}>
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="patients" element={<PatientsPage />} />
+          <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="sales" element={<SalesPage />} />
           <Route path="reports" element={<ReportsPage />} />

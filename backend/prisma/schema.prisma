@@ -42,6 +42,19 @@ enum Gender {
   OTHER
 }
 
+enum AppointmentStatus {
+  PENDING
+  ARRIVED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum AppointmentType {
+  NEW
+  FOLLOW_UP
+}
+
 model User {
   userId      Int          @id @default(autoincrement())
   username    String       @unique
@@ -50,6 +63,7 @@ model User {
   status      UserStatus   @default(ACTIVE)
   createdAt   DateTime     @default(now())
   prescriptions Prescription[] @relation("PrescriptionDoctor")
+  appointments Appointment[] @relation("AppointmentDoctor")
   payments    Payment[]    @relation("PaymentRecorder")
   auditLogs   AuditLog[]
 }
@@ -64,6 +78,7 @@ model Patient {
   dateOfBirth   DateTime?
   createdAt     DateTime        @default(now())
   prescriptions Prescription[]
+  appointments  Appointment[]
   payments      Payment[]
 }
 
@@ -87,9 +102,33 @@ model Prescription {
   patientId      Int
   doctor         User       @relation("PrescriptionDoctor", fields: [doctorId], references: [userId])
   doctorId       Int
+  appointment    Appointment? @relation(fields: [appointmentId], references: [appointmentId])
+  appointmentId  Int?
   date           DateTime   @default(now())
   notes          String?
   items          PrescriptionMedicine[]
+  followUps      Appointment[] @relation("AppointmentPreviousPrescription")
+}
+
+model Appointment {
+  appointmentId           Int                 @id @default(autoincrement())
+  patient                 Patient             @relation(fields: [patientId], references: [patientId])
+  patientId               Int
+  doctor                  User                @relation("AppointmentDoctor", fields: [doctorId], references: [userId])
+  doctorId                Int
+  dateTime                DateTime
+  status                  AppointmentStatus   @default(PENDING)
+  type                    AppointmentType     @default(NEW)
+  notes                   String?
+  previousPrescription    Prescription?       @relation("AppointmentPreviousPrescription", fields: [previousPrescriptionId], references: [prescriptionId])
+  previousPrescriptionId  Int?
+  prescriptions           Prescription[]
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([patientId])
+  @@index([doctorId, dateTime])
+  @@index([status])
 }
 
 model PrescriptionMedicine {

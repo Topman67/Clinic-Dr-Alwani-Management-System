@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { AppointmentStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
 
@@ -6,9 +7,10 @@ const isNonEmptyText = (value: unknown) => typeof value === 'string' && value.tr
 const WALKIN_CUSTOMER_PREFIX = 'WALKIN-';
 
 export const createPrescription = async (req: Request, res: Response) => {
-  const { patientId, doctorId, notes, items } = req.body as {
+  const { patientId, doctorId, appointmentId, notes, items } = req.body as {
     patientId: number;
     doctorId: number;
+    appointmentId?: number;
     notes?: string;
     items: { medicineId: number; dosage: string; frequency: string; duration: string; qty: number }[];
   };
@@ -19,6 +21,10 @@ export const createPrescription = async (req: Request, res: Response) => {
 
   if (!Number.isInteger(doctorId) || doctorId <= 0) {
     return res.status(400).json({ message: 'Incomplete prescription data.' });
+  }
+
+  if (appointmentId !== undefined && (!Number.isInteger(appointmentId) || appointmentId <= 0)) {
+    return res.status(400).json({ message: 'Invalid appointment reference.' });
   }
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -54,16 +60,43 @@ export const createPrescription = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Incomplete prescription data.' });
   }
 
-  const prescription = await prisma.prescription.create({
-    data: {
-      patientId,
-      doctorId,
-      notes,
-      items: {
-        create: items.map((it) => ({ ...it })),
+  if (appointmentId !== undefined) {
+    const appointment = await prisma.appointment.findUnique({ where: { appointmentId } });
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found.' });
+    }
+
+    if (appointment.patientId !== patientId) {
+      return res.status(400).json({ message: 'Appointment does not match selected patient.' });
+    }
+
+    if (appointment.status === AppointmentStatus.CANCELLED || appointment.status === AppointmentStatus.NO_SHOW) {
+      return res.status(400).json({ message: 'Cannot create prescription for cancelled or no-show appointment.' });
+    }
+  }
+
+  const prescription = await prisma.$transaction(async (tx) => {
+    const created = await tx.prescription.create({
+      data: {
+        patientId,
+        doctorId,
+        appointmentId,
+        notes,
+        items: {
+          create: items.map((it) => ({ ...it })),
+        },
       },
-    },
-    include: { items: true },
+      include: { items: true },
+    });
+
+    if (appointmentId !== undefined) {
+      await tx.appointment.update({
+        where: { appointmentId },
+        data: { status: AppointmentStatus.COMPLETED },
+      });
+    }
+
+    return created;
   });
 
   res.status(201).json(prescription);
