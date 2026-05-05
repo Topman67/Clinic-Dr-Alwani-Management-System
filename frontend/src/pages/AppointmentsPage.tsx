@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 
 type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 type AppointmentType = 'NEW' | 'FOLLOW_UP';
@@ -91,11 +92,8 @@ export const AppointmentsPage = () => {
   const [dateFilter, setDateFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [queryFilter, setQueryFilter] = useState('');
-
-  const [patientSearch, setPatientSearch] = useState('');
-  const [matchedPatients, setMatchedPatients] = useState<Patient[]>([]);
-  const [selectedPatientId, setSelectedPatientId] = useState<number | ''>('');
+  const [selectedPatientFilter, setSelectedPatientFilter] = useState<PatientAutocompleteOption | null>(null);
+  const [selectedBookingPatient, setSelectedBookingPatient] = useState<PatientAutocompleteOption | null>(null);
   const [appointmentDateTime, setAppointmentDateTime] = useState(() => toDateTimeLocalInput(new Date(Date.now() + 30 * 60000)));
   const [appointmentNotes, setAppointmentNotes] = useState('');
   const [newPatientForm, setNewPatientForm] = useState<NewPatientForm>(initialNewPatientForm);
@@ -116,7 +114,7 @@ export const AppointmentsPage = () => {
           date: dateFilter || undefined,
           status: statusFilter || undefined,
           type: typeFilter || undefined,
-          query: queryFilter.trim() || undefined,
+          patientId: selectedPatientFilter?.patientId,
         },
       });
       setAppointments(response.data as Appointment[]);
@@ -125,7 +123,7 @@ export const AppointmentsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [dateFilter, queryFilter, statusFilter, typeFilter]);
+  }, [dateFilter, selectedPatientFilter, statusFilter, typeFilter]);
 
   useEffect(() => {
     void loadAppointments();
@@ -139,33 +137,6 @@ export const AppointmentsPage = () => {
 
   const pendingCount = useMemo(() => appointments.filter((a) => a.status === 'PENDING').length, [appointments]);
   const arrivedCount = useMemo(() => appointments.filter((a) => a.status === 'ARRIVED').length, [appointments]);
-
-  const searchPatient = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    const query = patientSearch.trim();
-    if (!query) {
-      setMatchedPatients([]);
-      setSelectedPatientId('');
-      return;
-    }
-
-    try {
-      const response = await api.get('/patients', { params: { query } });
-      const list = response.data as Patient[];
-      setMatchedPatients(list);
-      if (list.length > 0) {
-        setSelectedPatientId(list[0].patientId);
-        setShowCreatePatientForm(false);
-      } else {
-        setSelectedPatientId('');
-        setShowCreatePatientForm(true);
-      }
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Failed to search patient records'));
-    }
-  };
 
   const onCreatePatient = async (e: FormEvent) => {
     e.preventDefault();
@@ -186,10 +157,8 @@ export const AppointmentsPage = () => {
         phone: newPatientForm.phone.trim(),
         address: newPatientForm.address.trim(),
       });
-
       const created = response.data as Patient;
-      setMatchedPatients([created]);
-      setSelectedPatientId(created.patientId);
+      setSelectedBookingPatient(created);
       setShowCreatePatientForm(false);
       setSuccess('New patient registered and selected for appointment.');
       setNewPatientForm(initialNewPatientForm);
@@ -205,7 +174,7 @@ export const AppointmentsPage = () => {
     setError(null);
     setSuccess(null);
 
-    if (!selectedPatientId) {
+    if (!selectedBookingPatient?.patientId) {
       setError('Please select a patient first.');
       return;
     }
@@ -214,7 +183,7 @@ export const AppointmentsPage = () => {
     try {
       const createdDate = toDateInput(new Date(appointmentDateTime));
       await api.post('/appointments', {
-        patientId: selectedPatientId,
+        patientId: selectedBookingPatient.patientId,
         dateTime: new Date(appointmentDateTime).toISOString(),
         notes: appointmentNotes.trim() || undefined,
       });
@@ -246,13 +215,13 @@ export const AppointmentsPage = () => {
     setSuccess(null);
     try {
       const response = await api.post(`/appointments/${appointmentId}/start-consultation`);
-      const payload = response.data as { openPrescriptionWith?: { patientId: number; appointmentId: number } };
-      const info = payload.openPrescriptionWith;
+      const payload = response.data as { openConsultationWith?: { patientId: number; appointmentId: number; consultationId: number } };
+      const info = payload.openConsultationWith;
       if (!info) {
         setError('Unable to start consultation for this appointment.');
         return;
       }
-      navigate(`/doctor/prescriptions?patientId=${info.patientId}&appointmentId=${info.appointmentId}`);
+      navigate(`/doctor/consultations?consultationId=${info.consultationId}`);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to start consultation'));
     }
@@ -346,10 +315,10 @@ export const AppointmentsPage = () => {
           <option value="NEW">New</option>
           <option value="FOLLOW_UP">Follow-up</option>
         </select>
-        <input
-          value={queryFilter}
-          onChange={(e) => setQueryFilter(e.target.value)}
-          placeholder="Search name / IC / phone"
+        <PatientAutocomplete
+          selectedPatient={selectedPatientFilter}
+          onSelect={setSelectedPatientFilter}
+          placeholder="Search patient name / IC / phone"
         />
         <button type="submit" className="btn-secondary" disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
@@ -363,13 +332,17 @@ export const AppointmentsPage = () => {
             <p className="muted">Find patient first. If not found, register directly and continue booking.</p>
           </div>
 
-          <form onSubmit={searchPatient} className="form-row">
-            <input
-              value={patientSearch}
-              onChange={(e) => setPatientSearch(e.target.value)}
-              placeholder="Search by name / IC / phone"
+          <div className="form-row">
+            <PatientAutocomplete
+              selectedPatient={selectedBookingPatient}
+              onSelect={(patient) => {
+                setSelectedBookingPatient(patient);
+                if (patient) {
+                  setShowCreatePatientForm(false);
+                }
+              }}
+              placeholder="Search patient by name / IC / phone"
             />
-            <button type="submit" className="btn-secondary">Find Patient</button>
             <button
               type="button"
               className="btn-secondary"
@@ -377,22 +350,7 @@ export const AppointmentsPage = () => {
             >
               {showCreatePatientForm ? 'Hide Register Form' : 'Register New Patient'}
             </button>
-          </form>
-
-          {matchedPatients.length > 0 && (
-            <div className="form-row" style={{ marginTop: 10 }}>
-              <select
-                value={selectedPatientId}
-                onChange={(e) => setSelectedPatientId(e.target.value ? Number(e.target.value) : '')}
-              >
-                {matchedPatients.map((p) => (
-                  <option key={p.patientId} value={p.patientId}>
-                    {p.name} — {p.icOrPassport} / {p.phone}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          </div>
 
           {showCreatePatientForm && (
             <form onSubmit={onCreatePatient} className="form-grid" style={{ marginTop: 10 }}>

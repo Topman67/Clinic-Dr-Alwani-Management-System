@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
+import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -16,6 +17,7 @@ type Patient = {
   dateOfBirth: string | null;
   _count?: {
     prescriptions: number;
+    consultations: number;
     payments: number;
   };
 };
@@ -26,6 +28,14 @@ type PatientDetails = Patient & {
     date: string;
     notes?: string | null;
     doctor?: { username: string; role: string };
+  }>;
+  consultations: Array<{
+    consultationId: number;
+    createdAt: string;
+    status: string;
+    diagnosis?: string | null;
+    doctor?: { username: string; role: string };
+    prescription?: { prescriptionId: number; date: string } | null;
   }>;
   payments: Array<{
     paymentId: number;
@@ -86,7 +96,7 @@ export const PatientsPage = () => {
   const canManage = role === 'RECEPTIONIST';
 
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [query, setQuery] = useState('');
+  const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
   const [form, setForm] = useState<PatientForm>(initialForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
@@ -97,12 +107,10 @@ export const PatientsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const activeSearch = query.trim();
-
-  const loadPatients = useCallback(async (q = '') => {
+  const loadPatients = useCallback(async (patientId?: number) => {
     setLoading(true);
     try {
-      const response = await api.get('/patients', { params: { query: q } });
+      const response = await api.get('/patients', { params: { patientId } });
       setPatients(response.data as Patient[]);
     } catch {
       setError('Failed to load patients');
@@ -117,9 +125,9 @@ export const PatientsPage = () => {
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
-      void loadPatients(query);
+      void loadPatients(selectedFilterPatient?.patientId);
     });
-  }, [loadPatients, query]);
+  }, [loadPatients, selectedFilterPatient]);
 
   const loadPatientDetails = useCallback(async (patientId: number) => {
     setDetailsLoading(true);
@@ -135,7 +143,7 @@ export const PatientsPage = () => {
   }, []);
 
   const visitedStats = useMemo(() => {
-    const visitedCount = patients.filter((p) => ((p._count?.payments ?? 0) + (p._count?.prescriptions ?? 0)) > 0).length;
+    const visitedCount = patients.filter((p) => ((p._count?.payments ?? 0) + (p._count?.prescriptions ?? 0) + (p._count?.consultations ?? 0)) > 0).length;
     return {
       total: patients.length,
       visitedCount,
@@ -158,7 +166,7 @@ export const PatientsPage = () => {
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    await loadPatients(query);
+    await loadPatients(selectedFilterPatient?.patientId);
   };
 
   const onSubmit = async (e: FormEvent) => {
@@ -194,7 +202,7 @@ export const PatientsPage = () => {
       }
       setForm(initialForm);
       setEditingId(null);
-      await loadPatients(query);
+      await loadPatients(selectedFilterPatient?.patientId);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to save patient'));
     } finally {
@@ -246,10 +254,18 @@ export const PatientsPage = () => {
       </div>
 
       <form onSubmit={onSearch} className="form-row">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by IC/ID or phone (or name)"
+        <PatientAutocomplete
+          selectedPatient={selectedFilterPatient}
+          onSelect={(patient) => {
+            setSelectedFilterPatient(patient);
+            setSelectedPatient(null);
+            setSelectedPatientId(null);
+            void loadPatients(patient?.patientId);
+            if (patient) {
+              void loadPatientDetails(patient.patientId);
+            }
+          }}
+          placeholder="Search patient by name / IC / phone"
         />
         <button type="submit" className="btn-secondary">Search</button>
       </form>
@@ -345,7 +361,7 @@ export const PatientsPage = () => {
                 <td>{patient.name}</td>
                 <td>{patient.icOrPassport}</td>
                 <td>{patient.phone}</td>
-                <td>{((patient._count?.payments ?? 0) + (patient._count?.prescriptions ?? 0)) > 0 ? 'Yes' : 'No'}</td>
+                <td>{((patient._count?.payments ?? 0) + (patient._count?.prescriptions ?? 0) + (patient._count?.consultations ?? 0)) > 0 ? 'Yes' : 'No'}</td>
                 <td>
                   <button type="button" className="btn-secondary" onClick={() => void onSelectPatient(patient)}>
                     {canManage ? 'Edit / View' : 'View Details'}
@@ -372,7 +388,7 @@ export const PatientsPage = () => {
               </div>
               <div>
                 <dt>Visited</dt>
-                <dd>{((patient._count?.payments ?? 0) + (patient._count?.prescriptions ?? 0)) > 0 ? 'Yes' : 'No'}</dd>
+                <dd>{((patient._count?.payments ?? 0) + (patient._count?.prescriptions ?? 0) + (patient._count?.consultations ?? 0)) > 0 ? 'Yes' : 'No'}</dd>
               </div>
             </dl>
             <div className="action-row" style={{ marginTop: 10 }}>
@@ -408,6 +424,7 @@ export const PatientsPage = () => {
 
           <div className="stats-row">
             <div className="stat-chip">Prescriptions: {selectedPatient.prescriptions.length}</div>
+            <div className="stat-chip">Consultations: {selectedPatient.consultations.length}</div>
             <div className="stat-chip">Payments: {selectedPatient.payments.length}</div>
           </div>
 
@@ -421,6 +438,17 @@ export const PatientsPage = () => {
                 </tr>
               </thead>
               <tbody>
+                {selectedPatient.consultations.map((item) => (
+                  <tr key={`c-${item.consultationId}`}>
+                    <td>Consultation</td>
+                    <td>{new Date(item.createdAt).toLocaleString()}</td>
+                    <td>
+                      {item.status}
+                      {item.diagnosis ? ` - ${item.diagnosis}` : ''}
+                      {item.prescription?.prescriptionId ? ` - Prescription #${item.prescription.prescriptionId}` : ''}
+                    </td>
+                  </tr>
+                ))}
                 {selectedPatient.prescriptions.map((item) => (
                   <tr key={`p-${item.prescriptionId}`}>
                     <td>Prescription</td>
@@ -438,7 +466,7 @@ export const PatientsPage = () => {
                     </td>
                   </tr>
                 ))}
-                {selectedPatient.prescriptions.length === 0 && selectedPatient.payments.length === 0 && (
+                {selectedPatient.consultations.length === 0 && selectedPatient.prescriptions.length === 0 && selectedPatient.payments.length === 0 && (
                   <tr>
                     <td colSpan={3}>No visit history yet.</td>
                   </tr>
@@ -449,7 +477,7 @@ export const PatientsPage = () => {
         </section>
       )}
 
-      {!loading && patients.length === 0 && activeSearch && (
+      {!loading && patients.length === 0 && selectedFilterPatient && (
         <p className="muted">No record found</p>
       )}
     </section>

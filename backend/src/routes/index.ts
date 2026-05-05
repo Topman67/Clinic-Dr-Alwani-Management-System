@@ -8,6 +8,7 @@ import paymentRoutes from './payments';
 import reportRoutes from './reports';
 import auditRoutes from './audit';
 import appointmentRoutes from './appointments';
+import consultationRoutes from './consultations';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -19,5 +20,6 @@ router.use('/payments', paymentRoutes);
 router.use('/reports', reportRoutes);
 router.use('/audit-logs', auditRoutes);
 router.use('/appointments', appointmentRoutes);
+router.use('/consultations', consultationRoutes);
 
 export default router;

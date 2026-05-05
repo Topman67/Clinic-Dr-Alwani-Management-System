@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
+import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 
 type Patient = {
   patientId: number;
@@ -103,11 +104,10 @@ export const PaymentsPage = () => {
   const isDoctor = role === 'DOCTOR';
   const isReceptionist = role === 'RECEPTIONIST';
 
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [patientSearch, setPatientSearch] = useState('');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [form, setForm] = useState<PaymentForm>(initialForm);
-  const [queryPatientId, setQueryPatientId] = useState<number | ''>('');
+  const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
+  const [selectedFormPatient, setSelectedFormPatient] = useState<PatientAutocompleteOption | null>(null);
   const [queryType, setQueryType] = useState<PaymentType | ''>('');
   const [queryDateFrom, setQueryDateFrom] = useState('');
   const [queryDateTo, setQueryDateTo] = useState('');
@@ -135,11 +135,6 @@ export const PaymentsPage = () => {
     }
     return fallback;
   };
-
-  const loadPatients = useCallback(async (q = '') => {
-    const response = await api.get('/patients', { params: { query: q || undefined } });
-    setPatients(response.data as Patient[]);
-  }, []);
 
   const loadWalkInMedicines = useCallback(async () => {
     if (!isReceptionist) {
@@ -182,17 +177,16 @@ export const PaymentsPage = () => {
 
   const buildCurrentFilters = useCallback(() => {
     return {
-      patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
+      patientId: selectedFilterPatient?.patientId,
       type: queryType || undefined,
       dateFrom: queryDateFrom || undefined,
       dateTo: queryDateTo || undefined,
     };
-  }, [queryDateFrom, queryDateTo, queryPatientId, queryType]);
+  }, [queryDateFrom, queryDateTo, queryType, selectedFilterPatient]);
 
   useEffect(() => {
     void (async () => {
       try {
-        await loadPatients();
         if (isDoctor) {
           await loadPayments();
         }
@@ -203,13 +197,12 @@ export const PaymentsPage = () => {
         setError('Failed to load required data');
       }
     })();
-  }, [isDoctor, isReceptionist, loadPatients, loadPayments, loadWalkInMedicines]);
+  }, [isDoctor, isReceptionist, loadPayments, loadWalkInMedicines]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
       void (async () => {
         try {
-          await loadPatients(patientSearch);
           if (isDoctor) {
             await loadPayments(buildCurrentFilters());
           }
@@ -221,12 +214,7 @@ export const PaymentsPage = () => {
         }
       })();
     });
-  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPatients, loadPayments, loadWalkInMedicines, patientSearch]);
-
-  const selectedPatient = useMemo(() => {
-    if (!form.patientId) return null;
-    return patients.find((p) => p.patientId === form.patientId) ?? null;
-  }, [form.patientId, patients]);
+  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPayments, loadWalkInMedicines]);
 
   const validatePaymentForm = () => {
     const nextErrors: Record<string, boolean> = {};
@@ -238,28 +226,9 @@ export const PaymentsPage = () => {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const onSearchPatients = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    try {
-      const response = await api.get('/patients', { params: { query: patientSearch || undefined } });
-      const result = response.data as Patient[];
-      setPatients(result);
-
-      if (patientSearch.trim() && result.length === 0) {
-        setError('Patient record not found.');
-        setForm(initialForm);
-        setFieldErrors({});
-        return;
-      }
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Failed to search patients'));
-    }
-  };
-
   const onCancelPayment = () => {
     setForm(initialForm);
+    setSelectedFormPatient(null);
     setFieldErrors({});
     setError(null);
     setSuccess(null);
@@ -406,6 +375,7 @@ export const PaymentsPage = () => {
       setSuccess(data.message || 'Payment Successful');
       setSelectedPayment(createdPayment);
       setForm(initialForm);
+      setSelectedFormPatient(null);
       setFieldErrors({});
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to record payment'));
@@ -427,17 +397,19 @@ export const PaymentsPage = () => {
 
       {isDoctor && (
         <form onSubmit={onSearch} className="filters-grid">
-          <select
-            value={queryPatientId}
-            onChange={(e) => setQueryPatientId(e.target.value ? Number(e.target.value) : '')}
-          >
-            <option value="">All patients</option>
-            {patients.map((p) => (
-              <option key={p.patientId} value={p.patientId}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <PatientAutocomplete
+            selectedPatient={selectedFilterPatient}
+            onSelect={(patient) => {
+              setSelectedFilterPatient(patient);
+              void loadPayments({
+                patientId: patient?.patientId,
+                type: queryType || undefined,
+                dateFrom: queryDateFrom || undefined,
+                dateTo: queryDateTo || undefined,
+              });
+            }}
+            placeholder="Filter payments by patient"
+          />
 
           <select value={queryType} onChange={(e) => setQueryType((e.target.value as PaymentType | '') || '')}>
             <option value="">All types</option>
@@ -492,15 +464,6 @@ export const PaymentsPage = () => {
 
           {receptionMode === 'STANDARD' && (
             <>
-              <form onSubmit={onSearchPatients} className="form-row" style={{ marginTop: 14 }}>
-                <input
-                  value={patientSearch}
-                  onChange={(e) => setPatientSearch(e.target.value)}
-                  placeholder="Search patient by name / IC / phone"
-                />
-                <button type="submit" className="btn-secondary">Search Patient</button>
-              </form>
-
               <form onSubmit={onSubmit} className="form-grid" style={{ marginTop: 14 }}>
                 <div className="section-head">
                   <h3>Record Payment</h3>
@@ -508,11 +471,11 @@ export const PaymentsPage = () => {
 
                 <div className="payments-grid">
                   <div className="field-block">
-                    <select
-                      value={form.patientId || ''}
-                      onChange={(e) => {
-                        const patientId = Number(e.target.value) || 0;
-                        setForm((prev) => ({ ...prev, patientId }));
+                    <PatientAutocomplete
+                      selectedPatient={selectedFormPatient}
+                      onSelect={(patient) => {
+                        setSelectedFormPatient(patient);
+                        setForm((prev) => ({ ...prev, patientId: patient?.patientId ?? 0 }));
                         setFieldErrors((prev) => {
                           if (!prev.patientId) return prev;
                           const next = { ...prev };
@@ -520,17 +483,11 @@ export const PaymentsPage = () => {
                           return next;
                         });
                       }}
-                      className={fieldErrors.patientId ? 'field-invalid' : undefined}
+                      placeholder="Search patient by name / IC / phone"
+                      invalid={Boolean(fieldErrors.patientId)}
+                      helperText="Patient selection is required."
                       required
-                    >
-                      <option value="">Select patient</option>
-                      {patients.map((p) => (
-                        <option key={p.patientId} value={p.patientId}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    {fieldErrors.patientId && <small className="field-helper">Patient selection is required.</small>}
+                    />
                   </div>
 
                   <select
@@ -588,25 +545,25 @@ export const PaymentsPage = () => {
                   maxLength={500}
                 />
 
-                {selectedPatient && (
+                {selectedFormPatient && (
                   <div className="report-card">
                     <h4 style={{ marginTop: 0 }}>Patient Details</h4>
                     <dl className="kv">
                       <div>
                         <dt>Name</dt>
-                        <dd>{selectedPatient.name}</dd>
+                        <dd>{selectedFormPatient.name}</dd>
                       </div>
                       <div>
                         <dt>IC / Passport</dt>
-                        <dd>{selectedPatient.icOrPassport || '-'}</dd>
+                        <dd>{selectedFormPatient.icOrPassport || '-'}</dd>
                       </div>
                       <div>
                         <dt>Phone</dt>
-                        <dd>{selectedPatient.phone || '-'}</dd>
+                        <dd>{selectedFormPatient.phone || '-'}</dd>
                       </div>
                       <div>
                         <dt>Address</dt>
-                        <dd>{selectedPatient.address || '-'}</dd>
+                        <dd>{selectedFormPatient.address || '-'}</dd>
                       </div>
                     </dl>
                   </div>

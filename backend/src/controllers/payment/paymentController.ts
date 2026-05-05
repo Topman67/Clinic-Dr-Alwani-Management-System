@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
-import { PaymentMethod, PaymentStatus, PaymentType, Prisma } from '@prisma/client';
+import { MedicineApprovalStatus, PaymentMethod, PaymentStatus, PaymentType, Prisma } from '@prisma/client';
 import { generateReceiptNo } from '../../utils/receipt';
 import { logActivity } from '../../utils/audit';
 
@@ -146,6 +146,7 @@ const parseWalkInItems = (value: unknown): Array<{ medicineId: number; qty: numb
 export const listWalkInMedicines = async (_req: Request, res: Response) => {
   const medicines = await prisma.medicine.findMany({
     where: {
+      approvalStatus: MedicineApprovalStatus.APPROVED,
       quantity: { gt: 0 },
     },
     select: {
@@ -238,6 +239,7 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
   const medicines = await prisma.medicine.findMany({
     where: {
       medicineId: { in: medicineIds },
+      approvalStatus: MedicineApprovalStatus.APPROVED,
     },
     select: {
       medicineId: true,

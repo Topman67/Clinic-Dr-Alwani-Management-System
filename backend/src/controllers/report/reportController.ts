@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
-import { PaymentType } from '@prisma/client';
+import { MedicineApprovalStatus, PaymentType } from '@prisma/client';
 
 const parseDateRange = (dateFrom?: string, dateTo?: string) => {
   const from = dateFrom ? new Date(dateFrom) : undefined;
@@ -202,7 +202,13 @@ export const receiptsReport = async (req: Request, res: Response) => {
 };
 
 export const inventoryLowStock = async (_req: Request, res: Response) => {
-  const items = await prisma.medicine.findMany({ where: { quantity: { lt: 10 } }, orderBy: { quantity: 'asc' } });
+  const items = await prisma.medicine.findMany({
+    where: {
+      approvalStatus: MedicineApprovalStatus.APPROVED,
+      quantity: { lt: 10 },
+    },
+    orderBy: { quantity: 'asc' },
+  });
   res.json(items);
 };
 
@@ -211,7 +217,10 @@ export const inventoryExpiring = async (req: Request, res: Response) => {
   const now = new Date();
   const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   const items = await prisma.medicine.findMany({
-    where: { expiryDate: { lte: cutoff } },
+    where: {
+      approvalStatus: MedicineApprovalStatus.APPROVED,
+      expiryDate: { lte: cutoff },
+    },
     orderBy: { expiryDate: 'asc' },
   });
   res.json(items);

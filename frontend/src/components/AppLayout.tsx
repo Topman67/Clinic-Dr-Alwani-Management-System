@@ -11,6 +11,7 @@ const moduleIcons: Record<string, string> = {
   users: '👥',
   patients: '🧑‍⚕️',
   appointments: '📅',
+  consultations: '🩺',
   prescriptions: '📝',
   inventory: '📦',
   payments: '💳',

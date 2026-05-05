@@ -55,6 +55,18 @@ enum AppointmentType {
   FOLLOW_UP
 }
 
+enum ConsultationStatus {
+  WAITING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum MedicineApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   userId      Int          @id @default(autoincrement())
   username    String       @unique
@@ -64,6 +76,7 @@ model User {
   createdAt   DateTime     @default(now())
   prescriptions Prescription[] @relation("PrescriptionDoctor")
   appointments Appointment[] @relation("AppointmentDoctor")
+  consultations Consultation[] @relation("ConsultationDoctor")
   payments    Payment[]    @relation("PaymentRecorder")
   auditLogs   AuditLog[]
 }
@@ -79,19 +92,30 @@ model Patient {
   createdAt     DateTime        @default(now())
   prescriptions Prescription[]
   appointments  Appointment[]
+  consultations Consultation[]
   payments      Payment[]
 }
 
 model Medicine {
-  medicineId  Int       @id @default(autoincrement())
-  name        String
-  batchNumber String
-  quantity    Int
-  expiryDate  DateTime
-  price       Decimal   @db.Decimal(10,2)
-  createdAt   DateTime  @default(now())
+  medicineId          Int                    @id @default(autoincrement())
+  name                String
+  batchNumber         String
+  quantity            Int
+  expiryDate          DateTime
+  price               Decimal                @db.Decimal(10,2)
+  approvalStatus      MedicineApprovalStatus @default(PENDING)
+  requestedById       Int?
+  requestedByUsername String?
+  approvedById        Int?
+  approvedByUsername  String?
+  approvedAt          DateTime?
+  rejectedById        Int?
+  rejectedByUsername  String?
+  rejectedAt          DateTime?
+  rejectionReason     String?
+  createdAt           DateTime               @default(now())
   prescriptionItems PrescriptionMedicine[]
-  saleItems   PaymentMedicineItem[]
+  saleItems           PaymentMedicineItem[]
 
   @@unique([name, batchNumber])
 }
@@ -102,12 +126,39 @@ model Prescription {
   patientId      Int
   doctor         User       @relation("PrescriptionDoctor", fields: [doctorId], references: [userId])
   doctorId       Int
+  consultation   Consultation? @relation(fields: [consultationId], references: [consultationId])
+  consultationId Int?      @unique
   appointment    Appointment? @relation(fields: [appointmentId], references: [appointmentId])
   appointmentId  Int?
   date           DateTime   @default(now())
   notes          String?
   items          PrescriptionMedicine[]
   followUps      Appointment[] @relation("AppointmentPreviousPrescription")
+}
+
+model Consultation {
+  consultationId    Int                 @id @default(autoincrement())
+  patient           Patient             @relation(fields: [patientId], references: [patientId])
+  patientId         Int
+  appointment       Appointment?        @relation(fields: [appointmentId], references: [appointmentId])
+  appointmentId     Int?
+  doctor            User                @relation("ConsultationDoctor", fields: [doctorId], references: [userId])
+  doctorId          Int                 @default(1)
+  symptoms          String?
+  diagnosis         String?
+  consultationNotes String?
+  temperature       String?
+  bloodPressure     String?
+  weight            String?
+  status            ConsultationStatus  @default(WAITING)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  prescription      Prescription?
+
+  @@index([patientId])
+  @@index([appointmentId])
+  @@index([doctorId, status])
+  @@index([createdAt])
 }
 
 model Appointment {
@@ -123,6 +174,7 @@ model Appointment {
   previousPrescription    Prescription?       @relation("AppointmentPreviousPrescription", fields: [previousPrescriptionId], references: [prescriptionId])
   previousPrescriptionId  Int?
   prescriptions           Prescription[]
+  consultations           Consultation[]
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
 

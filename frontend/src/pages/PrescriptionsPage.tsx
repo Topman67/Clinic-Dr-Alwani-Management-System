@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 
 type Patient = {
   patientId: number;
@@ -40,9 +41,11 @@ type Prescription = {
   prescriptionId: number;
   patientId: number;
   doctorId: number;
+  consultationId?: number | null;
   date: string;
   notes?: string | null;
   patient?: { name: string };
+  consultation?: { consultationId: number; diagnosis?: string | null } | null;
   items: PrescriptionItem[];
 };
 
@@ -125,12 +128,10 @@ export const PrescriptionsPage = () => {
   const canViewDetails = role === 'DOCTOR' || role === 'PHARMACIST';
 
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [matchedPatients, setMatchedPatients] = useState<Patient[]>([]);
-  const [patientSearchInput, setPatientSearchInput] = useState('');
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [queryPatientId, setQueryPatientId] = useState<number | ''>('');
-  const [selectedPatientId, setSelectedPatientId] = useState<number | ''>('');
+  const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
+  const [selectedFormPatient, setSelectedFormPatient] = useState<PatientAutocompleteOption | null>(null);
   const [selectedPatientDetails, setSelectedPatientDetails] = useState<PatientDetails | null>(null);
   const [queryDateFrom, setQueryDateFrom] = useState('');
   const [queryDateTo, setQueryDateTo] = useState('');
@@ -139,15 +140,16 @@ export const PrescriptionsPage = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
-  const [patientLookupLoading, setPatientLookupLoading] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [linkedAppointmentId, setLinkedAppointmentId] = useState<number | null>(null);
+  const [linkedConsultationId, setLinkedConsultationId] = useState<number | null>(null);
 
   const doctorId = useMemo(() => parseUserIdFromToken(sessionStorage.getItem('cms_token')), []);
   const initialPatientIdFromQuery = useMemo(() => Number(searchParams.get('patientId') || 0), [searchParams]);
   const initialAppointmentIdFromQuery = useMemo(() => Number(searchParams.get('appointmentId') || 0), [searchParams]);
+  const initialConsultationIdFromQuery = useMemo(() => Number(searchParams.get('consultationId') || 0), [searchParams]);
 
   const filterPatientsForRole = useCallback(
     (list: Patient[]) => {
@@ -155,6 +157,13 @@ export const PrescriptionsPage = () => {
       return list.filter((p) => p.icOrPassport !== WALKIN_CUSTOMER_IC);
     },
     [isDoctor],
+  );
+
+  const findPatientOptionById = useCallback(
+    (patientId: number) => {
+      return patients.find((patient) => patient.patientId === patientId) ?? null;
+    },
+    [patients],
   );
 
   const loadLookups = useCallback(async () => {
@@ -210,92 +219,84 @@ export const PrescriptionsPage = () => {
     return subscribeInAppDataSync(() => {
       void (async () => {
         await loadLookups();
-        if (selectedPatientId !== '') {
-          await loadPatientDetails(Number(selectedPatientId));
+        if (selectedFilterPatient?.patientId) {
+          await loadPatientDetails(selectedFilterPatient.patientId);
         }
         await loadPrescriptions({
-          patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
+          patientId: selectedFilterPatient?.patientId,
           dateFrom: queryDateFrom || undefined,
           dateTo: queryDateTo || undefined,
         });
       })();
     });
-  }, [loadLookups, loadPatientDetails, loadPrescriptions, queryDateFrom, queryDateTo, queryPatientId, selectedPatientId]);
+  }, [loadLookups, loadPatientDetails, loadPrescriptions, queryDateFrom, queryDateTo, selectedFilterPatient]);
 
   useEffect(() => {
-    if (!canCreate) return;
-    if (initialPatientIdFromQuery <= 0 || initialAppointmentIdFromQuery <= 0) return;
+    if (initialPatientIdFromQuery <= 0) return;
 
-    setSelectedPatientId(initialPatientIdFromQuery);
-    setQueryPatientId(initialPatientIdFromQuery);
+    const patient = findPatientOptionById(initialPatientIdFromQuery);
+    if (!patient) return;
+
+    setSelectedFilterPatient(patient);
+    setSelectedFormPatient(patient);
     setForm((prev) => ({ ...prev, patientId: initialPatientIdFromQuery }));
-    setLinkedAppointmentId(initialAppointmentIdFromQuery);
     void loadPatientDetails(initialPatientIdFromQuery);
     void loadPrescriptions({ patientId: initialPatientIdFromQuery });
+
+    if (canCreate && initialConsultationIdFromQuery > 0) {
+      setLinkedConsultationId(initialConsultationIdFromQuery);
+      setLinkedAppointmentId(initialAppointmentIdFromQuery > 0 ? initialAppointmentIdFromQuery : null);
+    }
   }, [
     canCreate,
+    findPatientOptionById,
     initialAppointmentIdFromQuery,
+    initialConsultationIdFromQuery,
     initialPatientIdFromQuery,
     loadPatientDetails,
     loadPrescriptions,
   ]);
 
-  const onSearchPatient = async (e: FormEvent) => {
-    e.preventDefault();
+  const onFilterPatientChange = async (patient: PatientAutocompleteOption | null) => {
     setError(null);
     setSuccess(null);
-
-    const query = patientSearchInput.trim();
-    if (!query) {
-      setMatchedPatients([]);
+    setSelectedFilterPatient(patient);
+    setSelectedPatientDetails(null);
+    if (!patient) {
+      await loadPrescriptions({
+        dateFrom: queryDateFrom || undefined,
+        dateTo: queryDateTo || undefined,
+      });
       return;
     }
 
-    setPatientLookupLoading(true);
-    try {
-      const response = await api.get('/patients', { params: { query } });
-      const results = filterPatientsForRole(response.data as Patient[]);
-      setMatchedPatients(results);
-      if (results.length === 0) {
-        setError('Patient record not found.');
-        setSelectedPatientId('');
-        setSelectedPatientDetails(null);
-        return;
-      }
-      const nextId = results[0].patientId;
-      setSelectedPatientId(nextId);
-      setQueryPatientId(nextId);
-      if (canCreate) {
-        setForm((prev) => ({ ...prev, patientId: nextId }));
-      }
-      await loadPatientDetails(nextId);
-      await loadPrescriptions({ patientId: nextId });
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Failed to search patient records'));
-    } finally {
-      setPatientLookupLoading(false);
-    }
+    await loadPatientDetails(patient.patientId);
+    await loadPrescriptions({
+      patientId: patient.patientId,
+      dateFrom: queryDateFrom || undefined,
+      dateTo: queryDateTo || undefined,
+    });
   };
 
-  const onSelectPatient = async (patientId: number) => {
-    setSelectedPatientId(patientId);
-    setQueryPatientId(patientId);
-    if (canCreate) {
-      setForm((prev) => ({ ...prev, patientId }));
+  const onFormPatientChange = (patient: PatientAutocompleteOption | null) => {
+    setSelectedFormPatient(patient);
+    setForm((prev) => ({ ...prev, patientId: patient?.patientId ?? 0 }));
+    if (canCreate && patient) {
       if (linkedAppointmentId) {
         setLinkedAppointmentId(null);
-        setSearchParams({});
       }
+      if (linkedConsultationId) {
+        setLinkedConsultationId(null);
+      }
+      setSearchParams({});
     }
-    await loadPatientDetails(patientId);
-    await loadPrescriptions({ patientId });
   };
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     await loadPrescriptions({
-      patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
+      patientId: selectedFilterPatient?.patientId,
       dateFrom: queryDateFrom || undefined,
       dateTo: queryDateTo || undefined,
     });
@@ -333,7 +334,10 @@ export const PrescriptionsPage = () => {
     }));
   };
 
-  const resetForm = () => setForm(initialForm);
+  const resetForm = () => {
+    setForm(initialForm);
+    setSelectedFormPatient(null);
+  };
 
   const getFieldKey = (idx: number, key: keyof ItemForm) => `item-${idx}-${key}`;
 
@@ -363,6 +367,11 @@ export const PrescriptionsPage = () => {
       return;
     }
 
+    if (!linkedConsultationId) {
+      setError('Create prescriptions from a completed consultation.');
+      return;
+    }
+
     if (!validateForm()) {
       setError('Incomplete prescription data.');
       return;
@@ -373,22 +382,24 @@ export const PrescriptionsPage = () => {
       await api.post('/prescriptions', {
         patientId: form.patientId,
         doctorId,
+        consultationId: linkedConsultationId,
         appointmentId: linkedAppointmentId ?? undefined,
         notes: form.notes || undefined,
         items: form.items,
       });
       resetForm();
       setLinkedAppointmentId(null);
+      setLinkedConsultationId(null);
       setSearchParams({});
       setFieldErrors({});
       setSuccess('Prescription Saved Successfully');
       await loadPrescriptions({
-        patientId: queryPatientId === '' ? undefined : Number(queryPatientId),
+        patientId: selectedFilterPatient?.patientId,
         dateFrom: queryDateFrom || undefined,
         dateTo: queryDateTo || undefined,
       });
-      if (selectedPatientId !== '') {
-        await loadPatientDetails(Number(selectedPatientId));
+      if (selectedFilterPatient?.patientId) {
+        await loadPatientDetails(selectedFilterPatient.patientId);
       }
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to create prescription'));
@@ -404,41 +415,11 @@ export const PrescriptionsPage = () => {
         <p className="muted">Doctors create prescriptions. Pharmacists can view and fulfill details.</p>
       </div>
 
-      {linkedAppointmentId && (
+      {linkedConsultationId && (
         <p className="muted" style={{ color: 'var(--primary)', marginBottom: 12 }}>
-          Consultation started from Appointment #{linkedAppointmentId}. Saving this prescription will mark it completed.
+          Prescription linked to Consultation #{linkedConsultationId}
+          {linkedAppointmentId ? ` and Appointment #${linkedAppointmentId}` : ''}.
         </p>
-      )}
-
-      <form onSubmit={onSearchPatient} className="form-row">
-        <input
-          value={patientSearchInput}
-          onChange={(e) => setPatientSearchInput(e.target.value)}
-          placeholder="Search patient by IC/ID or phone"
-        />
-        <button type="submit" className="btn-secondary" disabled={patientLookupLoading}>
-          {patientLookupLoading ? 'Searching...' : 'Find Patient'}
-        </button>
-      </form>
-
-      {matchedPatients.length > 0 && (
-        <div className="form-row" style={{ marginTop: 10 }}>
-          <select
-            value={selectedPatientId}
-            onChange={(e) => {
-              const nextId = Number(e.target.value) || 0;
-              if (nextId > 0) {
-                void onSelectPatient(nextId);
-              }
-            }}
-          >
-            {matchedPatients.map((p) => (
-              <option key={p.patientId} value={p.patientId}>
-                {p.name} — {p.icOrPassport} / {p.phone}
-              </option>
-            ))}
-          </select>
-        </div>
       )}
 
       {selectedPatientDetails && (
@@ -463,17 +444,13 @@ export const PrescriptionsPage = () => {
       )}
 
       <form onSubmit={onSearch} className="filters-grid">
-        <select
-          value={queryPatientId}
-          onChange={(e) => setQueryPatientId(e.target.value ? Number(e.target.value) : '')}
-        >
-          <option value="">All patients</option>
-          {patients.map((p) => (
-            <option key={p.patientId} value={p.patientId}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <PatientAutocomplete
+          selectedPatient={selectedFilterPatient}
+          onSelect={(patient) => {
+            void onFilterPatientChange(patient);
+          }}
+          placeholder="Filter prescriptions by patient"
+        />
         <input
           type="date"
           value={queryDateFrom}
@@ -494,19 +471,14 @@ export const PrescriptionsPage = () => {
             <div className="section-head">
               <h3>Create Prescription</h3>
             </div>
-          <select
-            value={form.patientId || ''}
-            onChange={(e) => setForm((prev) => ({ ...prev, patientId: Number(e.target.value) || 0 }))}
-            style={fieldErrors.patientId ? { borderColor: 'var(--danger)' } : undefined}
+          <PatientAutocomplete
+            selectedPatient={selectedFormPatient}
+            onSelect={onFormPatientChange}
+            placeholder="Select patient for this prescription"
+            invalid={Boolean(fieldErrors.patientId)}
+            helperText="Patient selection is required."
             required
-          >
-            <option value="">Select patient</option>
-            {patients.map((p) => (
-              <option key={p.patientId} value={p.patientId}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          />
 
           <textarea
             value={form.notes}
@@ -589,6 +561,7 @@ export const PrescriptionsPage = () => {
               <th>Patient</th>
               <th>Notes</th>
               <th>Items</th>
+              <th>Consultation</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -608,6 +581,7 @@ export const PrescriptionsPage = () => {
                     ))}
                   </ul>
                 </td>
+                <td>{p.consultationId ? `#${p.consultationId}` : '-'}</td>
                 <td>
                   {canViewDetails ? (
                     <button type="button" className="btn-secondary" onClick={() => onViewDetails(p.prescriptionId)}>
@@ -635,6 +609,10 @@ export const PrescriptionsPage = () => {
               <div>
                 <dt>Notes</dt>
                 <dd>{p.notes || '-'}</dd>
+              </div>
+              <div>
+                <dt>Consult</dt>
+                <dd>{p.consultationId ? `#${p.consultationId}` : '-'}</dd>
               </div>
             </dl>
             <ul className="mobile-list">
@@ -677,6 +655,10 @@ export const PrescriptionsPage = () => {
                 <div>
                   <dt>Patient</dt>
                   <dd>{selectedPrescription.patient?.name ?? `Patient #${selectedPrescription.patientId}`}</dd>
+                </div>
+                <div>
+                  <dt>Consultation</dt>
+                  <dd>{selectedPrescription.consultationId ? `#${selectedPrescription.consultationId}` : '-'}</dd>
                 </div>
                 <div>
                   <dt>Date</dt>

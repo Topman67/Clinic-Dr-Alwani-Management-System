@@ -14,6 +14,7 @@ import { AuditLogsPage } from './pages/AuditLogsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SalesPage } from './pages/SalesPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
+import { ConsultationsPage } from './pages/ConsultationsPage';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           <Route path="users" element={<UsersPage />} />
           <Route path="patients" element={<PatientsPage />} />
           <Route path="appointments" element={<AppointmentsPage />} />
+          <Route path="consultations" element={<ConsultationsPage />} />
           <Route path="prescriptions" element={<PrescriptionsPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="payments" element={<PaymentsPage />} />

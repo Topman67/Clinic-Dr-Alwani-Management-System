@@ -4,6 +4,8 @@ import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 
+type MedicineApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
 type Medicine = {
   medicineId: number;
   name: string;
@@ -11,6 +13,13 @@ type Medicine = {
   quantity: number;
   expiryDate: string;
   price: number | string;
+  approvalStatus: MedicineApprovalStatus;
+  requestedByUsername?: string | null;
+  approvedByUsername?: string | null;
+  approvedAt?: string | null;
+  rejectedByUsername?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
 };
 
 type MedicineForm = {
@@ -59,18 +68,35 @@ const expiryClass = (expiryDate: string) => {
   return 'status-badge status-good';
 };
 
+const approvalClass = (status: MedicineApprovalStatus) => {
+  if (status === 'APPROVED') return 'status-badge status-good';
+  if (status === 'REJECTED') return 'status-badge status-critical';
+  return 'status-badge status-warning';
+};
+
+const approvalLabel = (status: MedicineApprovalStatus) => {
+  if (status === 'APPROVED') return 'Approved';
+  if (status === 'REJECTED') return 'Rejected';
+  return 'Pending Approval';
+};
+
 export const InventoryPage = () => {
   const { role } = useAuth();
   const canManage = role === 'PHARMACIST';
+  const canApprove = role === 'DOCTOR';
 
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | MedicineApprovalStatus>('ALL');
   const [form, setForm] = useState<MedicineForm>(initialForm);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
+  const [resubmittingId, setResubmittingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -83,11 +109,17 @@ export const InventoryPage = () => {
     return fallback;
   };
 
-  const loadMedicines = useCallback(async (q = '') => {
+  const loadMedicines = useCallback(async (q = '', status: 'ALL' | MedicineApprovalStatus = 'ALL') => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get('/medicine', { params: { query: q } });
+      const response = await api.get('/medicine', {
+        params: {
+          query: q,
+          includePending: true,
+          approvalStatus: status === 'ALL' ? undefined : status,
+        },
+      });
       setMedicines(response.data as Medicine[]);
     } catch {
       setError('Failed to load medicine inventory');
@@ -97,18 +129,18 @@ export const InventoryPage = () => {
   }, []);
 
   useEffect(() => {
-    void loadMedicines();
-  }, [loadMedicines]);
+    void loadMedicines('', statusFilter);
+  }, [loadMedicines, statusFilter]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
-      void loadMedicines(query);
+      void loadMedicines(query, statusFilter);
     });
-  }, [loadMedicines, query]);
+  }, [loadMedicines, query, statusFilter]);
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
-    await loadMedicines(query);
+    await loadMedicines(query, statusFilter);
   };
 
   const validateForm = () => {
@@ -152,18 +184,73 @@ export const InventoryPage = () => {
         await api.put(`/medicine/${editingId}`, form);
         setSuccess('Medicine Updated Successfully');
       } else {
-        await api.post('/medicine', form);
-        setSuccess('Medicine Added Successfully');
+        const response = await api.post('/medicine', form);
+        const data = response.data as { message?: string };
+        setSuccess(data.message || 'Medicine submitted for approval.');
       }
       setForm(initialForm);
       setEditingId(null);
       setFieldErrors({});
       setShowForm(false);
-      await loadMedicines(query);
+      await loadMedicines(query, statusFilter);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to save medicine'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onApprove = async (medicineId: number) => {
+    if (!canApprove) return;
+    setApprovingId(medicineId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await api.patch(`/medicine/${medicineId}/approve`);
+      const data = response.data as { message?: string };
+      setSuccess(data.message || 'Medicine approved successfully.');
+      await loadMedicines(query);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to approve medicine'));
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const onReject = async (medicineId: number) => {
+    if (!canApprove) return;
+    setRejectingId(medicineId);
+    setError(null);
+    setSuccess(null);
+    const rejectionReason = window.prompt('Rejection reason (optional):', '') ?? '';
+    try {
+      const response = await api.patch(`/medicine/${medicineId}/reject`, {
+        rejectionReason: rejectionReason.trim() || undefined,
+      });
+      const data = response.data as { message?: string };
+      setSuccess(data.message || 'Medicine rejected successfully.');
+      await loadMedicines(query, statusFilter);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to reject medicine'));
+    } finally {
+      setRejectingId(null);
+    }
+  };
+
+  const onResubmit = async (medicineId: number) => {
+    if (!canManage) return;
+    setResubmittingId(medicineId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await api.patch(`/medicine/${medicineId}/resubmit`);
+      const data = response.data as { message?: string };
+      setSuccess(data.message || 'Medicine resubmitted for review.');
+      await loadMedicines(query, statusFilter);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to resubmit medicine'));
+    } finally {
+      setResubmittingId(null);
     }
   };
 
@@ -196,7 +283,7 @@ export const InventoryPage = () => {
         setForm(initialForm);
       }
       setSuccess('Medicine Deleted Successfully');
-      await loadMedicines(query);
+      await loadMedicines(query, statusFilter);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to delete medicine'));
     }
@@ -211,8 +298,11 @@ export const InventoryPage = () => {
     setShowForm(false);
   };
 
-  const lowStockCount = useMemo(() => medicines.filter((m) => m.quantity <= 20).length, [medicines]);
-  const expiringSoonCount = useMemo(() => medicines.filter((m) => daysUntil(m.expiryDate) <= 30).length, [medicines]);
+  const pendingMedicines = useMemo(() => medicines.filter((m) => m.approvalStatus === 'PENDING'), [medicines]);
+  const approvedMedicines = useMemo(() => medicines.filter((m) => m.approvalStatus === 'APPROVED'), [medicines]);
+  const rejectedMedicines = useMemo(() => medicines.filter((m) => m.approvalStatus === 'REJECTED'), [medicines]);
+  const lowStockCount = useMemo(() => approvedMedicines.filter((m) => m.quantity <= 20).length, [approvedMedicines]);
+  const expiringSoonCount = useMemo(() => approvedMedicines.filter((m) => daysUntil(m.expiryDate) <= 30).length, [approvedMedicines]);
 
   return (
     <section className="card">
@@ -220,15 +310,17 @@ export const InventoryPage = () => {
         <h1>Manage Inventory</h1>
         <p className="muted">
           {canManage
-            ? 'Pharmacist can add, update, and delete medicine records.'
-            : 'Doctor can view current medicine list, stock quantity, batch number, and expiry date.'}
+            ? 'Pharmacist can submit new medicines and maintain inventory records.'
+            : 'Doctor can review inventory and confirm pending medicine requests.'}
         </p>
       </div>
 
       <div className="stats-row">
-        <div className="stat-chip">Total: {medicines.length}</div>
+        <div className="stat-chip">Approved: {approvedMedicines.length}</div>
+        <div className="stat-chip warning">Pending approval: {pendingMedicines.length}</div>
+        <div className="stat-chip" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}>Rejected: {rejectedMedicines.length}</div>
         <div className="stat-chip warning">Low stock: {lowStockCount}</div>
-        <div className="stat-chip warning">Expiring ≤ 30 days: {expiringSoonCount}</div>
+        <div className="stat-chip warning">Expiring {'<='} 30 days: {expiringSoonCount}</div>
       </div>
 
       <form onSubmit={onSearch} className="form-row" style={{ marginTop: 10 }}>
@@ -237,6 +329,12 @@ export const InventoryPage = () => {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search medicine name / batch"
         />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | MedicineApprovalStatus)}>
+          <option value="ALL">All status</option>
+          <option value="PENDING">Pending</option>
+          <option value="APPROVED">Approved</option>
+          <option value="REJECTED">Rejected</option>
+        </select>
         <button type="submit" className="btn-secondary">Search</button>
       </form>
 
@@ -254,7 +352,7 @@ export const InventoryPage = () => {
                 setSuccess(null);
               }}
             >
-              Add Medicine
+              Submit New Medicine
             </button>
           ) : (
             <button type="button" className="btn-secondary" onClick={onCancelEdit}>
@@ -267,7 +365,8 @@ export const InventoryPage = () => {
       {canManage && showForm && (
         <form onSubmit={onSubmit} className="form-grid" style={{ marginTop: 14 }}>
           <div className="section-head">
-            <h3>{editingId ? 'Update Medicine' : 'Add Medicine'}</h3>
+            <h3>{editingId ? 'Update Medicine' : 'Submit Medicine for Approval'}</h3>
+            {!editingId && <p className="muted">This request will appear on the doctor inventory page for confirmation.</p>}
           </div>
 
           <div className="inventory-grid">
@@ -333,12 +432,74 @@ export const InventoryPage = () => {
           </div>
 
           <div className="action-row">
-            <button type="submit" disabled={saving}>{saving ? 'Saving...' : editingId ? 'Update/Save' : 'Save'}</button>
+            <button type="submit" disabled={saving}>{saving ? 'Saving...' : editingId ? 'Update/Save' : 'Submit Request'}</button>
             <button type="button" className="btn-secondary" onClick={onCancelEdit}>
               Cancel
             </button>
           </div>
         </form>
+      )}
+
+      {canApprove && pendingMedicines.length > 0 && (
+        <section className="card users-subcard" style={{ marginTop: 14 }}>
+          <div className="section-head">
+            <h3>Pending Medicine Requests</h3>
+            <p className="muted">Review pharmacist submissions and confirm them to make them available everywhere else.</p>
+          </div>
+
+          <div className="mobile-cards" style={{ display: 'grid' }}>
+            {pendingMedicines.map((medicine) => (
+              <article key={`pending-${medicine.medicineId}`} className="mobile-card">
+                <h4>{medicine.name}</h4>
+                <dl className="kv">
+                  <div>
+                    <dt>Batch</dt>
+                    <dd>{medicine.batchNumber}</dd>
+                  </div>
+                  <div>
+                    <dt>Stock</dt>
+                    <dd>{medicine.quantity}</dd>
+                  </div>
+                  <div>
+                    <dt>Expiry</dt>
+                    <dd>{toDateInput(medicine.expiryDate) || '-'}</dd>
+                  </div>
+                  <div>
+                    <dt>Price</dt>
+                    <dd>RM {formatMoney(medicine.price)}</dd>
+                  </div>
+                  <div>
+                    <dt>Requested By</dt>
+                    <dd>{medicine.requestedByUsername || '-'}</dd>
+                  </div>
+                  {medicine.rejectionReason && (
+                    <div>
+                      <dt>Reason</dt>
+                      <dd>{medicine.rejectionReason}</dd>
+                    </div>
+                  )}
+                </dl>
+                <div className="action-row" style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    disabled={approvingId === medicine.medicineId}
+                    onClick={() => void onApprove(medicine.medicineId)}
+                  >
+                    {approvingId === medicine.medicineId ? 'Approving...' : 'Confirm Medicine'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={rejectingId === medicine.medicineId}
+                    onClick={() => void onReject(medicine.medicineId)}
+                  >
+                    {rejectingId === medicine.medicineId ? 'Rejecting...' : 'Reject Medicine'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
 
       {error && <p className="error">{error}</p>}
@@ -351,9 +512,11 @@ export const InventoryPage = () => {
             <tr>
               <th>Name</th>
               <th>Batch</th>
+              <th>Status</th>
               <th>Stock</th>
               <th>Expiry</th>
               <th>Price (RM)</th>
+              <th>Approval</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -363,6 +526,9 @@ export const InventoryPage = () => {
                 <td>{medicine.name}</td>
                 <td>{medicine.batchNumber}</td>
                 <td>
+                  <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
+                </td>
+                <td>
                   <span className={stockClass(medicine.quantity)}>{medicine.quantity}</span>
                 </td>
                 <td>
@@ -370,14 +536,55 @@ export const InventoryPage = () => {
                 </td>
                 <td>{formatMoney(medicine.price)}</td>
                 <td>
-                  {canManage ? (
+                  {medicine.approvalStatus === 'APPROVED'
+                    ? `Approved by ${medicine.approvedByUsername || '-'}`
+                    : medicine.approvalStatus === 'REJECTED'
+                      ? `Rejected by ${medicine.rejectedByUsername || '-'}`
+                      : `Requested by ${medicine.requestedByUsername || '-'}`}
+                  {medicine.approvalStatus === 'REJECTED' && medicine.rejectionReason ? ` | Reason: ${medicine.rejectionReason}` : ''}
+                </td>
+                <td>
+                  {canApprove && medicine.approvalStatus === 'PENDING' ? (
+                    <div className="action-row">
+                      <button
+                        type="button"
+                        disabled={approvingId === medicine.medicineId}
+                        onClick={() => void onApprove(medicine.medicineId)}
+                      >
+                        {approvingId === medicine.medicineId ? 'Approving...' : 'Confirm'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        disabled={rejectingId === medicine.medicineId}
+                        onClick={() => void onReject(medicine.medicineId)}
+                      >
+                        {rejectingId === medicine.medicineId ? 'Rejecting...' : 'Reject'}
+                      </button>
+                    </div>
+                  ) : canManage && medicine.approvalStatus === 'REJECTED' ? (
                     <div className="action-row">
                       <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
                         Edit
                       </button>
-                      <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
-                        Delete
+                      <button
+                        type="button"
+                        disabled={resubmittingId === medicine.medicineId}
+                        onClick={() => void onResubmit(medicine.medicineId)}
+                      >
+                        {resubmittingId === medicine.medicineId ? 'Resubmitting...' : 'Resubmit'}
                       </button>
+                    </div>
+                  ) : canManage ? (
+                    <div className="action-row">
+                      <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
+                        Edit
+                      </button>
+                      {medicine.approvalStatus !== 'REJECTED' && (
+                        <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
+                          Delete
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <span className="muted">View only</span>
@@ -399,6 +606,10 @@ export const InventoryPage = () => {
                 <dd>{medicine.batchNumber}</dd>
               </div>
               <div>
+                <dt>Status</dt>
+                <dd><span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span></dd>
+              </div>
+              <div>
                 <dt>Stock</dt>
                 <dd><span className={stockClass(medicine.quantity)}>{medicine.quantity}</span></dd>
               </div>
@@ -410,15 +621,60 @@ export const InventoryPage = () => {
                 <dt>Price</dt>
                 <dd>RM {formatMoney(medicine.price)}</dd>
               </div>
+              {medicine.approvalStatus === 'REJECTED' && (
+                <div>
+                  <dt>Rejected</dt>
+                  <dd>{medicine.rejectedByUsername ? `Rejected by doctor ${medicine.rejectedByUsername}` : 'Rejected by doctor'}</dd>
+                </div>
+              )}
+              {medicine.rejectionReason && (
+                <div>
+                  <dt>Reason</dt>
+                  <dd>{medicine.rejectionReason}</dd>
+                </div>
+              )}
             </dl>
-            {canManage ? (
+            {canApprove && medicine.approvalStatus === 'PENDING' ? (
+              <div className="action-row" style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  disabled={approvingId === medicine.medicineId}
+                  onClick={() => void onApprove(medicine.medicineId)}
+                >
+                  {approvingId === medicine.medicineId ? 'Approving...' : 'Confirm Medicine'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger"
+                  disabled={rejectingId === medicine.medicineId}
+                  onClick={() => void onReject(medicine.medicineId)}
+                >
+                  {rejectingId === medicine.medicineId ? 'Rejecting...' : 'Reject Medicine'}
+                </button>
+              </div>
+            ) : canManage && medicine.approvalStatus === 'REJECTED' ? (
               <div className="action-row" style={{ marginTop: 10 }}>
                 <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
                   Edit
                 </button>
-                <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
-                  Delete
+                <button
+                  type="button"
+                  disabled={resubmittingId === medicine.medicineId}
+                  onClick={() => void onResubmit(medicine.medicineId)}
+                >
+                  {resubmittingId === medicine.medicineId ? 'Resubmitting...' : 'Resubmit'}
                 </button>
+              </div>
+            ) : canManage ? (
+              <div className="action-row" style={{ marginTop: 10 }}>
+                <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
+                  Edit
+                </button>
+                {medicine.approvalStatus !== 'REJECTED' && (
+                  <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
+                    Delete
+                  </button>
+                )}
               </div>
             ) : (
               <p className="muted" style={{ marginTop: 10 }}>View only</p>

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AppointmentStatus, AppointmentType, Role, UserStatus } from '@prisma/client';
+import { AppointmentStatus, AppointmentType, ConsultationStatus, Role, UserStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
 
@@ -57,11 +57,12 @@ const canTransitionTo = (from: AppointmentStatus, to: AppointmentStatus) => {
 };
 
 export const listAppointments = async (req: Request, res: Response) => {
-  const { date, status, type, query } = req.query as {
+  const { date, status, type, query, patientId } = req.query as {
     date?: string;
     status?: string;
     type?: string;
     query?: string;
+    patientId?: string;
   };
 
   const dayRange = date ? getDayRange(date) : null;
@@ -80,6 +81,10 @@ export const listAppointments = async (req: Request, res: Response) => {
   }
 
   const keyword = query?.trim();
+  const parsedPatientId = patientId ? Number(patientId) : null;
+  if (patientId && (!Number.isInteger(parsedPatientId) || (parsedPatientId ?? 0) <= 0)) {
+    return res.status(400).json({ message: 'Invalid patient filter.' });
+  }
 
   const appointments = await prisma.appointment.findMany({
     where: {
@@ -91,6 +96,7 @@ export const listAppointments = async (req: Request, res: Response) => {
         : undefined,
       status: normalizedStatus,
       type: normalizedType,
+      patientId: parsedPatientId ?? undefined,
       patient: keyword
         ? {
             OR: [
@@ -256,12 +262,33 @@ export const startConsultation = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Appointment must be marked as ARRIVED before consultation.' });
   }
 
+  const existingConsultation = await prisma.consultation.findFirst({
+    where: { appointmentId: appointment.appointmentId },
+    select: { consultationId: true },
+  });
+
+  const consultation = existingConsultation
+    ? await prisma.consultation.update({
+        where: { consultationId: existingConsultation.consultationId },
+        data: { status: ConsultationStatus.IN_PROGRESS },
+      })
+    : await prisma.consultation.create({
+        data: {
+          patientId: appointment.patientId,
+          appointmentId: appointment.appointmentId,
+          doctorId: appointment.doctorId,
+          status: ConsultationStatus.IN_PROGRESS,
+        },
+      });
+
   res.json({
     appointmentId: appointment.appointmentId,
+    consultationId: consultation.consultationId,
     patient: appointment.patient,
-    openPrescriptionWith: {
+    openConsultationWith: {
       patientId: appointment.patientId,
       appointmentId: appointment.appointmentId,
+      consultationId: consultation.consultationId,
     },
   });
 };

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { ConsultationStatus, Role, UserStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
@@ -8,6 +9,19 @@ const normalize = (value: unknown) => (typeof value === 'string' ? value.trim() 
 const isGender = (value: unknown): value is Gender => value === 'MALE' || value === 'FEMALE' || value === 'OTHER';
 
 const isValidPhone = (phone: string) => /^[0-9+\-()\s]{7,20}$/.test(phone);
+
+const getDefaultDoctorId = async () => {
+  const doctor = await prisma.user.findFirst({
+    where: {
+      role: Role.DOCTOR,
+      status: UserStatus.ACTIVE,
+    },
+    orderBy: { userId: 'asc' },
+    select: { userId: true },
+  });
+
+  return doctor?.userId ?? null;
+};
 
 const validatePatientPayload = (payload: Record<string, unknown>) => {
   const name = normalize(payload.name);
@@ -60,7 +74,22 @@ export const createPatient = async (req: Request, res: Response) => {
     return res.status(409).json({ message: 'Patient already exists.' });
   }
 
-  const patient = await prisma.patient.create({ data: parsed.data });
+  const defaultDoctorId = await getDefaultDoctorId();
+  if (!defaultDoctorId) {
+    return res.status(400).json({ message: 'Default doctor account is not available.' });
+  }
+
+  const patient = await prisma.$transaction(async (tx) => {
+    const created = await tx.patient.create({ data: parsed.data });
+    await tx.consultation.create({
+      data: {
+        patientId: created.patientId,
+        doctorId: defaultDoctorId,
+        status: ConsultationStatus.WAITING,
+      },
+    });
+    return created;
+  });
   // audit
   try {
     await (await import('../../utils/audit.js')).logActivity(req.user?.userId, `create_patient:${patient.patientId}`);
@@ -71,14 +100,19 @@ export const createPatient = async (req: Request, res: Response) => {
 
 export const listPatients = async (req: Request, res: Response) => {
   const query = (req.query.query as string) || '';
+  const patientId = Number(req.query.patientId);
+  const hasPatientId = Number.isInteger(patientId) && patientId > 0;
 
   const patients = await prisma.patient.findMany({
     where: {
-      OR: [
-        { name: { contains: query, mode: 'insensitive' } },
-        { icOrPassport: { contains: query, mode: 'insensitive' } },
-        { phone: { contains: query, mode: 'insensitive' } },
-      ],
+      patientId: hasPatientId ? patientId : undefined,
+      OR: hasPatientId
+        ? undefined
+        : [
+            { name: { contains: query, mode: 'insensitive' } },
+            { icOrPassport: { contains: query, mode: 'insensitive' } },
+            { phone: { contains: query, mode: 'insensitive' } },
+          ],
       NOT: {
         icOrPassport: { startsWith: 'WALKIN-', mode: 'insensitive' },
       },
@@ -88,6 +122,7 @@ export const listPatients = async (req: Request, res: Response) => {
       _count: {
         select: {
           prescriptions: true,
+          consultations: true,
           payments: true,
         },
       },
@@ -119,6 +154,24 @@ export const getPatient = async (req: Request, res: Response) => {
                   name: true,
                 },
               },
+            },
+          },
+        },
+      },
+      consultations: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          doctor: {
+            select: {
+              userId: true,
+              username: true,
+              role: true,
+            },
+          },
+          prescription: {
+            select: {
+              prescriptionId: true,
+              date: true,
             },
           },
         },
