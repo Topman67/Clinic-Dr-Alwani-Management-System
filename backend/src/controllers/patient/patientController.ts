@@ -224,3 +224,45 @@ export const updatePatient = async (req: Request, res: Response) => {
   } catch (_) {}
   res.json(patient);
 };
+
+export const deletePatient = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ message: 'Invalid patient id.' });
+  }
+
+  const existing = await prisma.patient.findUnique({
+    where: { patientId: id },
+    include: {
+      _count: {
+        select: {
+          prescriptions: true,
+          appointments: true,
+          payments: true,
+          consultations: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    return res.status(404).json({ message: 'Not found' });
+  }
+
+  if (existing._count.prescriptions > 0 || existing._count.appointments > 0 || existing._count.payments > 0) {
+    return res.status(409).json({
+      message: 'Cannot delete patient with existing prescriptions, appointments, or payments.',
+    });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.consultation.deleteMany({ where: { patientId: id } });
+    await tx.patient.delete({ where: { patientId: id } });
+  });
+
+  try {
+    await (await import('../../utils/audit.js')).logActivity(req.user?.userId, `delete_patient:${id}`);
+  } catch (_) {}
+
+  return res.json({ message: 'Patient deleted successfully.' });
+};

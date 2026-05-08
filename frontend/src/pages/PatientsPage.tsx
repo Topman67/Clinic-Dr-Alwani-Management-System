@@ -94,6 +94,7 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
 export const PatientsPage = () => {
   const { role } = useAuth();
   const canManage = role === 'RECEPTIONIST';
+  const canDelete = role === 'DOCTOR';
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
@@ -236,6 +237,31 @@ export const PatientsPage = () => {
     await loadPatientDetails(patient.patientId);
   };
 
+  const onDeletePatient = async (patient: Patient) => {
+    if (!canDelete) return;
+    const confirmed = window.confirm(`Delete patient "${patient.name}"?`);
+    if (!confirmed) return;
+
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await api.delete(`/patients/${patient.patientId}`);
+      const data = response.data as { message?: string };
+      setSuccess(data.message || 'Patient deleted successfully.');
+      if (selectedPatientId === patient.patientId) {
+        setSelectedPatientId(null);
+        setSelectedPatient(null);
+      }
+      if (selectedFilterPatient?.patientId === patient.patientId) {
+        setSelectedFilterPatient(null);
+      }
+      await loadPatients();
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to delete patient'));
+    }
+  };
+
   return (
     <section className="card">
       <div className="section-head">
@@ -363,9 +389,16 @@ export const PatientsPage = () => {
                 <td>{patient.phone}</td>
                 <td>{((patient._count?.payments ?? 0) + (patient._count?.prescriptions ?? 0) + (patient._count?.consultations ?? 0)) > 0 ? 'Yes' : 'No'}</td>
                 <td>
-                  <button type="button" className="btn-secondary" onClick={() => void onSelectPatient(patient)}>
-                    {canManage ? 'Edit / View' : 'View Details'}
-                  </button>
+                  <div className="action-row">
+                    <button type="button" className="btn-secondary" onClick={() => void onSelectPatient(patient)}>
+                      {canManage ? 'Edit / View' : 'View Details'}
+                    </button>
+                    {canDelete && (
+                      <button type="button" className="btn-danger" onClick={() => void onDeletePatient(patient)}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -395,6 +428,11 @@ export const PatientsPage = () => {
               <button type="button" className="btn-secondary" onClick={() => void onSelectPatient(patient)}>
                 {canManage ? 'Edit / View' : 'View Details'}
               </button>
+              {canDelete && (
+                <button type="button" className="btn-danger" onClick={() => void onDeletePatient(patient)}>
+                  Delete
+                </button>
+              )}
             </div>
           </article>
         ))}

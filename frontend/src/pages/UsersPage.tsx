@@ -64,6 +64,7 @@ export const UsersPage = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openActionForId, setOpenActionForId] = useState<number | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -87,6 +88,27 @@ export const UsersPage = () => {
       void loadUsers();
     });
   }, [loadUsers]);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest('.action-menu')) {
+        setOpenActionForId(null);
+      }
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenActionForId(null);
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, []);
 
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -200,6 +222,73 @@ export const UsersPage = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const renderUserActions = (user: User) => {
+    const isOpen = openActionForId === user.userId;
+
+    return (
+      <div className={`action-menu ${isOpen ? 'action-menu--open' : ''}`}>
+        <button
+          type="button"
+          className="action-menu__trigger"
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          onClick={() => setOpenActionForId((current) => (current === user.userId ? null : user.userId))}
+        >
+          Actions
+        </button>
+        {isOpen && (
+          <div className="action-menu__panel" role="menu">
+            <button
+              type="button"
+              className="action-menu__item"
+              role="menuitem"
+              onClick={() => {
+                setOpenActionForId(null);
+                startEdit(user);
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="action-menu__item"
+              role="menuitem"
+              onClick={() => {
+                setOpenActionForId(null);
+                setResetPasswordForId(user.userId);
+                setNewPassword('');
+              }}
+            >
+              Reset Password
+            </button>
+            <button
+              type="button"
+              className="action-menu__item"
+              role="menuitem"
+              onClick={() => {
+                setOpenActionForId(null);
+                void onDeactivateUser(user.userId);
+              }}
+            >
+              Deactivate
+            </button>
+            <button
+              type="button"
+              className="action-menu__item action-menu__item--danger"
+              role="menuitem"
+              onClick={() => {
+                setOpenActionForId(null);
+                void onDeleteUser(user.userId);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -336,29 +425,7 @@ export const UsersPage = () => {
                   </span>
                 </td>
                 <td>{new Date(user.createdAt).toLocaleString()}</td>
-                <td>
-                  <div className="action-row">
-                    <button type="button" className="btn-secondary" onClick={() => startEdit(user)}>
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => {
-                        setResetPasswordForId(user.userId);
-                        setNewPassword('');
-                      }}
-                    >
-                      Reset Password
-                    </button>
-                    <button type="button" className="btn-warning" onClick={() => void onDeactivateUser(user.userId)}>
-                      Deactivate
-                    </button>
-                    <button type="button" className="btn-danger" onClick={() => void onDeleteUser(user.userId)}>
-                      Delete
-                    </button>
-                  </div>
-                </td>
+                <td>{renderUserActions(user)}</td>
               </tr>
             ))}
           </tbody>
@@ -391,27 +458,7 @@ export const UsersPage = () => {
                 <dd>{new Date(user.createdAt).toLocaleDateString()}</dd>
               </div>
             </dl>
-            <div className="action-row" style={{ marginTop: 10 }}>
-              <button type="button" className="btn-secondary" onClick={() => startEdit(user)}>
-                Edit
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setResetPasswordForId(user.userId);
-                  setNewPassword('');
-                }}
-              >
-                Reset Password
-              </button>
-              <button type="button" className="btn-warning" onClick={() => void onDeactivateUser(user.userId)}>
-                Deactivate
-              </button>
-              <button type="button" className="btn-danger" onClick={() => void onDeleteUser(user.userId)}>
-                Delete
-              </button>
-            </div>
+            <div className="mobile-card-actions">{renderUserActions(user)}</div>
           </article>
         ))}
       </div>

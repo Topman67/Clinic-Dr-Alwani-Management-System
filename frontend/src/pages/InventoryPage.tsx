@@ -507,7 +507,7 @@ export const InventoryPage = () => {
       {loading && <p className="muted">Loading...</p>}
 
       <div className="table-wrap">
-        <table className="data-table">
+        <table className="data-table inventory-table">
           <thead>
             <tr>
               <th>Name</th>
@@ -523,8 +523,8 @@ export const InventoryPage = () => {
           <tbody>
             {medicines.map((medicine) => (
               <tr key={medicine.medicineId}>
-                <td>{medicine.name}</td>
-                <td>{medicine.batchNumber}</td>
+                <td className="inventory-cell-text" title={medicine.name}>{medicine.name}</td>
+                <td className="inventory-cell-text" title={medicine.batchNumber}>{medicine.batchNumber}</td>
                 <td>
                   <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
                 </td>
@@ -536,18 +536,30 @@ export const InventoryPage = () => {
                 </td>
                 <td>{formatMoney(medicine.price)}</td>
                 <td>
-                  {medicine.approvalStatus === 'APPROVED'
-                    ? `Approved by ${medicine.approvedByUsername || '-'}`
-                    : medicine.approvalStatus === 'REJECTED'
-                      ? `Rejected by ${medicine.rejectedByUsername || '-'}`
-                      : `Requested by ${medicine.requestedByUsername || '-'}`}
-                  {medicine.approvalStatus === 'REJECTED' && medicine.rejectionReason ? ` | Reason: ${medicine.rejectionReason}` : ''}
+                  <div className="inventory-approval-cell">
+                    <span>{medicine.approvalStatus === 'APPROVED' ? 'Approved' : medicine.approvalStatus === 'REJECTED' ? 'Rejected' : 'Pending'}</span>
+                    {medicine.approvalStatus === 'REJECTED' && (
+                      <small
+                        className="inventory-approval-note"
+                        title={
+                          medicine.rejectionReason
+                            ? `Rejected by doctor${medicine.rejectedByUsername ? ` (${medicine.rejectedByUsername})` : ''}: ${medicine.rejectionReason}`
+                            : `Rejected by doctor${medicine.rejectedByUsername ? ` (${medicine.rejectedByUsername})` : ''}`
+                        }
+                      >
+                        {medicine.rejectionReason
+                          ? `Rejected by doctor: ${medicine.rejectionReason}`
+                          : 'Rejected by doctor'}
+                      </small>
+                    )}
+                  </div>
                 </td>
                 <td>
                   {canApprove && medicine.approvalStatus === 'PENDING' ? (
-                    <div className="action-row">
+                    <div className="action-row inventory-action-row">
                       <button
                         type="button"
+                        className="inventory-action-btn"
                         disabled={approvingId === medicine.medicineId}
                         onClick={() => void onApprove(medicine.medicineId)}
                       >
@@ -555,7 +567,7 @@ export const InventoryPage = () => {
                       </button>
                       <button
                         type="button"
-                        className="btn-danger"
+                        className="btn-danger inventory-action-btn"
                         disabled={rejectingId === medicine.medicineId}
                         onClick={() => void onReject(medicine.medicineId)}
                       >
@@ -563,12 +575,13 @@ export const InventoryPage = () => {
                       </button>
                     </div>
                   ) : canManage && medicine.approvalStatus === 'REJECTED' ? (
-                    <div className="action-row">
-                      <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
+                    <div className="action-row inventory-action-row">
+                      <button type="button" className="btn-secondary inventory-action-btn" onClick={() => onEdit(medicine)}>
                         Edit
                       </button>
                       <button
                         type="button"
+                        className="inventory-action-btn"
                         disabled={resubmittingId === medicine.medicineId}
                         onClick={() => void onResubmit(medicine.medicineId)}
                       >
@@ -576,12 +589,12 @@ export const InventoryPage = () => {
                       </button>
                     </div>
                   ) : canManage ? (
-                    <div className="action-row">
-                      <button type="button" className="btn-secondary" onClick={() => onEdit(medicine)}>
+                    <div className="action-row inventory-action-row">
+                      <button type="button" className="btn-secondary inventory-action-btn" onClick={() => onEdit(medicine)}>
                         Edit
                       </button>
                       {medicine.approvalStatus !== 'REJECTED' && (
-                        <button type="button" className="btn-danger" onClick={() => onDelete(medicine.medicineId)}>
+                        <button type="button" className="btn-danger inventory-action-btn" onClick={() => onDelete(medicine.medicineId)}>
                           Delete
                         </button>
                       )}

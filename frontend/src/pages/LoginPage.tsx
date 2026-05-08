@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { roleBasePath } from '../config/rbac';
+import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -38,21 +39,41 @@ export const LoginPage = () => {
 
   return (
     <div className="login-wrap">
-      <form className="card" onSubmit={onSubmit}>
-        <div className="section-head">
-          <h1>Clinic Dr. Alwani CMS</h1>
+      <form className="card login-card" onSubmit={onSubmit}>
+        <div className="section-head login-head">
+          <img className="login-logo" src={clinicLogo} alt="Clinic Dr. Alwani" />
+          <h1>Welcome Back</h1>
           <p className="muted">Sign in to continue</p>
         </div>
 
-        <label>Username</label>
-        <input value={username} onChange={(e) => setUsername(e.target.value)} required />
+        <div className="field-block">
+          <label htmlFor="username">Username</label>
+          <input
+            id="username"
+            className="login-input"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </div>
 
-        <label>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <div className="field-block">
+          <label htmlFor="password">Password</label>
+          <input
+            id="password"
+            className="login-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
 
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error login-error">{error}</p>}
 
-        <button type="submit" disabled={loading}>{loading ? 'Signing in...' : 'Login'}</button>
+        <button className="login-button" type="submit" disabled={loading}>
+          {loading ? 'Signing in...' : 'Login'}
+        </button>
       </form>
     </div>
   );
