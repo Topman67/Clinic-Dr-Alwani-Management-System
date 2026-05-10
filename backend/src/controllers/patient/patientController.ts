@@ -3,12 +3,46 @@ import { ConsultationStatus, Role, UserStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
+type PatientStatusFilter = 'active' | 'archived' | 'all';
 
 const normalize = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
 
 const isGender = (value: unknown): value is Gender => value === 'MALE' || value === 'FEMALE' || value === 'OTHER';
 
 const isValidPhone = (phone: string) => /^[0-9+\-()\s]{7,20}$/.test(phone);
+
+const getPatientArchiveStatusWhere = (status: unknown) => {
+  const normalized = typeof status === 'string' ? status.toLowerCase() : 'active';
+  const filter: PatientStatusFilter = normalized === 'archived' || normalized === 'all' ? normalized : 'active';
+
+  if (filter === 'all') return {};
+  return { isActive: filter === 'active' };
+};
+
+const getPatientRelationCounts = async (patientId: number) => {
+  return prisma.patient.findUnique({
+    where: { patientId },
+    include: {
+      _count: {
+        select: {
+          prescriptions: true,
+          appointments: true,
+          payments: true,
+          consultations: true,
+        },
+      },
+    },
+  });
+};
+
+const hasRelatedRecords = (patient: NonNullable<Awaited<ReturnType<typeof getPatientRelationCounts>>>) => {
+  return (
+    patient._count.prescriptions > 0 ||
+    patient._count.appointments > 0 ||
+    patient._count.payments > 0 ||
+    patient._count.consultations > 0
+  );
+};
 
 const getDefaultDoctorId = async () => {
   const doctor = await prisma.user.findFirst({
@@ -63,6 +97,7 @@ export const createPatient = async (req: Request, res: Response) => {
   if ('error' in parsed) {
     return res.status(400).json({ message: parsed.error });
   }
+  const shouldCreateInitialVisit = (req.body as { createInitialVisit?: unknown }).createInitialVisit !== false;
 
   const duplicate = await prisma.patient.findFirst({
     where: {
@@ -74,20 +109,22 @@ export const createPatient = async (req: Request, res: Response) => {
     return res.status(409).json({ message: 'Patient already exists.' });
   }
 
-  const defaultDoctorId = await getDefaultDoctorId();
-  if (!defaultDoctorId) {
+  const defaultDoctorId = shouldCreateInitialVisit ? await getDefaultDoctorId() : null;
+  if (shouldCreateInitialVisit && !defaultDoctorId) {
     return res.status(400).json({ message: 'Default doctor account is not available.' });
   }
 
   const patient = await prisma.$transaction(async (tx) => {
     const created = await tx.patient.create({ data: parsed.data });
-    await tx.consultation.create({
-      data: {
-        patientId: created.patientId,
-        doctorId: defaultDoctorId,
-        status: ConsultationStatus.WAITING,
-      },
-    });
+    if (shouldCreateInitialVisit && defaultDoctorId) {
+      await tx.consultation.create({
+        data: {
+          patientId: created.patientId,
+          doctorId: defaultDoctorId,
+          status: ConsultationStatus.WAITING,
+        },
+      });
+    }
     return created;
   });
   // audit
@@ -102,10 +139,12 @@ export const listPatients = async (req: Request, res: Response) => {
   const query = (req.query.query as string) || '';
   const patientId = Number(req.query.patientId);
   const hasPatientId = Number.isInteger(patientId) && patientId > 0;
+  const statusWhere = getPatientArchiveStatusWhere(req.query.status);
 
   const patients = await prisma.patient.findMany({
     where: {
       patientId: hasPatientId ? patientId : undefined,
+      ...statusWhere,
       OR: hasPatientId
         ? undefined
         : [
@@ -123,7 +162,18 @@ export const listPatients = async (req: Request, res: Response) => {
         select: {
           prescriptions: true,
           consultations: true,
+          appointments: true,
           payments: true,
+        },
+      },
+      consultations: {
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          consultationId: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
         },
       },
     },
@@ -231,38 +281,78 @@ export const deletePatient = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Invalid patient id.' });
   }
 
-  const existing = await prisma.patient.findUnique({
-    where: { patientId: id },
-    include: {
-      _count: {
-        select: {
-          prescriptions: true,
-          appointments: true,
-          payments: true,
-          consultations: true,
-        },
-      },
-    },
-  });
+  const existing = await getPatientRelationCounts(id);
 
   if (!existing) {
     return res.status(404).json({ message: 'Not found' });
   }
 
-  if (existing._count.prescriptions > 0 || existing._count.appointments > 0 || existing._count.payments > 0) {
+  if (hasRelatedRecords(existing)) {
     return res.status(409).json({
-      message: 'Cannot delete patient with existing prescriptions, appointments, or payments.',
+      message: 'Cannot delete patient with existing records.',
     });
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.consultation.deleteMany({ where: { patientId: id } });
-    await tx.patient.delete({ where: { patientId: id } });
-  });
+  await prisma.patient.delete({ where: { patientId: id } });
 
   try {
     await (await import('../../utils/audit.js')).logActivity(req.user?.userId, `delete_patient:${id}`);
   } catch (_) {}
 
   return res.json({ message: 'Patient deleted successfully.' });
+};
+
+export const archivePatient = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ message: 'Invalid patient id.' });
+  }
+
+  const existing = await prisma.patient.findUnique({ where: { patientId: id } });
+  if (!existing) {
+    return res.status(404).json({ message: 'Not found' });
+  }
+
+  const archivedBy = req.user?.username ?? (req.user?.userId ? String(req.user.userId) : null);
+  const patient = await prisma.patient.update({
+    where: { patientId: id },
+    data: {
+      isActive: false,
+      archivedAt: new Date(),
+      archivedBy,
+    },
+  });
+
+  try {
+    await (await import('../../utils/audit.js')).logActivity(req.user?.userId, `archive_patient:${id}`);
+  } catch (_) {}
+
+  return res.json({ message: 'Patient archived successfully.', patient });
+};
+
+export const restorePatient = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ message: 'Invalid patient id.' });
+  }
+
+  const existing = await prisma.patient.findUnique({ where: { patientId: id } });
+  if (!existing) {
+    return res.status(404).json({ message: 'Not found' });
+  }
+
+  const patient = await prisma.patient.update({
+    where: { patientId: id },
+    data: {
+      isActive: true,
+      archivedAt: null,
+      archivedBy: null,
+    },
+  });
+
+  try {
+    await (await import('../../utils/audit.js')).logActivity(req.user?.userId, `restore_patient:${id}`);
+  } catch (_) {}
+
+  return res.json({ message: 'Patient restored successfully.', patient });
 };

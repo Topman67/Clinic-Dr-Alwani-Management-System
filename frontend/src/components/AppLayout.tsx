@@ -44,10 +44,6 @@ export const AppLayout = () => {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
-    setMobileSidebarOpen(false);
-  }, [location.pathname]);
-
-  useEffect(() => {
     const currentTabId = getCurrentTabId();
     return subscribeDataChanged((payload) => {
       if (payload.sourceTabId === currentTabId) return;
@@ -80,6 +76,7 @@ export const AppLayout = () => {
         to={`${basePath}/${module}`}
         data-tooltip={label}
         title={sidebarCollapsed ? label : undefined}
+        onClick={() => setMobileSidebarOpen(false)}
       >
         <span aria-hidden>{moduleIcons[module] ?? '□'}</span>
         <span className="nav-label">{label}</span>
@@ -178,7 +175,7 @@ export const AppLayout = () => {
         {navItems.map((module) => {
           const label = module === 'dashboard' ? 'Dashboard' : prettify(module);
           return (
-            <NavLink key={module} to={`${basePath}/${module}`}>
+            <NavLink key={module} to={`${basePath}/${module}`} onClick={() => setMobileSidebarOpen(false)}>
               <span aria-hidden>{moduleIcons[module] ?? '□'}</span>
               <span>{label}</span>
             </NavLink>

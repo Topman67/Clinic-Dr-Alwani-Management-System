@@ -42,6 +42,35 @@ const hasSlotConflict = async (doctorId: number, dateTime: Date, excludeAppointm
   return Boolean(existing);
 };
 
+const getAppointmentEligibilityIssue = async (patientId: number) => {
+  const [activeConsultation, activeAppointment] = await Promise.all([
+    prisma.consultation.findFirst({
+      where: {
+        patientId,
+        status: { in: [ConsultationStatus.WAITING, ConsultationStatus.IN_PROGRESS] },
+      },
+      select: { consultationId: true },
+    }),
+    prisma.appointment.findFirst({
+      where: {
+        patientId,
+        status: { in: [AppointmentStatus.PENDING, AppointmentStatus.ARRIVED] },
+      },
+      select: { appointmentId: true },
+    }),
+  ]);
+
+  if (activeConsultation) {
+    return 'Patient currently has an active visit/consultation and cannot be booked for appointment.';
+  }
+
+  if (activeAppointment) {
+    return 'Patient already has an active appointment.';
+  }
+
+  return null;
+};
+
 const canTransitionTo = (from: AppointmentStatus, to: AppointmentStatus) => {
   if (from === to) return true;
 
@@ -162,6 +191,15 @@ export const createAppointment = async (req: Request, res: Response) => {
 
   if (!patient) {
     return res.status(404).json({ message: 'Patient record not found.' });
+  }
+
+  if (!patient.isActive) {
+    return res.status(400).json({ message: 'Archived patients cannot be used for new appointments.' });
+  }
+
+  const eligibilityIssue = await getAppointmentEligibilityIssue(targetPatientId);
+  if (eligibilityIssue) {
+    return res.status(409).json({ message: eligibilityIssue });
   }
 
   if (!doctorId) {
@@ -315,6 +353,11 @@ export const createFollowUpAppointment = async (req: Request, res: Response) => 
   const source = await prisma.appointment.findUnique({ where: { appointmentId: sourceAppointmentId } });
   if (!source) {
     return res.status(404).json({ message: 'Appointment not found.' });
+  }
+
+  const patient = await prisma.patient.findUnique({ where: { patientId: source.patientId } });
+  if (!patient?.isActive) {
+    return res.status(400).json({ message: 'Archived patients cannot be used for new appointments.' });
   }
 
   const doctorId = await getDefaultDoctorId();

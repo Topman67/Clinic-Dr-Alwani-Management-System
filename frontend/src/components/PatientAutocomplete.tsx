@@ -7,7 +7,15 @@ export type PatientAutocompleteOption = {
   icOrPassport?: string | null;
   phone?: string | null;
   address?: string | null;
+  isActive?: boolean;
+  consultations?: Array<{
+    status?: string | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+  }>;
 };
+
+type PatientSearchStatus = 'active' | 'archived' | 'all';
 
 type PatientAutocompleteProps = {
   selectedPatient: PatientAutocompleteOption | null;
@@ -18,6 +26,8 @@ type PatientAutocompleteProps = {
   required?: boolean;
   helperText?: string | null;
   emptyStateLabel?: string;
+  status?: PatientSearchStatus;
+  filterResults?: (patient: PatientAutocompleteOption) => boolean;
 };
 
 const formatPatientMeta = (patient: PatientAutocompleteOption) => {
@@ -34,6 +44,8 @@ export const PatientAutocomplete = ({
   required = false,
   helperText,
   emptyStateLabel = 'No matching patients found.',
+  status = 'active',
+  filterResults,
 }: PatientAutocompleteProps) => {
   const [search, setSearch] = useState(selectedPatient?.name ?? '');
   const [results, setResults] = useState<PatientAutocompleteOption[]>([]);
@@ -69,9 +81,10 @@ export const PatientAutocomplete = ({
       void (async () => {
         setLoading(true);
         try {
-          const response = await api.get('/patients', { params: { query: keyword } });
+          const response = await api.get('/patients', { params: { query: keyword, status } });
           if (cancelled) return;
-          setResults(response.data as PatientAutocompleteOption[]);
+          const patients = response.data as PatientAutocompleteOption[];
+          setResults(filterResults ? patients.filter(filterResults) : patients);
           setOpen(true);
         } catch {
           if (cancelled) return;
@@ -89,7 +102,7 @@ export const PatientAutocomplete = ({
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [disabled, search]);
+  }, [disabled, filterResults, search, status]);
 
   useEffect(() => {
     return () => {
@@ -176,8 +189,10 @@ export const PatientAutocomplete = ({
                 key={patient.patientId}
                 type="button"
                 className="patient-autocomplete__option"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleSelect(patient)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSelect(patient);
+                }}
               >
                 <strong>{patient.name}</strong>
                 <span>{formatPatientMeta(patient)}</span>

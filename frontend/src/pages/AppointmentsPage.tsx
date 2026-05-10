@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -43,6 +43,13 @@ type NewPatientForm = {
   dateOfBirth: string;
 };
 
+type AppointmentFilters = {
+  dateFilter: string;
+  statusFilter: string;
+  typeFilter: string;
+  patientFilter: PatientAutocompleteOption | null;
+};
+
 const initialNewPatientForm: NewPatientForm = {
   name: '',
   icOrPassport: '',
@@ -67,6 +74,14 @@ const formatDateTime = (iso: string) => {
 
 const statusLabel = (status: AppointmentStatus) => status.replace('_', ' ').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
 
+const statusClass = (status: AppointmentStatus) => {
+  if (status === 'PENDING') return 'status-warning';
+  if (status === 'ARRIVED') return 'type-consultation';
+  if (status === 'COMPLETED') return 'status-good';
+  if (status === 'CANCELLED' || status === 'NO_SHOW') return 'status-archived';
+  return 'status-neutral';
+};
+
 const getApiErrorMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error !== null) {
     const response = (error as { response?: { data?: { message?: string } } }).response;
@@ -76,9 +91,26 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const isToday = (value?: string | null) => {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return toDateInput(date) === toDateInput(new Date());
+};
+
+const isAppointmentPatientEligible = (patient: PatientAutocompleteOption) => {
+  if (patient.isActive === false) return false;
+  const consultations = patient.consultations ?? [];
+  return !consultations.some((consultation) => {
+    const status = consultation.status;
+    return status === 'WAITING' || status === 'IN_PROGRESS' || (status === 'COMPLETED' && isToday(consultation.updatedAt ?? consultation.createdAt));
+  });
+};
+
 export const AppointmentsPage = () => {
   const { role } = useAuth();
   const navigate = useNavigate();
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const isReceptionist = role === 'RECEPTIONIST';
   const isDoctor = role === 'DOCTOR';
@@ -97,24 +129,36 @@ export const AppointmentsPage = () => {
   const [appointmentDateTime, setAppointmentDateTime] = useState(() => toDateTimeLocalInput(new Date(Date.now() + 30 * 60000)));
   const [appointmentNotes, setAppointmentNotes] = useState('');
   const [newPatientForm, setNewPatientForm] = useState<NewPatientForm>(initialNewPatientForm);
-  const [showCreatePatientForm, setShowCreatePatientForm] = useState(false);
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [isPatientDrawerOpen, setIsPatientDrawerOpen] = useState(false);
+  const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
+  const [rescheduleDateTime, setRescheduleDateTime] = useState('');
+  const [rescheduleNotes, setRescheduleNotes] = useState('');
 
   const [followUpDateTime, setFollowUpDateTime] = useState(() => toDateTimeLocalInput(new Date(Date.now() + 24 * 60 * 60000)));
   const [followUpNotes, setFollowUpNotes] = useState('');
   const [followUpPrescriptionId, setFollowUpPrescriptionId] = useState('');
   const [followUpSourceAppointmentId, setFollowUpSourceAppointmentId] = useState<number | null>(null);
 
-  const loadAppointments = useCallback(async () => {
+  const loadAppointments = useCallback(async (overrides: Partial<AppointmentFilters> = {}) => {
+    const nextDateFilter = overrides.dateFilter ?? dateFilter;
+    const nextStatusFilter = overrides.statusFilter ?? statusFilter;
+    const nextTypeFilter = overrides.typeFilter ?? typeFilter;
+    const nextPatientFilter = Object.prototype.hasOwnProperty.call(overrides, 'patientFilter')
+      ? overrides.patientFilter
+      : selectedPatientFilter;
+
     setLoading(true);
     setError(null);
 
     try {
       const response = await api.get('/appointments', {
         params: {
-          date: dateFilter || undefined,
-          status: statusFilter || undefined,
-          type: typeFilter || undefined,
-          patientId: selectedPatientFilter?.patientId,
+          date: nextDateFilter || undefined,
+          status: nextStatusFilter || undefined,
+          type: nextTypeFilter || undefined,
+          patientId: nextPatientFilter?.patientId,
         },
       });
       setAppointments(response.data as Appointment[]);
@@ -135,8 +179,35 @@ export const AppointmentsPage = () => {
     });
   }, [loadAppointments]);
 
-  const pendingCount = useMemo(() => appointments.filter((a) => a.status === 'PENDING').length, [appointments]);
-  const arrivedCount = useMemo(() => appointments.filter((a) => a.status === 'ARRIVED').length, [appointments]);
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!actionMenuRef.current) return;
+      if (!actionMenuRef.current.contains(event.target as Node)) {
+        setOpenActionMenuId(null);
+      }
+    };
+
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
+  const stats = useMemo(() => ({
+    total: appointments.length,
+    pending: appointments.filter((a) => a.status === 'PENDING').length,
+    arrived: appointments.filter((a) => a.status === 'ARRIVED').length,
+    completed: appointments.filter((a) => a.status === 'COMPLETED').length,
+  }), [appointments]);
+
+  const visibleAppointments = useMemo(() => {
+    if (!isDoctor) return appointments;
+    return appointments.filter((a) => a.status === 'ARRIVED' || a.status === 'PENDING' || a.status === 'COMPLETED');
+  }, [appointments, isDoctor]);
+
+  const resetAppointmentForm = () => {
+    setSelectedBookingPatient(null);
+    setAppointmentDateTime(toDateTimeLocalInput(new Date(Date.now() + 30 * 60000)));
+    setAppointmentNotes('');
+  };
 
   const onCreatePatient = async (e: FormEvent) => {
     e.preventDefault();
@@ -156,10 +227,11 @@ export const AppointmentsPage = () => {
         icOrPassport: newPatientForm.icOrPassport.trim(),
         phone: newPatientForm.phone.trim(),
         address: newPatientForm.address.trim(),
+        createInitialVisit: false,
       });
       const created = response.data as Patient;
       setSelectedBookingPatient(created);
-      setShowCreatePatientForm(false);
+      setIsPatientDrawerOpen(false);
       setSuccess('New patient registered and selected for appointment.');
       setNewPatientForm(initialNewPatientForm);
     } catch (err: unknown) {
@@ -179,6 +251,11 @@ export const AppointmentsPage = () => {
       return;
     }
 
+    if (!isAppointmentPatientEligible(selectedBookingPatient)) {
+      setError('Patient currently has an active visit/consultation and cannot be booked for appointment.');
+      return;
+    }
+
     setSaving(true);
     try {
       const createdDate = toDateInput(new Date(appointmentDateTime));
@@ -189,8 +266,12 @@ export const AppointmentsPage = () => {
       });
       setSuccess('Appointment created successfully.');
       setDateFilter(createdDate);
-      setAppointmentNotes('');
-      await loadAppointments();
+      setStatusFilter('');
+      setTypeFilter('');
+      setSelectedPatientFilter(null);
+      resetAppointmentForm();
+      setIsCreateDrawerOpen(false);
+      await loadAppointments({ dateFilter: createdDate, statusFilter: '', typeFilter: '', patientFilter: null });
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to create appointment'));
     } finally {
@@ -201,6 +282,7 @@ export const AppointmentsPage = () => {
   const onStatusChange = async (appointmentId: number, status: AppointmentStatus) => {
     setError(null);
     setSuccess(null);
+    setOpenActionMenuId(null);
     try {
       await api.patch(`/appointments/${appointmentId}/status`, { status });
       setSuccess('Appointment status updated.');
@@ -213,6 +295,7 @@ export const AppointmentsPage = () => {
   const onStartConsultation = async (appointmentId: number) => {
     setError(null);
     setSuccess(null);
+    setOpenActionMenuId(null);
     try {
       const response = await api.post(`/appointments/${appointmentId}/start-consultation`);
       const payload = response.data as { openConsultationWith?: { patientId: number; appointmentId: number; consultationId: number } };
@@ -255,43 +338,61 @@ export const AppointmentsPage = () => {
     }
   };
 
-  const openReschedulePrompt = async (appointmentId: number, currentDateTime: string) => {
-    const input = window.prompt('Enter new date and time (YYYY-MM-DDTHH:mm)', toDateTimeLocalInput(new Date(currentDateTime)));
-    if (!input) return;
+  const openRescheduleDialog = (appointment: Appointment) => {
+    setOpenActionMenuId(null);
+    setRescheduleTarget(appointment);
+    setRescheduleDateTime(toDateTimeLocalInput(new Date(appointment.dateTime)));
+    setRescheduleNotes(appointment.notes ?? '');
+  };
+
+  const onRescheduleAppointment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!rescheduleTarget) return;
 
     setError(null);
     setSuccess(null);
+    setSaving(true);
+
     try {
-      await api.patch(`/appointments/${appointmentId}/reschedule`, {
-        dateTime: new Date(input).toISOString(),
+      await api.patch(`/appointments/${rescheduleTarget.appointmentId}/reschedule`, {
+        dateTime: new Date(rescheduleDateTime).toISOString(),
+        notes: rescheduleNotes.trim() || undefined,
       });
+      const nextDate = toDateInput(new Date(rescheduleDateTime));
       setSuccess('Appointment rescheduled successfully.');
-      await loadAppointments();
+      setDateFilter(nextDate);
+      setRescheduleTarget(null);
+      await loadAppointments({ dateFilter: nextDate });
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to reschedule appointment'));
+    } finally {
+      setSaving(false);
     }
   };
 
-  const visibleAppointments = useMemo(() => {
-    if (!isDoctor) return appointments;
-    return appointments.filter((a) => a.status === 'ARRIVED' || a.status === 'PENDING' || a.status === 'COMPLETED');
-  }, [appointments, isDoctor]);
-
   return (
-    <section className="card">
-      <div className="section-head">
-        <h1>Appointments</h1>
-        <p className="muted">
-          {isReceptionist
-            ? 'Create and manage doctor appointments for registered patients.'
-            : 'Review appointment queue, start consultation, and create follow-up appointments.'}
-        </p>
+    <section className="appointments-page">
+      <div className="section-head appointment-page-head">
+        <div>
+          <h1>Appointments</h1>
+          <p className="muted">
+            {isReceptionist
+              ? 'Create and manage doctor appointments for eligible patients.'
+              : 'Review appointment queue, start consultation, and create follow-up appointments.'}
+          </p>
+        </div>
+        {isReceptionist && (
+          <button type="button" className="appointment-create-button" onClick={() => setIsCreateDrawerOpen(true)}>
+            + Create Appointment
+          </button>
+        )}
       </div>
 
-      <div className="stats-row" style={{ marginBottom: 12 }}>
-        <div className="stat-chip">Total: {appointments.length}</div>
-        <div className="stat-chip">Pending: {pendingCount}</div>
-        <div className="stat-chip">Arrived: {arrivedCount}</div>
+      <div className="stats-row appointment-summary-row">
+        <div className="stat-chip patient-stat-chip"><span>Total</span><strong>{stats.total}</strong></div>
+        <div className="stat-chip patient-stat-chip warning"><span>Pending</span><strong>{stats.pending}</strong></div>
+        <div className="stat-chip patient-stat-chip"><span>Arrived</span><strong>{stats.arrived}</strong></div>
+        <div className="stat-chip patient-stat-chip"><span>Completed</span><strong>{stats.completed}</strong></div>
       </div>
 
       <form
@@ -299,7 +400,7 @@ export const AppointmentsPage = () => {
           e.preventDefault();
           void loadAppointments();
         }}
-        className="filters-grid"
+        className="appointment-toolbar"
       >
         <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} aria-label="Date" />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -320,105 +421,10 @@ export const AppointmentsPage = () => {
           onSelect={setSelectedPatientFilter}
           placeholder="Search patient name / IC / phone"
         />
-        <button type="submit" className="btn-secondary" disabled={loading}>
+        <button type="submit" className="btn-secondary patient-compact-button" disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </form>
-
-      {isReceptionist && (
-        <section className="card users-subcard" style={{ marginTop: 14 }}>
-          <div className="section-head">
-            <h3>Create Appointment</h3>
-            <p className="muted">Find patient first. If not found, register directly and continue booking.</p>
-          </div>
-
-          <div className="form-row">
-            <PatientAutocomplete
-              selectedPatient={selectedBookingPatient}
-              onSelect={(patient) => {
-                setSelectedBookingPatient(patient);
-                if (patient) {
-                  setShowCreatePatientForm(false);
-                }
-              }}
-              placeholder="Search patient by name / IC / phone"
-            />
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => setShowCreatePatientForm((prev) => !prev)}
-            >
-              {showCreatePatientForm ? 'Hide Register Form' : 'Register New Patient'}
-            </button>
-          </div>
-
-          {showCreatePatientForm && (
-            <form onSubmit={onCreatePatient} className="form-grid" style={{ marginTop: 10 }}>
-              <input
-                value={newPatientForm.name}
-                onChange={(e) => setNewPatientForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="Patient name"
-                required
-              />
-              <input
-                value={newPatientForm.icOrPassport}
-                onChange={(e) => setNewPatientForm((prev) => ({ ...prev, icOrPassport: e.target.value }))}
-                placeholder="IC / ID"
-                required
-              />
-              <input
-                value={newPatientForm.phone}
-                onChange={(e) => setNewPatientForm((prev) => ({ ...prev, phone: e.target.value }))}
-                placeholder="Phone"
-                required
-              />
-              <textarea
-                value={newPatientForm.address}
-                onChange={(e) => setNewPatientForm((prev) => ({ ...prev, address: e.target.value }))}
-                placeholder="Address"
-                rows={2}
-                required
-              />
-              <div className="form-row">
-                <select
-                  value={newPatientForm.gender}
-                  onChange={(e) => setNewPatientForm((prev) => ({ ...prev, gender: e.target.value as Gender }))}
-                  required
-                >
-                  <option value="MALE">Male</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="OTHER">Other</option>
-                </select>
-                <input
-                  type="date"
-                  value={newPatientForm.dateOfBirth}
-                  onChange={(e) => setNewPatientForm((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
-                  required
-                />
-                <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Patient'}</button>
-              </div>
-            </form>
-          )}
-
-          <form onSubmit={onCreateAppointment} className="form-grid" style={{ marginTop: 12 }}>
-            <div className="form-row">
-              <input
-                type="datetime-local"
-                value={appointmentDateTime}
-                onChange={(e) => setAppointmentDateTime(e.target.value)}
-                required
-              />
-              <textarea
-                value={appointmentNotes}
-                onChange={(e) => setAppointmentNotes(e.target.value)}
-                placeholder="Notes (optional)"
-                rows={2}
-              />
-              <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Create Appointment'}</button>
-            </div>
-          </form>
-        </section>
-      )}
 
       {followUpSourceAppointmentId && (
         <section className="card users-subcard" style={{ marginTop: 14 }}>
@@ -458,11 +464,10 @@ export const AppointmentsPage = () => {
       {error && <p className="error">{error}</p>}
       {success && <p className="muted" style={{ color: 'var(--primary)' }}>{success}</p>}
 
-      <div className="table-wrap" style={{ marginTop: 12 }}>
-        <table className="data-table">
+      <div className="table-wrap appointment-table-wrap">
+        <table className="data-table appointment-table">
           <thead>
             <tr>
-              <th>ID</th>
               <th>Date & Time</th>
               <th>Patient</th>
               <th>Type</th>
@@ -474,78 +479,78 @@ export const AppointmentsPage = () => {
           <tbody>
             {visibleAppointments.map((appointment) => (
               <tr key={appointment.appointmentId}>
-                <td>#{appointment.appointmentId}</td>
-                <td>{formatDateTime(appointment.dateTime)}</td>
                 <td>
-                  <strong>{appointment.patient.name}</strong>
-                  <br />
-                  <span className="muted">{appointment.patient.icOrPassport} / {appointment.patient.phone}</span>
+                  <strong>{formatDateTime(appointment.dateTime)}</strong>
+                  <small>#{appointment.appointmentId}</small>
+                </td>
+                <td>
+                  <div className="appointment-patient-cell">
+                    <strong>{appointment.patient.name}</strong>
+                    <small>{appointment.patient.icOrPassport} / {appointment.patient.phone}</small>
+                  </div>
                 </td>
                 <td>{appointment.type === 'FOLLOW_UP' ? 'Follow-up' : 'New'}</td>
-                <td>{statusLabel(appointment.status)}</td>
-                <td>{appointment.notes || '-'}</td>
+                <td><span className={`status-badge ${statusClass(appointment.status)}`}>{statusLabel(appointment.status)}</span></td>
+                <td className="appointment-note-cell">{appointment.notes || '-'}</td>
                 <td>
-                  <div className="action-row" style={{ gap: 6 }}>
-                    {isReceptionist && appointment.status === 'PENDING' && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => void onStatusChange(appointment.appointmentId, 'ARRIVED')}
-                        >
-                          Mark Arrived
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => void openReschedulePrompt(appointment.appointmentId, appointment.dateTime)}
-                        >
-                          Reschedule
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => void onStatusChange(appointment.appointmentId, 'NO_SHOW')}
-                        >
-                          No Show
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => void onStatusChange(appointment.appointmentId, 'CANCELLED')}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    )}
+                  <div className="action-row patient-row-actions" ref={openActionMenuId === appointment.appointmentId ? actionMenuRef : null}>
+                    <button
+                      type="button"
+                      className="btn-secondary patient-action-menu-trigger"
+                      aria-label="Open appointment actions"
+                      aria-expanded={openActionMenuId === appointment.appointmentId}
+                      onClick={() => setOpenActionMenuId((current) => (current === appointment.appointmentId ? null : appointment.appointmentId))}
+                    />
 
-                    {isDoctor && appointment.status === 'ARRIVED' && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => void onStartConsultation(appointment.appointmentId)}
-                        >
-                          Start Consultation
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => setFollowUpSourceAppointmentId(appointment.appointmentId)}
-                        >
-                          Create Follow-up
-                        </button>
-                      </>
-                    )}
+                    {openActionMenuId === appointment.appointmentId && (
+                      <div className="patient-action-menu appointment-action-menu" role="menu">
+                        {isReceptionist && appointment.status === 'PENDING' && (
+                          <>
+                            <button type="button" className="patient-action-menu-item" onClick={() => void onStatusChange(appointment.appointmentId, 'ARRIVED')}>
+                              Mark Arrived
+                            </button>
+                            <button type="button" className="patient-action-menu-item" onClick={() => openRescheduleDialog(appointment)}>
+                              Reschedule
+                            </button>
+                            <button type="button" className="patient-action-menu-item" onClick={() => void onStatusChange(appointment.appointmentId, 'NO_SHOW')}>
+                              No Show
+                            </button>
+                            <button type="button" className="patient-action-menu-item" onClick={() => void onStatusChange(appointment.appointmentId, 'CANCELLED')}>
+                              Cancel
+                            </button>
+                          </>
+                        )}
 
-                    {isDoctor && appointment.status === 'COMPLETED' && (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => setFollowUpSourceAppointmentId(appointment.appointmentId)}
-                      >
-                        Create Follow-up
-                      </button>
+                        {isDoctor && appointment.status === 'ARRIVED' && (
+                          <>
+                            <button type="button" className="patient-action-menu-item" onClick={() => void onStartConsultation(appointment.appointmentId)}>
+                              Start Consultation
+                            </button>
+                            <button type="button" className="patient-action-menu-item" onClick={() => {
+                              setOpenActionMenuId(null);
+                              setFollowUpSourceAppointmentId(appointment.appointmentId);
+                            }}>
+                              Create Follow-up
+                            </button>
+                          </>
+                        )}
+
+                        {isDoctor && appointment.status === 'COMPLETED' && (
+                          <button type="button" className="patient-action-menu-item" onClick={() => {
+                            setOpenActionMenuId(null);
+                            setFollowUpSourceAppointmentId(appointment.appointmentId);
+                          }}>
+                            Create Follow-up
+                          </button>
+                        )}
+
+                        <button type="button" className="patient-action-menu-item" onClick={() => {
+                          setOpenActionMenuId(null);
+                          navigate(`${isDoctor ? '/doctor' : '/receptionist'}/patients`);
+                        }}>
+                          View Patient
+                        </button>
+                      </div>
                     )}
                   </div>
                 </td>
@@ -559,6 +564,170 @@ export const AppointmentsPage = () => {
         <p className="muted" style={{ marginTop: 10 }}>
           No appointments found for current filters. Try clearing the date/status/type filters.
         </p>
+      )}
+
+      {isReceptionist && isCreateDrawerOpen && (
+        <div className="appointment-drawer-layer" role="presentation">
+          <button type="button" className="patient-drawer-backdrop" aria-label="Close appointment drawer" onClick={() => setIsCreateDrawerOpen(false)} />
+          <aside className="patient-drawer appointment-drawer" role="dialog" aria-modal="true" aria-labelledby="appointment-drawer-title">
+            <div className="patient-drawer-head">
+              <div>
+                <h3 id="appointment-drawer-title">Create Appointment</h3>
+                <p className="muted">Book eligible patients who are not in an active visit.</p>
+              </div>
+              <button type="button" className="patient-drawer-close" onClick={() => setIsCreateDrawerOpen(false)} disabled={saving}>
+                X
+              </button>
+            </div>
+
+            <form onSubmit={onCreateAppointment} className="patient-registration-form patient-drawer-form">
+              <div className="patient-drawer-body">
+                <div className="appointment-drawer-stack">
+                  <label className="field-block">
+                    <span>Patient</span>
+                    <PatientAutocomplete
+                      selectedPatient={selectedBookingPatient}
+                      onSelect={setSelectedBookingPatient}
+                      placeholder="Search eligible patient by name / IC / phone"
+                      filterResults={isAppointmentPatientEligible}
+                      emptyStateLabel="No eligible patients found."
+                    />
+                    <span className="field-hint">Patients in active consultation or visit queue are hidden.</span>
+                  </label>
+
+                  {selectedBookingPatient && !isAppointmentPatientEligible(selectedBookingPatient) && (
+                    <p className="error appointment-inline-alert">
+                      Patient currently has an active visit/consultation and cannot be booked for appointment.
+                    </p>
+                  )}
+
+                  <button type="button" className="btn-secondary appointment-register-inline" onClick={() => setIsPatientDrawerOpen(true)}>
+                    Register New Patient
+                  </button>
+
+                  <label className="field-block">
+                    <span>Date & Time</span>
+                    <input
+                      type="datetime-local"
+                      value={appointmentDateTime}
+                      onChange={(e) => setAppointmentDateTime(e.target.value)}
+                      required
+                    />
+                  </label>
+
+                  <label className="field-block">
+                    <span>Notes</span>
+                    <textarea
+                      value={appointmentNotes}
+                      onChange={(e) => setAppointmentNotes(e.target.value)}
+                      placeholder="Notes (optional)"
+                      rows={4}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="patient-drawer-footer">
+                <button type="submit" disabled={saving || !selectedBookingPatient || !isAppointmentPatientEligible(selectedBookingPatient)}>
+                  {saving ? 'Saving...' : 'Create Appointment'}
+                </button>
+                <button className="btn-secondary" type="button" onClick={() => setIsCreateDrawerOpen(false)} disabled={saving}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
+
+      {isReceptionist && isPatientDrawerOpen && (
+        <div className="appointment-drawer-layer appointment-nested-drawer-layer" role="presentation">
+          <button type="button" className="patient-drawer-backdrop" aria-label="Close patient registration drawer" onClick={() => setIsPatientDrawerOpen(false)} />
+          <aside className="patient-drawer appointment-drawer" role="dialog" aria-modal="true" aria-labelledby="appointment-patient-drawer-title">
+            <div className="patient-drawer-head">
+              <div>
+                <h3 id="appointment-patient-drawer-title">Register New Patient</h3>
+                <p className="muted">Create patient profile before booking appointment.</p>
+              </div>
+              <button type="button" className="patient-drawer-close" onClick={() => setIsPatientDrawerOpen(false)} disabled={saving}>
+                X
+              </button>
+            </div>
+
+            <form onSubmit={onCreatePatient} className="patient-registration-form patient-drawer-form">
+              <div className="patient-drawer-body">
+                <div className="patient-form-grid">
+                  <label className="field-block">
+                    <span>Patient Name</span>
+                    <input value={newPatientForm.name} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, name: e.target.value }))} required />
+                  </label>
+                  <label className="field-block">
+                    <span>IC / ID</span>
+                    <input value={newPatientForm.icOrPassport} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, icOrPassport: e.target.value }))} required />
+                  </label>
+                  <label className="field-block">
+                    <span>Phone</span>
+                    <input value={newPatientForm.phone} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, phone: e.target.value }))} required />
+                  </label>
+                  <label className="field-block">
+                    <span>Date of Birth</span>
+                    <input type="date" value={newPatientForm.dateOfBirth} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, dateOfBirth: e.target.value }))} required />
+                  </label>
+                  <label className="field-block">
+                    <span>Gender</span>
+                    <select value={newPatientForm.gender} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, gender: e.target.value as Gender }))} required>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </label>
+                  <label className="field-block patient-address-field">
+                    <span>Address</span>
+                    <textarea value={newPatientForm.address} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, address: e.target.value }))} rows={3} required />
+                  </label>
+                </div>
+              </div>
+
+              <div className="patient-drawer-footer">
+                <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Patient'}</button>
+                <button className="btn-secondary" type="button" onClick={() => setIsPatientDrawerOpen(false)} disabled={saving}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
+
+      {rescheduleTarget && (
+        <div className="appointment-modal-layer" role="presentation">
+          <button type="button" className="appointment-modal-backdrop" aria-label="Close reschedule dialog" onClick={() => setRescheduleTarget(null)} />
+          <section className="appointment-modal" role="dialog" aria-modal="true" aria-labelledby="reschedule-title">
+            <div className="patient-card-head">
+              <div>
+                <h3 id="reschedule-title">Reschedule Appointment</h3>
+                <p className="muted">Current time: {formatDateTime(rescheduleTarget.dateTime)}</p>
+              </div>
+            </div>
+
+            <form onSubmit={onRescheduleAppointment} className="appointment-drawer-stack">
+              <label className="field-block">
+                <span>New Date & Time</span>
+                <input type="datetime-local" value={rescheduleDateTime} onChange={(e) => setRescheduleDateTime(e.target.value)} required />
+              </label>
+              <label className="field-block">
+                <span>Notes / Reason</span>
+                <textarea value={rescheduleNotes} onChange={(e) => setRescheduleNotes(e.target.value)} rows={3} placeholder="Optional" />
+              </label>
+              <div className="appointment-modal-actions">
+                <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Confirm Reschedule'}</button>
+                <button type="button" className="btn-secondary" onClick={() => setRescheduleTarget(null)} disabled={saving}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
       )}
     </section>
   );

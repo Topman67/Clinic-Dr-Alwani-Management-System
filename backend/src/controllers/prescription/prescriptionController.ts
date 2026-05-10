@@ -57,6 +57,10 @@ export const createPrescription = async (req: Request, res: Response) => {
     return res.status(404).json({ message: 'Patient record not found.' });
   }
 
+  if (!patient.isActive) {
+    return res.status(400).json({ message: 'Archived patients cannot be used for new prescriptions.' });
+  }
+
   if (patient.icOrPassport?.toUpperCase().startsWith(WALKIN_CUSTOMER_PREFIX)) {
     return res.status(400).json({ message: 'Walk-in sales customers are not available in prescription module.' });
   }

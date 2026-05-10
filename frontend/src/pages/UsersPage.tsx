@@ -187,7 +187,7 @@ export const UsersPage = () => {
   };
 
   const onDeleteUser = async (userId: number) => {
-    const confirmed = window.confirm('Delete this user permanently? This cannot be undone.');
+    const confirmed = window.confirm('Delete this user permanently? Only accounts without related records can be deleted.');
     if (!confirmed) return;
 
     setError(null);
@@ -226,6 +226,7 @@ export const UsersPage = () => {
 
   const renderUserActions = (user: User) => {
     const isOpen = openActionForId === user.userId;
+    const canDeleteUser = user.role !== 'DOCTOR';
 
     return (
       <div className={`action-menu ${isOpen ? 'action-menu--open' : ''}`}>
@@ -274,17 +275,19 @@ export const UsersPage = () => {
             >
               Deactivate
             </button>
-            <button
-              type="button"
-              className="action-menu__item action-menu__item--danger"
-              role="menuitem"
-              onClick={() => {
-                setOpenActionForId(null);
-                void onDeleteUser(user.userId);
-              }}
-            >
-              Delete
-            </button>
+            {canDeleteUser && (
+              <button
+                type="button"
+                className="action-menu__item action-menu__item--danger"
+                role="menuitem"
+                onClick={() => {
+                  setOpenActionForId(null);
+                  void onDeleteUser(user.userId);
+                }}
+              >
+                Delete
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -295,7 +298,7 @@ export const UsersPage = () => {
     <section className="card">
       <div className="section-head">
         <h1>Manage User Account</h1>
-        <p className="muted">Register staff (Receptionist/Pharmacist), update role/status, reset password, deactivate or delete accounts.</p>
+        <p className="muted">Register staff (Receptionist/Pharmacist), update role/status, reset password, deactivate accounts, or permanently delete unused accounts.</p>
       </div>
 
       <form onSubmit={onCreateStaff} className="users-create-grid">

@@ -84,6 +84,10 @@ export const createConsultation = async (req: Request, res: Response) => {
     return res.status(404).json({ message: 'Patient record not found.' });
   }
 
+  if (!patient.isActive) {
+    return res.status(400).json({ message: 'Archived patients cannot be added to the consultation queue.' });
+  }
+
   const doctorId = requestedDoctorId ?? defaultDoctorId;
   if (!doctorId) {
     return res.status(400).json({ message: 'Default doctor account is not available.' });
@@ -97,6 +101,22 @@ export const createConsultation = async (req: Request, res: Response) => {
     if (appointment.patientId !== patientId) {
       return res.status(400).json({ message: 'Appointment does not match selected patient.' });
     }
+  }
+
+  const activeConsultation = await prisma.consultation.findFirst({
+    where: {
+      patientId,
+      status: { in: [ConsultationStatus.WAITING, ConsultationStatus.IN_PROGRESS] },
+    },
+    include: consultationInclude,
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (activeConsultation) {
+    return res.status(409).json({
+      message: 'Patient already has an active visit in the consultation queue.',
+      consultation: activeConsultation,
+    });
   }
 
   const consultation = await prisma.consultation.create({
@@ -139,13 +159,16 @@ export const listConsultations = async (req: Request, res: Response) => {
       patientId: parsedPatientId ?? undefined,
       patient: keyword
         ? {
+            isActive: true,
             OR: [
               { name: { contains: keyword, mode: 'insensitive' } },
               { icOrPassport: { contains: keyword, mode: 'insensitive' } },
               { phone: { contains: keyword, mode: 'insensitive' } },
             ],
           }
-        : undefined,
+        : parsedPatientId
+          ? undefined
+          : { isActive: true },
     },
     include: consultationInclude,
     orderBy: [{ status: 'asc' }, { createdAt: 'asc' }],

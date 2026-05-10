@@ -388,11 +388,15 @@ export const recordPayment = async (req: Request, res: Response) => {
 
   const patient = await prisma.patient.findUnique({
     where: { patientId },
-    select: { patientId: true, name: true, icOrPassport: true, phone: true, address: true },
+    select: { patientId: true, name: true, icOrPassport: true, phone: true, address: true, isActive: true },
   });
 
   if (!patient) {
     return res.status(404).json({ message: 'Patient record not found.' });
+  }
+
+  if (!patient.isActive) {
+    return res.status(400).json({ message: 'Archived patients cannot be used for new payments.' });
   }
 
   const result = await prisma.$transaction(async (tx: any) => {

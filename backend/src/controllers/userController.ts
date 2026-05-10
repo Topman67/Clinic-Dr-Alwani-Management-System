@@ -148,22 +148,70 @@ export const deactivateUser = async (req: Request, res: Response) => {
 
 export const deleteUser = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
+  const actingUserId = req.user?.userId;
   if (!Number.isFinite(id)) {
     return res.status(400).json({ message: 'Invalid user id' });
   }
 
-  if (id === req.user?.userId) {
+  if (!actingUserId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  if (id === actingUserId) {
     return res.status(400).json({ message: 'You cannot delete your own account' });
   }
 
-  const existing = await prisma.user.findUnique({ where: { userId: id } });
+  const existing = await prisma.user.findUnique({
+    where: { userId: id },
+    select: {
+      userId: true,
+      role: true,
+      _count: {
+        select: {
+          prescriptions: true,
+          appointments: true,
+          consultations: true,
+          payments: true,
+          auditLogs: true,
+        },
+      },
+    },
+  });
   if (!existing) {
     return res.status(404).json({ message: 'User not found' });
   }
 
-  await prisma.user.delete({ where: { userId: id } });
+  if (existing.role === Role.DOCTOR) {
+    return res.status(400).json({ message: 'Doctor accounts cannot be deleted.' });
+  }
+
+  const hasClinicalRecords =
+    existing._count.prescriptions > 0 || existing._count.appointments > 0 || existing._count.consultations > 0;
+
+  if (hasClinicalRecords) {
+    return res.status(400).json({ message: 'Cannot delete user with clinical records.' });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (existing._count.payments > 0) {
+      await tx.payment.updateMany({
+        where: { recordedById: id },
+        data: { recordedById: actingUserId },
+      });
+    }
+
+    if (existing._count.auditLogs > 0) {
+      await tx.auditLog.updateMany({
+        where: { userId: id },
+        data: { userId: null },
+      });
+    }
+
+    await tx.user.delete({ where: { userId: id } });
+  });
+
   try {
-    await logActivity(req.user?.userId, `delete_user:${id}`);
+    await logActivity(actingUserId, `delete_user:${id}`);
   } catch (_) {}
   res.json({ message: 'User deleted' });
 };

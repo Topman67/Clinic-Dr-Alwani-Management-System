@@ -89,6 +89,9 @@ model Patient {
   address       String?
   gender        Gender?
   dateOfBirth   DateTime?
+  isActive      Boolean         @default(true)
+  archivedAt    DateTime?
+  archivedBy    String?
   createdAt     DateTime        @default(now())
   prescriptions Prescription[]
   appointments  Appointment[]

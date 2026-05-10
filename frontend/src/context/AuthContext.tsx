@@ -28,6 +28,16 @@ const TOKEN_KEY = 'cms_token';
 const ROLE_KEY = 'cms_role';
 const USERNAME_KEY = 'cms_username';
 
+const clearStoredAuth = () => {
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(ROLE_KEY);
+  sessionStorage.removeItem(USERNAME_KEY);
+
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ROLE_KEY);
+  localStorage.removeItem(USERNAME_KEY);
+};
+
 const getStorageValue = (key: string) => {
   const sessionValue = sessionStorage.getItem(key);
   if (sessionValue !== null) return sessionValue;
@@ -59,6 +69,13 @@ const parseJwtPayload = (token: string): Record<string, unknown> | null => {
   }
 };
 
+const isTokenExpired = (payload: Record<string, unknown> | null) => {
+  if (!payload) return true;
+  const exp = payload.exp;
+  if (typeof exp !== 'number') return false;
+  return exp * 1000 <= Date.now();
+};
+
 const getInitialAuthState = (): AuthState => {
   const token = getStorageValue(TOKEN_KEY);
   const storedRole = getStorageValue(ROLE_KEY);
@@ -69,6 +86,11 @@ const getInitialAuthState = (): AuthState => {
   }
 
   const payload = parseJwtPayload(token);
+  if (isTokenExpired(payload)) {
+    clearStoredAuth();
+    return { token: null, role: null, username: null };
+  }
+
   const payloadRole = payload?.role;
   const payloadUsername = payload?.username;
 
@@ -109,13 +131,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(ROLE_KEY);
-    sessionStorage.removeItem(USERNAME_KEY);
-
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(ROLE_KEY);
-    localStorage.removeItem(USERNAME_KEY);
+    clearStoredAuth();
     setToken(null);
     setRole(null);
     setUsername(null);

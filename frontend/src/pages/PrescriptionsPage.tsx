@@ -49,6 +49,15 @@ type Prescription = {
   items: PrescriptionItem[];
 };
 
+type ConsultationOption = {
+  consultationId: number;
+  appointmentId?: number | null;
+  createdAt: string;
+  status: 'WAITING' | 'IN_PROGRESS' | 'COMPLETED';
+  diagnosis?: string | null;
+  prescription?: { prescriptionId: number; date: string } | null;
+};
+
 type ItemForm = {
   medicineId: number;
   dosage: string;
@@ -145,6 +154,7 @@ export const PrescriptionsPage = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [linkedAppointmentId, setLinkedAppointmentId] = useState<number | null>(null);
   const [linkedConsultationId, setLinkedConsultationId] = useState<number | null>(null);
+  const [availableConsultations, setAvailableConsultations] = useState<ConsultationOption[]>([]);
 
   const doctorId = useMemo(() => parseUserIdFromToken(sessionStorage.getItem('cms_token')), []);
   const initialPatientIdFromQuery = useMemo(() => Number(searchParams.get('patientId') || 0), [searchParams]);
@@ -204,6 +214,30 @@ export const PrescriptionsPage = () => {
     }
   }, []);
 
+  const loadAvailableConsultations = useCallback(async (patientId: number) => {
+    try {
+      const response = await api.get('/consultations', {
+        params: {
+          status: 'COMPLETED',
+          patientId,
+        },
+      });
+
+      const consultations = (response.data as ConsultationOption[]).filter((consultation) => !consultation.prescription);
+      setAvailableConsultations(consultations);
+
+      if (linkedConsultationId && consultations.some((consultation) => consultation.consultationId === linkedConsultationId)) {
+        return;
+      }
+
+      const nextConsultation = consultations[0] ?? null;
+      setLinkedConsultationId(nextConsultation?.consultationId ?? null);
+      setLinkedAppointmentId(nextConsultation?.appointmentId ?? null);
+    } catch {
+      setAvailableConsultations([]);
+    }
+  }, [linkedConsultationId]);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -242,6 +276,9 @@ export const PrescriptionsPage = () => {
     setForm((prev) => ({ ...prev, patientId: initialPatientIdFromQuery }));
     void loadPatientDetails(initialPatientIdFromQuery);
     void loadPrescriptions({ patientId: initialPatientIdFromQuery });
+    if (canCreate) {
+      void loadAvailableConsultations(initialPatientIdFromQuery);
+    }
 
     if (canCreate && initialConsultationIdFromQuery > 0) {
       setLinkedConsultationId(initialConsultationIdFromQuery);
@@ -253,6 +290,7 @@ export const PrescriptionsPage = () => {
     initialAppointmentIdFromQuery,
     initialConsultationIdFromQuery,
     initialPatientIdFromQuery,
+    loadAvailableConsultations,
     loadPatientDetails,
     loadPrescriptions,
   ]);
@@ -281,15 +319,21 @@ export const PrescriptionsPage = () => {
   const onFormPatientChange = (patient: PatientAutocompleteOption | null) => {
     setSelectedFormPatient(patient);
     setForm((prev) => ({ ...prev, patientId: patient?.patientId ?? 0 }));
-    if (canCreate && patient) {
-      if (linkedAppointmentId) {
-        setLinkedAppointmentId(null);
-      }
-      if (linkedConsultationId) {
-        setLinkedConsultationId(null);
-      }
+    setAvailableConsultations([]);
+
+    if (!canCreate) return;
+
+    if (!patient) {
+      setLinkedAppointmentId(null);
+      setLinkedConsultationId(null);
       setSearchParams({});
+      return;
     }
+
+    setLinkedAppointmentId(null);
+    setLinkedConsultationId(null);
+    setSearchParams({});
+    void loadAvailableConsultations(patient.patientId);
   };
 
   const onSearch = async (e: FormEvent) => {
@@ -412,7 +456,7 @@ export const PrescriptionsPage = () => {
     <section className="card">
       <div className="section-head">
         <h1>Manage Prescription</h1>
-        <p className="muted">Doctors create prescriptions. Pharmacists can view and fulfill details.</p>
+        <p className="muted">Doctors create prescriptions from completed consultations. Pharmacists can view and fulfill details.</p>
       </div>
 
       {linkedConsultationId && (
@@ -479,6 +523,36 @@ export const PrescriptionsPage = () => {
             helperText="Patient selection is required."
             required
           />
+
+          <select
+            value={linkedConsultationId ?? ''}
+            onChange={(e) => {
+              const consultationId = Number(e.target.value) || 0;
+              const selectedConsultation =
+                availableConsultations.find((consultation) => consultation.consultationId === consultationId) ?? null;
+              setLinkedConsultationId(selectedConsultation?.consultationId ?? null);
+              setLinkedAppointmentId(selectedConsultation?.appointmentId ?? null);
+            }}
+            disabled={!selectedFormPatient || availableConsultations.length === 0}
+          >
+            <option value="">
+              {!selectedFormPatient
+                ? 'Select patient first'
+                : availableConsultations.length === 0
+                  ? 'No completed consultation available'
+                  : 'Select completed consultation'}
+            </option>
+            {availableConsultations.map((consultation) => (
+              <option key={consultation.consultationId} value={consultation.consultationId}>
+                {`Consultation #${consultation.consultationId} - ${new Date(consultation.createdAt).toLocaleString()}${
+                  consultation.diagnosis ? ` - ${consultation.diagnosis}` : ''
+                }`}
+              </option>
+            ))}
+          </select>
+          {selectedFormPatient && !linkedConsultationId && (
+            <p className="muted">Complete a consultation for this patient first, then select it here to create the prescription.</p>
+          )}
 
           <textarea
             value={form.notes}
