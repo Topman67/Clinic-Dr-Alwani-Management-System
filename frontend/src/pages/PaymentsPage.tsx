@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
+import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
 
 type Patient = {
   patientId: number;
@@ -109,8 +110,7 @@ export const PaymentsPage = () => {
   const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
   const [selectedFormPatient, setSelectedFormPatient] = useState<PatientAutocompleteOption | null>(null);
   const [queryType, setQueryType] = useState<PaymentType | ''>('');
-  const [queryDateFrom, setQueryDateFrom] = useState('');
-  const [queryDateTo, setQueryDateTo] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => getDateRangeForPreset('today'));
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -179,16 +179,16 @@ export const PaymentsPage = () => {
     return {
       patientId: selectedFilterPatient?.patientId,
       type: queryType || undefined,
-      dateFrom: queryDateFrom || undefined,
-      dateTo: queryDateTo || undefined,
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
     };
-  }, [queryDateFrom, queryDateTo, queryType, selectedFilterPatient]);
+  }, [dateRange.dateFrom, dateRange.dateTo, queryType, selectedFilterPatient]);
 
   useEffect(() => {
     void (async () => {
       try {
         if (isDoctor) {
-          await loadPayments();
+          await loadPayments(buildCurrentFilters());
         }
         if (isReceptionist) {
           await loadWalkInMedicines();
@@ -197,7 +197,7 @@ export const PaymentsPage = () => {
         setError('Failed to load required data');
       }
     })();
-  }, [isDoctor, isReceptionist, loadPayments, loadWalkInMedicines]);
+  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPayments, loadWalkInMedicines]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
@@ -404,8 +404,8 @@ export const PaymentsPage = () => {
               void loadPayments({
                 patientId: patient?.patientId,
                 type: queryType || undefined,
-                dateFrom: queryDateFrom || undefined,
-                dateTo: queryDateTo || undefined,
+                dateFrom: dateRange.dateFrom || undefined,
+                dateTo: dateRange.dateTo || undefined,
               });
             }}
             placeholder="Filter payments by patient"
@@ -417,19 +417,20 @@ export const PaymentsPage = () => {
             <option value="APPOINTMENT">Appointment Fee</option>
           </select>
 
-          <input
-            type="date"
-            value={queryDateFrom}
-            onChange={(e) => setQueryDateFrom(e.target.value)}
-            aria-label="Date from"
-          />
+          <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
 
-          <input
-            type="date"
-            value={queryDateTo}
-            onChange={(e) => setQueryDateTo(e.target.value)}
-            aria-label="Date to"
-          />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              setSelectedFilterPatient(null);
+              setQueryType('');
+              setDateRange(getDateRangeForPreset('today'));
+              void loadPayments(getDateRangeForPreset('today'));
+            }}
+          >
+            Reset
+          </button>
 
           <button type="submit" className="btn-secondary">Search</button>
         </form>

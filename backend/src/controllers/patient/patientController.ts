@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { ConsultationStatus, Role, UserStatus } from '@prisma/client';
+import { AppointmentStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
@@ -29,6 +29,7 @@ const getPatientRelationCounts = async (patientId: number) => {
           appointments: true,
           payments: true,
           consultations: true,
+          medicalCertificates: true,
         },
       },
     },
@@ -40,21 +41,9 @@ const hasRelatedRecords = (patient: NonNullable<Awaited<ReturnType<typeof getPat
     patient._count.prescriptions > 0 ||
     patient._count.appointments > 0 ||
     patient._count.payments > 0 ||
-    patient._count.consultations > 0
+    patient._count.consultations > 0 ||
+    patient._count.medicalCertificates > 0
   );
-};
-
-const getDefaultDoctorId = async () => {
-  const doctor = await prisma.user.findFirst({
-    where: {
-      role: Role.DOCTOR,
-      status: UserStatus.ACTIVE,
-    },
-    orderBy: { userId: 'asc' },
-    select: { userId: true },
-  });
-
-  return doctor?.userId ?? null;
 };
 
 const validatePatientPayload = (payload: Record<string, unknown>) => {
@@ -97,7 +86,6 @@ export const createPatient = async (req: Request, res: Response) => {
   if ('error' in parsed) {
     return res.status(400).json({ message: parsed.error });
   }
-  const shouldCreateInitialVisit = (req.body as { createInitialVisit?: unknown }).createInitialVisit !== false;
 
   const duplicate = await prisma.patient.findFirst({
     where: {
@@ -109,24 +97,7 @@ export const createPatient = async (req: Request, res: Response) => {
     return res.status(409).json({ message: 'Patient already exists.' });
   }
 
-  const defaultDoctorId = shouldCreateInitialVisit ? await getDefaultDoctorId() : null;
-  if (shouldCreateInitialVisit && !defaultDoctorId) {
-    return res.status(400).json({ message: 'Default doctor account is not available.' });
-  }
-
-  const patient = await prisma.$transaction(async (tx) => {
-    const created = await tx.patient.create({ data: parsed.data });
-    if (shouldCreateInitialVisit && defaultDoctorId) {
-      await tx.consultation.create({
-        data: {
-          patientId: created.patientId,
-          doctorId: defaultDoctorId,
-          status: ConsultationStatus.WAITING,
-        },
-      });
-    }
-    return created;
-  });
+  const patient = await prisma.patient.create({ data: parsed.data });
   // audit
   try {
     await (await import('../../utils/audit.js')).logActivity(req.user?.userId, `create_patient:${patient.patientId}`);
@@ -164,6 +135,7 @@ export const listPatients = async (req: Request, res: Response) => {
           consultations: true,
           appointments: true,
           payments: true,
+          medicalCertificates: true,
         },
       },
       consultations: {
@@ -173,6 +145,19 @@ export const listPatients = async (req: Request, res: Response) => {
           consultationId: true,
           status: true,
           createdAt: true,
+          updatedAt: true,
+        },
+      },
+      appointments: {
+        where: {
+          status: { in: [AppointmentStatus.PENDING, AppointmentStatus.ARRIVED] },
+        },
+        orderBy: { dateTime: 'asc' },
+        take: 3,
+        select: {
+          appointmentId: true,
+          status: true,
+          dateTime: true,
           updatedAt: true,
         },
       },
@@ -219,6 +204,54 @@ export const getPatient = async (req: Request, res: Response) => {
             },
           },
           prescription: {
+            select: {
+              prescriptionId: true,
+              date: true,
+            },
+          },
+          medicalCertificates: {
+            orderBy: { createdAt: 'desc' },
+            select: {
+              medicalCertificateId: true,
+              startDate: true,
+              days: true,
+              returnToWorkDate: true,
+              status: true,
+            },
+          },
+        },
+      },
+      medicalCertificates: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          doctor: {
+            select: {
+              userId: true,
+              username: true,
+              role: true,
+            },
+          },
+          consultation: {
+            select: {
+              consultationId: true,
+              createdAt: true,
+              diagnosis: true,
+            },
+          },
+        },
+      },
+      appointments: {
+        orderBy: { dateTime: 'desc' },
+        take: 20,
+        include: {
+          followUpFromConsultation: {
+            select: {
+              consultationId: true,
+              createdAt: true,
+              diagnosis: true,
+            },
+          },
+          previousPrescription: {
             select: {
               prescriptionId: true,
               date: true,

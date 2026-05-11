@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
+import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
 
 type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 type AppointmentType = 'NEW' | 'FOLLOW_UP';
@@ -19,6 +20,12 @@ type Appointment = {
   type: AppointmentType;
   notes?: string | null;
   previousPrescriptionId?: number | null;
+  followUpFromConsultationId?: number | null;
+  followUpFromConsultation?: {
+    consultationId: number;
+    createdAt: string;
+    diagnosis?: string | null;
+  } | null;
   patient: {
     patientId: number;
     name: string;
@@ -44,10 +51,25 @@ type NewPatientForm = {
 };
 
 type AppointmentFilters = {
-  dateFilter: string;
+  dateRange: DateRangeValue;
   statusFilter: string;
   typeFilter: string;
   patientFilter: PatientAutocompleteOption | null;
+};
+
+const appointmentTypeLabel = (type: AppointmentType) => {
+  if (type === 'FOLLOW_UP') return 'Follow-up';
+  return 'First Visit';
+};
+
+const appointmentLinkedRecordLabel = (appointment: Appointment) => {
+  if (appointment.followUpFromConsultation?.consultationId) {
+    return `Consultation #${appointment.followUpFromConsultation.consultationId}`;
+  }
+  if (appointment.previousPrescriptionId) {
+    return `Prescription #${appointment.previousPrescriptionId}`;
+  }
+  return '-';
 };
 
 const initialNewPatientForm: NewPatientForm = {
@@ -60,6 +82,84 @@ const initialNewPatientForm: NewPatientForm = {
 };
 
 const toDateInput = (value: Date) => value.toISOString().slice(0, 10);
+
+const todayInputValue = () => new Date().toISOString().slice(0, 10);
+
+const normalizeIc = (value: string) => value.replace(/\D/g, '');
+
+const parseDateInput = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+};
+
+const formatDisplayDate = (value: string) => {
+  const date = parseDateInput(value);
+  if (!date) return '';
+  return [
+    String(date.getDate()).padStart(2, '0'),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    date.getFullYear(),
+  ].join('/');
+};
+
+const calculateAge = (value: string) => {
+  const dob = parseDateInput(value);
+  if (!dob) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const hasBirthdayPassed =
+    today.getMonth() > dob.getMonth() ||
+    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
+  if (!hasBirthdayPassed) age -= 1;
+  return age >= 0 ? age : null;
+};
+
+const extractDobFromMalaysianIc = (value: string) => {
+  const digits = normalizeIc(value);
+  if (!/^\d{12}$/.test(digits)) return null;
+
+  const yy = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const day = Number(digits.slice(4, 6));
+  const currentYear = new Date().getFullYear();
+  const currentShortYear = currentYear % 100;
+  const year = yy > currentShortYear ? 1900 + yy : 2000 + yy;
+  const date = new Date(year, month - 1, day);
+
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  if (date.getTime() > Date.now()) return null;
+  return [
+    year,
+    String(month).padStart(2, '0'),
+    String(day).padStart(2, '0'),
+  ].join('-');
+};
+
+const getIcValidationMessage = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const compact = normalizeIc(trimmed);
+  const looksNumericIc = /^[\d-]+$/.test(trimmed) && compact.length >= 6;
+  if (!looksNumericIc) return null;
+  if (!/^\d{6}-?\d{2}-?\d{4}$/.test(trimmed)) {
+    return 'Malaysian IC must use 12 digits, with optional hyphens.';
+  }
+  if (!extractDobFromMalaysianIc(trimmed)) {
+    return 'IC date segment is invalid or in the future.';
+  }
+  return null;
+};
+
+const getDobValidationMessage = (value: string) => {
+  if (!value) return null;
+  const dob = parseDateInput(value);
+  if (!dob) return 'Date of birth is invalid.';
+  if (dob.getTime() > Date.now()) return 'Date of birth cannot be in the future.';
+  return null;
+};
 
 const toDateTimeLocalInput = (value: Date) => {
   const adjusted = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
@@ -91,25 +191,24 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
-const isToday = (value?: string | null) => {
-  if (!value) return false;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  return toDateInput(date) === toDateInput(new Date());
-};
-
 const isAppointmentPatientEligible = (patient: PatientAutocompleteOption) => {
   if (patient.isActive === false) return false;
   const consultations = patient.consultations ?? [];
-  return !consultations.some((consultation) => {
+  const hasActiveConsultation = consultations.some((consultation) => {
     const status = consultation.status;
-    return status === 'WAITING' || status === 'IN_PROGRESS' || (status === 'COMPLETED' && isToday(consultation.updatedAt ?? consultation.createdAt));
+    return status === 'WAITING' || status === 'IN_PROGRESS';
   });
+  const hasActiveAppointment = (patient.appointments ?? []).some((appointment) => {
+    const status = appointment.status;
+    return status === 'PENDING' || status === 'ARRIVED';
+  });
+  return !hasActiveConsultation && !hasActiveAppointment;
 };
 
 export const AppointmentsPage = () => {
   const { role } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const isReceptionist = role === 'RECEPTIONIST';
@@ -121,14 +220,18 @@ export const AppointmentsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [dateFilter, setDateFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => {
+    const routedDate = searchParams.get('date');
+    return routedDate ? { preset: 'custom', dateFrom: routedDate, dateTo: routedDate } : getDateRangeForPreset('today');
+  });
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') ?? '');
+  const [typeFilter, setTypeFilter] = useState(() => searchParams.get('type') ?? '');
   const [selectedPatientFilter, setSelectedPatientFilter] = useState<PatientAutocompleteOption | null>(null);
   const [selectedBookingPatient, setSelectedBookingPatient] = useState<PatientAutocompleteOption | null>(null);
   const [appointmentDateTime, setAppointmentDateTime] = useState(() => toDateTimeLocalInput(new Date(Date.now() + 30 * 60000)));
   const [appointmentNotes, setAppointmentNotes] = useState('');
   const [newPatientForm, setNewPatientForm] = useState<NewPatientForm>(initialNewPatientForm);
+  const [newPatientDobAutoFilled, setNewPatientDobAutoFilled] = useState(false);
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
   const [isPatientDrawerOpen, setIsPatientDrawerOpen] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
@@ -139,10 +242,14 @@ export const AppointmentsPage = () => {
   const [followUpDateTime, setFollowUpDateTime] = useState(() => toDateTimeLocalInput(new Date(Date.now() + 24 * 60 * 60000)));
   const [followUpNotes, setFollowUpNotes] = useState('');
   const [followUpPrescriptionId, setFollowUpPrescriptionId] = useState('');
-  const [followUpSourceAppointmentId, setFollowUpSourceAppointmentId] = useState<number | null>(null);
+  const [followUpSourceAppointment, setFollowUpSourceAppointment] = useState<Appointment | null>(null);
+
+  const newPatientIcValidationMessage = useMemo(() => getIcValidationMessage(newPatientForm.icOrPassport), [newPatientForm.icOrPassport]);
+  const newPatientDobValidationMessage = useMemo(() => getDobValidationMessage(newPatientForm.dateOfBirth), [newPatientForm.dateOfBirth]);
+  const newPatientAge = useMemo(() => calculateAge(newPatientForm.dateOfBirth), [newPatientForm.dateOfBirth]);
 
   const loadAppointments = useCallback(async (overrides: Partial<AppointmentFilters> = {}) => {
-    const nextDateFilter = overrides.dateFilter ?? dateFilter;
+    const nextDateRange = overrides.dateRange ?? dateRange;
     const nextStatusFilter = overrides.statusFilter ?? statusFilter;
     const nextTypeFilter = overrides.typeFilter ?? typeFilter;
     const nextPatientFilter = Object.prototype.hasOwnProperty.call(overrides, 'patientFilter')
@@ -155,7 +262,8 @@ export const AppointmentsPage = () => {
     try {
       const response = await api.get('/appointments', {
         params: {
-          date: nextDateFilter || undefined,
+          dateFrom: nextDateRange.dateFrom || undefined,
+          dateTo: nextDateRange.dateTo || undefined,
           status: nextStatusFilter || undefined,
           type: nextTypeFilter || undefined,
           patientId: nextPatientFilter?.patientId,
@@ -167,7 +275,7 @@ export const AppointmentsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [dateFilter, selectedPatientFilter, statusFilter, typeFilter]);
+  }, [dateRange, selectedPatientFilter, statusFilter, typeFilter]);
 
   useEffect(() => {
     void loadAppointments();
@@ -209,13 +317,39 @@ export const AppointmentsPage = () => {
     setAppointmentNotes('');
   };
 
+  const validateNewPatientForm = () => {
+    if (!newPatientForm.name.trim() || newPatientForm.name.trim().length < 2) return 'Name must be at least 2 characters.';
+    if (!newPatientForm.icOrPassport.trim() || newPatientForm.icOrPassport.trim().length < 4) return 'IC/ID must be at least 4 characters.';
+    if (!/^[0-9+\-()\s]{7,20}$/.test(newPatientForm.phone.trim())) return 'Phone number format is invalid.';
+    if (!newPatientForm.address.trim() || newPatientForm.address.trim().length < 5) return 'Address must be at least 5 characters.';
+    if (!newPatientForm.dateOfBirth) return 'Date of birth is required.';
+    if (newPatientDobValidationMessage) return newPatientDobValidationMessage;
+    return null;
+  };
+
+  const updateNewPatientIcOrPassport = (value: string) => {
+    const extractedDob = extractDobFromMalaysianIc(value);
+    setNewPatientForm((prev) => ({
+      ...prev,
+      icOrPassport: value,
+      dateOfBirth: extractedDob ?? prev.dateOfBirth,
+    }));
+    setNewPatientDobAutoFilled(Boolean(extractedDob));
+  };
+
+  const updateNewPatientDateOfBirth = (value: string) => {
+    setNewPatientForm((prev) => ({ ...prev, dateOfBirth: value }));
+    setNewPatientDobAutoFilled(false);
+  };
+
   const onCreatePatient = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
-    if (!newPatientForm.name.trim() || !newPatientForm.icOrPassport.trim() || !newPatientForm.phone.trim()) {
-      setError('Name, IC/ID and phone are required for new patient.');
+    const validationError = validateNewPatientForm();
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -227,13 +361,13 @@ export const AppointmentsPage = () => {
         icOrPassport: newPatientForm.icOrPassport.trim(),
         phone: newPatientForm.phone.trim(),
         address: newPatientForm.address.trim(),
-        createInitialVisit: false,
       });
       const created = response.data as Patient;
       setSelectedBookingPatient(created);
       setIsPatientDrawerOpen(false);
       setSuccess('New patient registered and selected for appointment.');
       setNewPatientForm(initialNewPatientForm);
+      setNewPatientDobAutoFilled(false);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to register patient'));
     } finally {
@@ -265,13 +399,14 @@ export const AppointmentsPage = () => {
         notes: appointmentNotes.trim() || undefined,
       });
       setSuccess('Appointment created successfully.');
-      setDateFilter(createdDate);
+      const createdDateRange: DateRangeValue = { preset: 'custom', dateFrom: createdDate, dateTo: createdDate };
+      setDateRange(createdDateRange);
       setStatusFilter('');
       setTypeFilter('');
       setSelectedPatientFilter(null);
       resetAppointmentForm();
       setIsCreateDrawerOpen(false);
-      await loadAppointments({ dateFilter: createdDate, statusFilter: '', typeFilter: '', patientFilter: null });
+      await loadAppointments({ dateRange: createdDateRange, statusFilter: '', typeFilter: '', patientFilter: null });
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to create appointment'));
     } finally {
@@ -312,7 +447,7 @@ export const AppointmentsPage = () => {
 
   const onCreateFollowUp = async (e: FormEvent) => {
     e.preventDefault();
-    if (!followUpSourceAppointmentId) return;
+    if (!followUpSourceAppointment) return;
 
     setError(null);
     setSuccess(null);
@@ -321,16 +456,23 @@ export const AppointmentsPage = () => {
     const normalizedPrescriptionId = followUpPrescriptionId.trim();
 
     try {
-      await api.post(`/appointments/${followUpSourceAppointmentId}/follow-up`, {
+      await api.post(`/appointments/${followUpSourceAppointment.appointmentId}/follow-up`, {
         dateTime: new Date(followUpDateTime).toISOString(),
         notes: followUpNotes.trim() || undefined,
         previousPrescriptionId: normalizedPrescriptionId ? Number(normalizedPrescriptionId) : undefined,
       });
+      const followUpDate = toDateInput(new Date(followUpDateTime));
+      const followUpDateRange: DateRangeValue = { preset: 'custom', dateFrom: followUpDate, dateTo: followUpDate };
       setSuccess('Follow-up appointment created successfully.');
-      setFollowUpSourceAppointmentId(null);
+      setDateRange(followUpDateRange);
+      setStatusFilter('');
+      setTypeFilter('');
+      setSelectedPatientFilter(null);
+      setFollowUpSourceAppointment(null);
+      setFollowUpDateTime(toDateTimeLocalInput(new Date(Date.now() + 24 * 60 * 60000)));
       setFollowUpNotes('');
       setFollowUpPrescriptionId('');
-      await loadAppointments();
+      await loadAppointments({ dateRange: followUpDateRange, statusFilter: '', typeFilter: '', patientFilter: null });
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to create follow-up appointment'));
     } finally {
@@ -343,6 +485,14 @@ export const AppointmentsPage = () => {
     setRescheduleTarget(appointment);
     setRescheduleDateTime(toDateTimeLocalInput(new Date(appointment.dateTime)));
     setRescheduleNotes(appointment.notes ?? '');
+  };
+
+  const openFollowUpDrawer = (appointment: Appointment) => {
+    setOpenActionMenuId(null);
+    setFollowUpSourceAppointment(appointment);
+    setFollowUpDateTime(toDateTimeLocalInput(new Date(Date.now() + 24 * 60 * 60000)));
+    setFollowUpNotes('');
+    setFollowUpPrescriptionId('');
   };
 
   const onRescheduleAppointment = async (e: FormEvent) => {
@@ -359,10 +509,11 @@ export const AppointmentsPage = () => {
         notes: rescheduleNotes.trim() || undefined,
       });
       const nextDate = toDateInput(new Date(rescheduleDateTime));
+      const nextDateRange: DateRangeValue = { preset: 'custom', dateFrom: nextDate, dateTo: nextDate };
       setSuccess('Appointment rescheduled successfully.');
-      setDateFilter(nextDate);
+      setDateRange(nextDateRange);
       setRescheduleTarget(null);
-      await loadAppointments({ dateFilter: nextDate });
+      await loadAppointments({ dateRange: nextDateRange });
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to reschedule appointment'));
     } finally {
@@ -402,7 +553,7 @@ export const AppointmentsPage = () => {
         }}
         className="appointment-toolbar"
       >
-        <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} aria-label="Date" />
+        <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All status</option>
           <option value="PENDING">Pending</option>
@@ -412,8 +563,8 @@ export const AppointmentsPage = () => {
           <option value="NO_SHOW">No Show</option>
         </select>
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-          <option value="">All types</option>
-          <option value="NEW">New</option>
+          <option value="">All appointment types</option>
+          <option value="NEW">First Visit</option>
           <option value="FOLLOW_UP">Follow-up</option>
         </select>
         <PatientAutocomplete
@@ -421,45 +572,22 @@ export const AppointmentsPage = () => {
           onSelect={setSelectedPatientFilter}
           placeholder="Search patient name / IC / phone"
         />
+        <button
+          type="button"
+          className="btn-secondary patient-compact-button"
+          onClick={() => {
+            setDateRange(getDateRangeForPreset('today'));
+            setStatusFilter('');
+            setTypeFilter('');
+            setSelectedPatientFilter(null);
+          }}
+        >
+          Reset
+        </button>
         <button type="submit" className="btn-secondary patient-compact-button" disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </form>
-
-      {followUpSourceAppointmentId && (
-        <section className="card users-subcard" style={{ marginTop: 14 }}>
-          <div className="section-head">
-            <h3>Create Follow-up Appointment</h3>
-            <p className="muted">Appointment ID: {followUpSourceAppointmentId}</p>
-          </div>
-          <form onSubmit={onCreateFollowUp} className="form-grid">
-            <input
-              type="datetime-local"
-              value={followUpDateTime}
-              onChange={(e) => setFollowUpDateTime(e.target.value)}
-              required
-            />
-            <textarea
-              value={followUpNotes}
-              onChange={(e) => setFollowUpNotes(e.target.value)}
-              placeholder="Follow-up notes (optional)"
-              rows={2}
-            />
-            <input
-              value={followUpPrescriptionId}
-              onChange={(e) => setFollowUpPrescriptionId(e.target.value)}
-              placeholder="Previous Prescription ID (optional)"
-              inputMode="numeric"
-            />
-            <div className="action-row">
-              <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Follow-up'}</button>
-              <button type="button" className="btn-secondary" onClick={() => setFollowUpSourceAppointmentId(null)}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
 
       {error && <p className="error">{error}</p>}
       {success && <p className="muted" style={{ color: 'var(--primary)' }}>{success}</p>}
@@ -470,8 +598,9 @@ export const AppointmentsPage = () => {
             <tr>
               <th>Date & Time</th>
               <th>Patient</th>
-              <th>Type</th>
+              <th>Appointment Type</th>
               <th>Status</th>
+              <th>Linked Record</th>
               <th>Notes</th>
               <th>Action</th>
             </tr>
@@ -489,8 +618,15 @@ export const AppointmentsPage = () => {
                     <small>{appointment.patient.icOrPassport} / {appointment.patient.phone}</small>
                   </div>
                 </td>
-                <td>{appointment.type === 'FOLLOW_UP' ? 'Follow-up' : 'New'}</td>
+                <td>{appointmentTypeLabel(appointment.type)}</td>
                 <td><span className={`status-badge ${statusClass(appointment.status)}`}>{statusLabel(appointment.status)}</span></td>
+                <td>
+                  {appointmentLinkedRecordLabel(appointment) === '-' ? (
+                    <span className="muted">-</span>
+                  ) : (
+                    <span className="status-badge status-neutral">{appointmentLinkedRecordLabel(appointment)}</span>
+                  )}
+                </td>
                 <td className="appointment-note-cell">{appointment.notes || '-'}</td>
                 <td>
                   <div className="action-row patient-row-actions" ref={openActionMenuId === appointment.appointmentId ? actionMenuRef : null}>
@@ -527,8 +663,7 @@ export const AppointmentsPage = () => {
                               Start Consultation
                             </button>
                             <button type="button" className="patient-action-menu-item" onClick={() => {
-                              setOpenActionMenuId(null);
-                              setFollowUpSourceAppointmentId(appointment.appointmentId);
+                              openFollowUpDrawer(appointment);
                             }}>
                               Create Follow-up
                             </button>
@@ -537,8 +672,7 @@ export const AppointmentsPage = () => {
 
                         {isDoctor && appointment.status === 'COMPLETED' && (
                           <button type="button" className="patient-action-menu-item" onClick={() => {
-                            setOpenActionMenuId(null);
-                            setFollowUpSourceAppointmentId(appointment.appointmentId);
+                            openFollowUpDrawer(appointment);
                           }}>
                             Create Follow-up
                           </button>
@@ -546,7 +680,7 @@ export const AppointmentsPage = () => {
 
                         <button type="button" className="patient-action-menu-item" onClick={() => {
                           setOpenActionMenuId(null);
-                          navigate(`${isDoctor ? '/doctor' : '/receptionist'}/patients`);
+                          navigate(`${isDoctor ? '/doctor' : '/receptionist'}/patients?patientId=${appointment.patient.patientId}`);
                         }}>
                           View Patient
                         </button>
@@ -640,6 +774,78 @@ export const AppointmentsPage = () => {
         </div>
       )}
 
+      {isDoctor && followUpSourceAppointment && (
+        <div className="appointment-drawer-layer" role="presentation">
+          <button type="button" className="patient-drawer-backdrop" aria-label="Close follow-up drawer" onClick={() => setFollowUpSourceAppointment(null)} />
+          <aside className="patient-drawer appointment-drawer" role="dialog" aria-modal="true" aria-labelledby="follow-up-drawer-title">
+            <div className="patient-drawer-head">
+              <div>
+                <h3 id="follow-up-drawer-title">Create Follow-up Appointment</h3>
+                <p className="muted">
+                  {followUpSourceAppointment.patient.name} - #{followUpSourceAppointment.appointmentId}
+                </p>
+              </div>
+              <button type="button" className="patient-drawer-close" onClick={() => setFollowUpSourceAppointment(null)} disabled={saving}>
+                X
+              </button>
+            </div>
+
+            <form onSubmit={onCreateFollowUp} className="patient-registration-form patient-drawer-form">
+              <div className="patient-drawer-body">
+                <div className="appointment-drawer-stack">
+                  <div className="patient-autocomplete__selected">
+                    <strong>{followUpSourceAppointment.patient.name}</strong>
+                    <span>{followUpSourceAppointment.patient.icOrPassport} / {followUpSourceAppointment.patient.phone}</span>
+                  </div>
+
+                  <label className="field-block">
+                    <span>Appointment Type</span>
+                    <output className="age-output">Follow-up</output>
+                  </label>
+
+                  <label className="field-block">
+                    <span>Date & Time</span>
+                    <input
+                      type="datetime-local"
+                      value={followUpDateTime}
+                      onChange={(e) => setFollowUpDateTime(e.target.value)}
+                      required
+                    />
+                  </label>
+
+                  <label className="field-block">
+                    <span>Notes</span>
+                    <textarea
+                      value={followUpNotes}
+                      onChange={(e) => setFollowUpNotes(e.target.value)}
+                      placeholder="Follow-up notes (optional)"
+                      rows={4}
+                    />
+                  </label>
+
+                  <label className="field-block">
+                    <span>Previous Prescription ID</span>
+                    <input
+                      value={followUpPrescriptionId}
+                      onChange={(e) => setFollowUpPrescriptionId(e.target.value)}
+                      placeholder="Optional"
+                      inputMode="numeric"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="patient-drawer-footer">
+                <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Create Follow-up'}</button>
+                <button className="btn-secondary" type="button" onClick={() => setFollowUpSourceAppointment(null)} disabled={saving}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
+
       {isReceptionist && isPatientDrawerOpen && (
         <div className="appointment-drawer-layer appointment-nested-drawer-layer" role="presentation">
           <button type="button" className="patient-drawer-backdrop" aria-label="Close patient registration drawer" onClick={() => setIsPatientDrawerOpen(false)} />
@@ -659,19 +865,52 @@ export const AppointmentsPage = () => {
                 <div className="patient-form-grid">
                   <label className="field-block">
                     <span>Patient Name</span>
-                    <input value={newPatientForm.name} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, name: e.target.value }))} required />
+                    <input
+                      value={newPatientForm.name}
+                      onChange={(e) => setNewPatientForm((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g. Nur Aina Binti Ahmad"
+                      required
+                    />
                   </label>
                   <label className="field-block">
-                    <span>IC / ID</span>
-                    <input value={newPatientForm.icOrPassport} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, icOrPassport: e.target.value }))} required />
+                    <span>IC Number / ID</span>
+                    <input
+                      className={newPatientIcValidationMessage ? 'field-invalid' : undefined}
+                      value={newPatientForm.icOrPassport}
+                      onChange={(e) => updateNewPatientIcOrPassport(e.target.value)}
+                      placeholder="010902-03-0325 or passport"
+                      inputMode="text"
+                      required
+                    />
+                    <span className={newPatientIcValidationMessage ? 'field-helper' : 'field-hint'}>
+                      {newPatientIcValidationMessage ?? 'Valid Malaysian IC auto-fills DOB. Passport/foreign ID can be entered manually.'}
+                    </span>
                   </label>
                   <label className="field-block">
                     <span>Phone</span>
-                    <input value={newPatientForm.phone} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, phone: e.target.value }))} required />
+                    <input
+                      value={newPatientForm.phone}
+                      onChange={(e) => setNewPatientForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      placeholder="e.g. 012-345 6789"
+                      required
+                    />
                   </label>
-                  <label className="field-block">
+                  <label className={`field-block dob-field ${newPatientDobAutoFilled ? 'dob-autofilled' : ''}`}>
                     <span>Date of Birth</span>
-                    <input type="date" value={newPatientForm.dateOfBirth} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, dateOfBirth: e.target.value }))} required />
+                    <input
+                      className={newPatientDobValidationMessage ? 'field-invalid' : undefined}
+                      type="date"
+                      value={newPatientForm.dateOfBirth}
+                      max={todayInputValue()}
+                      onChange={(e) => updateNewPatientDateOfBirth(e.target.value)}
+                      required
+                    />
+                    <span className={newPatientDobValidationMessage ? 'field-helper' : 'field-hint'}>
+                      {newPatientDobValidationMessage ??
+                        (newPatientDobAutoFilled && newPatientForm.dateOfBirth
+                          ? `Auto-filled from IC: ${formatDisplayDate(newPatientForm.dateOfBirth)}`
+                          : 'Editable for foreign patients, corrections, and demo records.')}
+                    </span>
                   </label>
                   <label className="field-block">
                     <span>Gender</span>
@@ -681,9 +920,22 @@ export const AppointmentsPage = () => {
                       <option value="OTHER">Other</option>
                     </select>
                   </label>
+                  <div className="field-block">
+                    <span>Age</span>
+                    <output className="age-output" aria-live="polite">
+                      {newPatientAge !== null ? `${newPatientAge} years old` : 'Enter DOB'}
+                    </output>
+                    <span className="field-hint">Updates automatically from DOB.</span>
+                  </div>
                   <label className="field-block patient-address-field">
                     <span>Address</span>
-                    <textarea value={newPatientForm.address} onChange={(e) => setNewPatientForm((prev) => ({ ...prev, address: e.target.value }))} rows={3} required />
+                    <textarea
+                      value={newPatientForm.address}
+                      onChange={(e) => setNewPatientForm((prev) => ({ ...prev, address: e.target.value }))}
+                      placeholder="Full residential address"
+                      rows={3}
+                      required
+                    />
                   </label>
                 </div>
               </div>

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { emitDataChanged, subscribeInAppDataSync } from '../lib/sync';
+import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
+import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -23,6 +25,7 @@ type Patient = {
     appointments?: number;
     consultations: number;
     payments: number;
+    medicalCertificates?: number;
   };
   consultations?: Array<{
     consultationId: number;
@@ -32,6 +35,23 @@ type Patient = {
     diagnosis?: string | null;
     doctor?: { username: string; role: string };
     prescription?: { prescriptionId: number; date: string } | null;
+    medicalCertificates?: Array<{
+      medicalCertificateId: number;
+      startDate: string;
+      days: number;
+      returnToWorkDate: string;
+      status: MedicalCertificateStatus;
+    }>;
+  }>;
+  appointments?: Array<{
+    appointmentId: number;
+    status: AppointmentStatus;
+    type?: AppointmentType;
+    dateTime: string;
+    updatedAt: string;
+    notes?: string | null;
+    followUpFromConsultation?: { consultationId: number; createdAt: string; diagnosis?: string | null } | null;
+    previousPrescription?: { prescriptionId: number; date: string } | null;
   }>;
 };
 
@@ -49,6 +69,25 @@ type PatientDetails = Patient & {
     diagnosis?: string | null;
     doctor?: { username: string; role: string };
     prescription?: { prescriptionId: number; date: string } | null;
+    medicalCertificates?: Array<{
+      medicalCertificateId: number;
+      startDate: string;
+      days: number;
+      returnToWorkDate: string;
+      status: MedicalCertificateStatus;
+    }>;
+  }>;
+  medicalCertificates: Array<{
+    medicalCertificateId: number;
+    startDate: string;
+    days: number;
+    returnToWorkDate: string;
+    diagnosis: string;
+    notes?: string | null;
+    status: MedicalCertificateStatus;
+    createdAt: string;
+    doctor?: { username: string; role: string };
+    consultation?: { consultationId: number; createdAt: string; diagnosis?: string | null } | null;
   }>;
   payments: Array<{
     paymentId: number;
@@ -57,6 +96,15 @@ type PatientDetails = Patient & {
     date: string;
     status: string;
     receipt?: { receiptNo: string } | null;
+  }>;
+  appointments: Array<{
+    appointmentId: number;
+    status: AppointmentStatus;
+    type: AppointmentType;
+    dateTime: string;
+    notes?: string | null;
+    followUpFromConsultation?: { consultationId: number; createdAt: string; diagnosis?: string | null } | null;
+    previousPrescription?: { prescriptionId: number; date: string } | null;
   }>;
 };
 
@@ -71,6 +119,9 @@ type PatientForm = {
 
 type PatientStatusFilter = 'active' | 'archived' | 'all';
 type ConsultationStatus = 'WAITING' | 'IN_PROGRESS' | 'COMPLETED';
+type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+type AppointmentType = 'NEW' | 'FOLLOW_UP';
+type MedicalCertificateStatus = 'DRAFT' | 'ISSUED' | 'CANCELLED';
 type PatientPanelMode = 'details' | 'history';
 
 const initialForm: PatientForm = {
@@ -192,10 +243,113 @@ const formatConsultationStatus = (status?: ConsultationStatus) => {
   return 'Completed';
 };
 
+const formatAppointmentStatus = (status?: AppointmentStatus) => {
+  if (status === 'ARRIVED') return 'Appointment Arrived';
+  if (status === 'PENDING') return 'Appointment';
+  return 'Appointment';
+};
+
+const formatAppointmentType = (type?: AppointmentType) => (type === 'FOLLOW_UP' ? 'Follow-up Appointment' : 'First Visit Appointment');
+
+const formatMedicalCertificateStatus = (status: MedicalCertificateStatus) => status.toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
+
+const medicalCertificateStatusClass = (status: MedicalCertificateStatus) => {
+  if (status === 'ISSUED') return 'status-good';
+  if (status === 'DRAFT') return 'status-warning';
+  return 'status-archived';
+};
+
+const buildPatientTimeline = (patient: PatientDetails) => {
+  const consultationItems = patient.consultations.map((item) => ({
+    key: `c-${item.consultationId}`,
+    date: item.createdAt,
+    badge: <span className="status-badge type-consultation">Consultation</span>,
+    detail: [
+      item.status,
+      item.diagnosis || '',
+      item.prescription?.prescriptionId ? `Prescription #${item.prescription.prescriptionId}` : '',
+      ...(item.medicalCertificates ?? []).map((mc) => `MC #${mc.medicalCertificateId}`),
+    ].filter(Boolean).join(' - '),
+  }));
+
+  const appointmentItems = patient.appointments.map((item) => ({
+    key: `a-${item.appointmentId}`,
+    date: item.dateTime,
+    badge: <span className="status-badge status-warning">{formatAppointmentType(item.type)}</span>,
+    detail: [
+      item.status,
+      item.followUpFromConsultation?.consultationId ? `Consultation #${item.followUpFromConsultation.consultationId}` : '',
+      item.previousPrescription?.prescriptionId ? `Prescription #${item.previousPrescription.prescriptionId}` : '',
+      item.notes || '',
+    ].filter(Boolean).join(' - '),
+  }));
+
+  const prescriptionItems = patient.prescriptions.map((item) => ({
+    key: `p-${item.prescriptionId}`,
+    date: item.date,
+    badge: <span className="status-badge status-neutral">Prescription</span>,
+    detail: item.notes || `By ${item.doctor?.username ?? 'Doctor'}`,
+  }));
+
+  const medicalCertificateItems = patient.medicalCertificates.map((item) => ({
+    key: `mc-${item.medicalCertificateId}`,
+    date: item.createdAt,
+    badge: <span className={`status-badge ${medicalCertificateStatusClass(item.status)}`}>MC</span>,
+    detail: [
+      `MC #${item.medicalCertificateId}`,
+      `Consultation #${item.consultation?.consultationId ?? '-'}`,
+      `${item.days} day${item.days === 1 ? '' : 's'}`,
+      `Return ${formatLongDate(item.returnToWorkDate)}`,
+      item.diagnosis,
+      formatMedicalCertificateStatus(item.status),
+    ].filter(Boolean).join(' - '),
+  }));
+
+  const paymentItems = patient.payments.map((item) => ({
+    key: `pay-${item.paymentId}`,
+    date: item.date,
+    badge: <span className="status-badge status-good">Payment</span>,
+    detail: `${item.type} - RM ${formatMoney(item.amount)} - ${item.status}${item.receipt?.receiptNo ? ` - ${item.receipt.receiptNo}` : ''}`,
+  }));
+
+  return [...consultationItems, ...appointmentItems, ...prescriptionItems, ...medicalCertificateItems, ...paymentItems].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  );
+};
+
 const getLatestConsultation = (patient: Patient) => patient.consultations?.[0] ?? null;
 
 const getActiveConsultation = (patient: Patient) =>
   patient.consultations?.find((consultation) => consultation.status === 'WAITING' || consultation.status === 'IN_PROGRESS') ?? null;
+
+const getActiveAppointment = (patient: Patient) =>
+  patient.appointments?.find((appointment) => appointment.status === 'PENDING' || appointment.status === 'ARRIVED') ?? null;
+
+const getPatientWorkflowStatus = (patient: Patient) => {
+  const activeConsultation = getActiveConsultation(patient);
+  if (activeConsultation) {
+    return {
+      label: formatConsultationStatus(activeConsultation.status),
+      badgeClass: 'status-warning',
+      isBlocked: true,
+    };
+  }
+
+  const activeAppointment = getActiveAppointment(patient);
+  if (activeAppointment) {
+    return {
+      label: formatAppointmentStatus(activeAppointment.status),
+      badgeClass: 'type-appointment',
+      isBlocked: true,
+    };
+  }
+
+  return {
+    label: 'No active visit',
+    badgeClass: 'status-neutral',
+    isBlocked: false,
+  };
+};
 
 const getDobValidationMessage = (value: string) => {
   if (!value) return null;
@@ -222,6 +376,7 @@ const getApiErrorStatus = (error: unknown) => {
 
 export const PatientsPage = () => {
   const { role } = useAuth();
+  const [searchParams] = useSearchParams();
   const canManage = role === 'RECEPTIONIST';
   const canArchive = role === 'DOCTOR';
 
@@ -233,6 +388,7 @@ export const PatientsPage = () => {
   const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<PatientDetails | null>(null);
   const [patientPanelMode, setPatientPanelMode] = useState<PatientPanelMode>('details');
+  const [historyDateRange, setHistoryDateRange] = useState<DateRangeValue>(() => getDateRangeForPreset('last30'));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -244,6 +400,7 @@ export const PatientsPage = () => {
   const [visitStartingId, setVisitStartingId] = useState<number | null>(null);
   const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const routedPatientIdRef = useRef<number | null>(null);
 
   const icValidationMessage = useMemo(() => getIcValidationMessage(form.icOrPassport), [form.icOrPassport]);
   const dobValidationMessage = useMemo(() => getDobValidationMessage(form.dateOfBirth), [form.dateOfBirth]);
@@ -252,6 +409,17 @@ export const PatientsPage = () => {
     () => calculateAge(selectedPatient?.dateOfBirth ? toDateInput(selectedPatient.dateOfBirth) : ''),
     [selectedPatient?.dateOfBirth],
   );
+  const selectedPatientTimeline = useMemo(() => {
+    if (!selectedPatient) return [];
+    const from = historyDateRange.dateFrom ? new Date(`${historyDateRange.dateFrom}T00:00:00`).getTime() : null;
+    const to = historyDateRange.dateTo ? new Date(`${historyDateRange.dateTo}T23:59:59`).getTime() : null;
+    return buildPatientTimeline(selectedPatient).filter((item) => {
+      const itemTime = new Date(item.date).getTime();
+      if (from && itemTime < from) return false;
+      if (to && itemTime > to) return false;
+      return true;
+    });
+  }, [historyDateRange.dateFrom, historyDateRange.dateTo, selectedPatient]);
 
   const loadPatients = useCallback(async (patientId?: number, status: PatientStatusFilter = statusFilter) => {
     setLoading(true);
@@ -330,6 +498,7 @@ export const PatientsPage = () => {
     try {
       const response = await api.get(`/patients/${patientId}`);
       setSelectedPatient(response.data as PatientDetails);
+      setHistoryDateRange(getDateRangeForPreset('last30'));
       setSelectedPatientId(patientId);
     } catch {
       setError('Failed to load patient details');
@@ -338,8 +507,29 @@ export const PatientsPage = () => {
     }
   }, []);
 
+  useEffect(() => {
+    const raw = searchParams.get('patientId');
+    if (!raw) return;
+
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) return;
+    if (routedPatientIdRef.current === parsed) return;
+
+    routedPatientIdRef.current = parsed;
+    setPatientPanelMode('details');
+    setSelectedFilterPatient(null);
+    setStatusFilter('all');
+    void loadPatients(parsed, 'all');
+    void loadPatientDetails(parsed);
+  }, [loadPatientDetails, loadPatients, searchParams]);
+
   const visitedStats = useMemo(() => {
-    const visitedCount = patients.filter((p) => ((p._count?.payments ?? 0) + (p._count?.prescriptions ?? 0) + (p._count?.consultations ?? 0)) > 0).length;
+    const visitedCount = patients.filter((p) => (
+      (p._count?.payments ?? 0) +
+      (p._count?.prescriptions ?? 0) +
+      (p._count?.consultations ?? 0) +
+      (p._count?.medicalCertificates ?? 0)
+    ) > 0).length;
     return {
       total: patients.length,
       visitedCount,
@@ -352,7 +542,8 @@ export const PatientsPage = () => {
       (patient._count?.appointments ?? 0) +
       (patient._count?.payments ?? 0) +
       (patient._count?.prescriptions ?? 0) +
-      (patient._count?.consultations ?? 0)
+      (patient._count?.consultations ?? 0) +
+      (patient._count?.medicalCertificates ?? 0)
     );
   };
 
@@ -500,7 +691,6 @@ export const PatientsPage = () => {
     try {
       await api.post('/consultations', { patientId: patient.patientId });
       setSuccess(`${patient.name} has been added to the consultation queue.`);
-      emitDataChanged();
       await loadPatients(selectedFilterPatient?.patientId, statusFilter);
       if (selectedPatientId === patient.patientId) {
         await loadPatientDetails(patient.patientId);
@@ -639,7 +829,7 @@ export const PatientsPage = () => {
           </thead>
           <tbody>
             {patients.map((patient) => {
-              const activeConsultation = getActiveConsultation(patient);
+              const workflowStatus = getPatientWorkflowStatus(patient);
               const latestConsultation = getLatestConsultation(patient);
               return (
               <tr key={patient.patientId}>
@@ -654,8 +844,8 @@ export const PatientsPage = () => {
                 </td>
                 <td>{patient.phone}</td>
                 <td>
-                  <span className={`status-badge ${activeConsultation ? 'status-warning' : 'status-neutral'}`}>
-                    {formatConsultationStatus(activeConsultation?.status)}
+                  <span className={`status-badge ${workflowStatus.badgeClass}`}>
+                    {workflowStatus.label}
                   </span>
                 </td>
                 <td>{latestConsultation ? new Date(latestConsultation.createdAt).toLocaleString() : '-'}</td>
@@ -677,7 +867,7 @@ export const PatientsPage = () => {
                           <button
                             type="button"
                             className="patient-action-menu-item"
-                            disabled={!patient.isActive || Boolean(activeConsultation) || visitStartingId === patient.patientId}
+                            disabled={!patient.isActive || workflowStatus.isBlocked || visitStartingId === patient.patientId}
                             onClick={() => {
                               setOpenActionMenuId(null);
                               void onStartVisit(patient);
@@ -696,18 +886,6 @@ export const PatientsPage = () => {
                         >
                           View Details
                         </button>
-                        {canManage && (
-                          <button
-                            type="button"
-                            className="patient-action-menu-item"
-                            onClick={() => {
-                              setOpenActionMenuId(null);
-                              void onSelectPatient(patient);
-                            }}
-                          >
-                            Manage Patient
-                          </button>
-                        )}
                         {canManage && (
                           <button
                             type="button"
@@ -767,7 +945,7 @@ export const PatientsPage = () => {
 
       <div className="mobile-cards">
         {patients.map((patient) => {
-          const activeConsultation = getActiveConsultation(patient);
+          const workflowStatus = getPatientWorkflowStatus(patient);
           const latestConsultation = getLatestConsultation(patient);
           return (
           <article key={patient.patientId} className="mobile-card patient-mobile-card">
@@ -806,8 +984,8 @@ export const PatientsPage = () => {
               <div>
                 <dt>Queue</dt>
                 <dd>
-                  <span className={`status-badge ${activeConsultation ? 'status-warning' : 'status-neutral'}`}>
-                    {formatConsultationStatus(activeConsultation?.status)}
+                  <span className={`status-badge ${workflowStatus.badgeClass}`}>
+                    {workflowStatus.label}
                   </span>
                 </dd>
               </div>
@@ -829,9 +1007,9 @@ export const PatientsPage = () => {
                     type="button"
                     className="patient-compact-button"
                     onClick={() => void onStartVisit(patient)}
-                    disabled={!patient.isActive || Boolean(activeConsultation) || visitStartingId === patient.patientId}
+                    disabled={!patient.isActive || workflowStatus.isBlocked || visitStartingId === patient.patientId}
                   >
-                    {visitStartingId === patient.patientId ? 'Starting...' : activeConsultation ? 'Visit Active' : 'Start Visit'}
+                    {visitStartingId === patient.patientId ? 'Starting...' : 'Start Visit'}
                   </button>
                 </>
               ) : (
@@ -928,9 +1106,19 @@ export const PatientsPage = () => {
             </div>
 
             <div className="stats-row patient-history-stats">
-              <div className="stat-chip patient-stat-chip"><span>Prescriptions</span><strong>{selectedPatient.prescriptions.length}</strong></div>
-              <div className="stat-chip patient-stat-chip"><span>Consultations</span><strong>{selectedPatient.consultations.length}</strong></div>
-              <div className="stat-chip patient-stat-chip"><span>Payments</span><strong>{selectedPatient.payments.length}</strong></div>
+              <div className="stat-chip patient-stat-chip"><span>History Items</span><strong>{selectedPatientTimeline.length}</strong></div>
+              <div className="stat-chip patient-stat-chip"><span>Appointments</span><strong>{selectedPatientTimeline.filter((item) => item.key.startsWith('a-')).length}</strong></div>
+              <div className="stat-chip patient-stat-chip"><span>Prescriptions</span><strong>{selectedPatientTimeline.filter((item) => item.key.startsWith('p-')).length}</strong></div>
+              <div className="stat-chip patient-stat-chip"><span>MCs</span><strong>{selectedPatientTimeline.filter((item) => item.key.startsWith('mc-')).length}</strong></div>
+              <div className="stat-chip patient-stat-chip"><span>Consultations</span><strong>{selectedPatientTimeline.filter((item) => item.key.startsWith('c-')).length}</strong></div>
+              <div className="stat-chip patient-stat-chip"><span>Payments</span><strong>{selectedPatientTimeline.filter((item) => item.key.startsWith('pay-')).length}</strong></div>
+            </div>
+
+            <div className="filters-grid" style={{ marginTop: 12 }}>
+              <DateRangeFilter value={historyDateRange} onChange={setHistoryDateRange} includeAll />
+              <button type="button" className="btn-secondary" onClick={() => setHistoryDateRange(getDateRangeForPreset('last30'))}>
+                Reset Filters
+              </button>
             </div>
 
             <div className="table-wrap patient-table-wrap">
@@ -943,35 +1131,14 @@ export const PatientsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {selectedPatient.consultations.map((item) => (
-                  <tr key={`c-${item.consultationId}`}>
-                    <td><span className="status-badge type-consultation">Consultation</span></td>
-                    <td>{new Date(item.createdAt).toLocaleString()}</td>
-                    <td>
-                      {item.status}
-                      {item.diagnosis ? ` - ${item.diagnosis}` : ''}
-                      {item.prescription?.prescriptionId ? ` - Prescription #${item.prescription.prescriptionId}` : ''}
-                    </td>
-                  </tr>
-                ))}
-                {selectedPatient.prescriptions.map((item) => (
-                  <tr key={`p-${item.prescriptionId}`}>
-                    <td><span className="status-badge status-neutral">Prescription</span></td>
+                {selectedPatientTimeline.map((item) => (
+                  <tr key={item.key}>
+                    <td>{item.badge}</td>
                     <td>{new Date(item.date).toLocaleString()}</td>
-                    <td>{item.notes || `By ${item.doctor?.username ?? 'Doctor'}`}</td>
+                    <td>{item.detail || '-'}</td>
                   </tr>
                 ))}
-                {selectedPatient.payments.map((item) => (
-                  <tr key={`pay-${item.paymentId}`}>
-                    <td><span className="status-badge status-good">Payment</span></td>
-                    <td>{new Date(item.date).toLocaleString()}</td>
-                    <td>
-                      {item.type} - RM {formatMoney(item.amount)} - {item.status}
-                      {item.receipt?.receiptNo ? ` - ${item.receipt.receiptNo}` : ''}
-                    </td>
-                  </tr>
-                ))}
-                {selectedPatient.consultations.length === 0 && selectedPatient.prescriptions.length === 0 && selectedPatient.payments.length === 0 && (
+                {selectedPatientTimeline.length === 0 && (
                   <tr>
                     <td colSpan={3}>No visit history yet.</td>
                   </tr>

@@ -13,6 +13,11 @@ export type PatientAutocompleteOption = {
     createdAt?: string | null;
     updatedAt?: string | null;
   }>;
+  appointments?: Array<{
+    status?: string | null;
+    dateTime?: string | null;
+    updatedAt?: string | null;
+  }>;
 };
 
 type PatientSearchStatus = 'active' | 'archived' | 'all';

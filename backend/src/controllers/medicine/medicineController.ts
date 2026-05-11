@@ -107,7 +107,7 @@ export const listMedicine = async (req: Request, res: Response) => {
       ],
       approvalStatus: approvalStatus ?? (includePending ? undefined : MedicineApprovalStatus.APPROVED),
     },
-    orderBy: [{ approvalStatus: 'asc' }, { createdAt: 'desc' }],
+    orderBy: [{ approvalStatus: 'asc' }, { expiryDate: 'asc' }, { createdAt: 'desc' }],
   });
   const ordered = medicines.sort((a, b) => {
     const rank = (status: MedicineApprovalStatus) => {
@@ -117,6 +117,8 @@ export const listMedicine = async (req: Request, res: Response) => {
     };
     const rankDiff = rank(a.approvalStatus) - rank(b.approvalStatus);
     if (rankDiff !== 0) return rankDiff;
+    const expiryDiff = new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+    if (expiryDiff !== 0) return expiryDiff;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
   res.json(ordered);

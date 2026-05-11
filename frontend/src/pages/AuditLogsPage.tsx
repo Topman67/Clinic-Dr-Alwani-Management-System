@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
 
 type AuditLog = {
   logId: number;
@@ -55,8 +56,7 @@ export const AuditLogsPage = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [queryUser, setQueryUser] = useState('');
   const [queryActivity, setQueryActivity] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => getDateRangeForPreset('last7'));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,8 +86,8 @@ export const AuditLogsPage = () => {
   const filteredLogs = useMemo(() => {
     const userQ = normalizeText(queryUser);
     const activityQ = normalizeText(queryActivity);
-    const from = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
-    const to = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : null;
+    const from = dateRange.dateFrom ? new Date(`${dateRange.dateFrom}T00:00:00`).getTime() : null;
+    const to = dateRange.dateTo ? new Date(`${dateRange.dateTo}T23:59:59`).getTime() : null;
 
     return logs.filter((log) => {
       const logTime = new Date(log.timestamp).getTime();
@@ -106,7 +106,7 @@ export const AuditLogsPage = () => {
 
       return true;
     });
-  }, [logs, queryUser, queryActivity, dateFrom, dateTo]);
+  }, [logs, queryUser, queryActivity, dateRange.dateFrom, dateRange.dateTo]);
 
   const onFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -115,8 +115,7 @@ export const AuditLogsPage = () => {
   const onReset = () => {
     setQueryUser('');
     setQueryActivity('');
-    setDateFrom('');
-    setDateTo('');
+    setDateRange(getDateRangeForPreset('last7'));
   };
 
   const onExportCsv = () => {
@@ -143,8 +142,7 @@ export const AuditLogsPage = () => {
           onChange={(e) => setQueryActivity(e.target.value)}
           placeholder="Activity keyword"
         />
-        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} aria-label="From date" />
-        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} aria-label="To date" />
+        <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
         <button type="button" className="btn-secondary" onClick={onReset}>Reset</button>
       </form>
 

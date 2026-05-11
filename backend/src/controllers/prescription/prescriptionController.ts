@@ -1,10 +1,28 @@
 import { Request, Response } from 'express';
-import { AppointmentStatus, ConsultationStatus } from '@prisma/client';
+import { AppointmentStatus, ConsultationStatus, MedicineApprovalStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
 
 const isNonEmptyText = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
 const WALKIN_CUSTOMER_PREFIX = 'WALKIN-';
+
+const createHttpError = (statusCode: number, message: string) => Object.assign(new Error(message), { statusCode });
+
+const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
+
+const isExpiredMedicine = (expiryDate: Date) => toDateKey(expiryDate) < toDateKey(new Date());
+
+const isUniqueConsultationPrescriptionConflict = (error: unknown) => {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code !== 'P2002') return false;
+
+  const target = (error.meta as { target?: unknown } | undefined)?.target;
+  if (Array.isArray(target)) {
+    return target.some((field) => String(field) === 'consultationId');
+  }
+
+  return typeof target === 'string' && target.includes('consultationId');
+};
 
 export const createPrescription = async (req: Request, res: Response) => {
   const { patientId, doctorId, consultationId, appointmentId, notes, items } = req.body as {
@@ -70,76 +88,166 @@ export const createPrescription = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Incomplete prescription data.' });
   }
 
-  const consultation = await prisma.consultation.findUnique({
-    where: { consultationId: targetConsultationId },
-    include: { prescription: { select: { prescriptionId: true } } },
-  });
-  if (!consultation) {
-    return res.status(404).json({ message: 'Consultation not found.' });
-  }
+  try {
+    const prescription = await prisma.$transaction(async (tx) => {
+      const consultation = await tx.consultation.findUnique({
+        where: { consultationId: targetConsultationId },
+        include: { prescription: { select: { prescriptionId: true } } },
+      });
+      if (!consultation) {
+        throw createHttpError(404, 'Consultation not found.');
+      }
 
-  if (consultation.patientId !== patientId) {
-    return res.status(400).json({ message: 'Consultation does not match selected patient.' });
-  }
+      if (consultation.patientId !== patientId) {
+        throw createHttpError(400, 'Consultation does not match selected patient.');
+      }
 
-  if (consultation.appointmentId && appointmentId !== undefined && consultation.appointmentId !== appointmentId) {
-    return res.status(400).json({ message: 'Consultation does not match selected appointment.' });
-  }
+      if (consultation.appointmentId && appointmentId !== undefined && consultation.appointmentId !== appointmentId) {
+        throw createHttpError(400, 'Consultation does not match selected appointment.');
+      }
 
-  if (consultation.status !== ConsultationStatus.COMPLETED) {
-    return res.status(400).json({ message: 'Complete consultation before creating prescription.' });
-  }
+      if (consultation.status !== ConsultationStatus.COMPLETED) {
+        throw createHttpError(400, 'Complete consultation before creating prescription.');
+      }
 
-  if (consultation.prescription) {
-    return res.status(409).json({ message: 'Prescription already exists for this consultation.' });
-  }
+      if (consultation.prescription) {
+        throw createHttpError(409, 'This consultation already has a prescription.');
+      }
 
-  const targetAppointmentId = appointmentId ?? consultation.appointmentId ?? undefined;
+      const targetAppointmentId = appointmentId ?? consultation.appointmentId ?? undefined;
 
-  if (targetAppointmentId !== undefined) {
-    const appointment = await prisma.appointment.findUnique({ where: { appointmentId: targetAppointmentId } });
-    if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found.' });
-    }
+      if (targetAppointmentId !== undefined) {
+        const appointment = await tx.appointment.findUnique({ where: { appointmentId: targetAppointmentId } });
+        if (!appointment) {
+          throw createHttpError(404, 'Appointment not found.');
+        }
 
-    if (appointment.patientId !== patientId) {
-      return res.status(400).json({ message: 'Appointment does not match selected patient.' });
-    }
+        if (appointment.patientId !== patientId) {
+          throw createHttpError(400, 'Appointment does not match selected patient.');
+        }
 
-    if (appointment.status === AppointmentStatus.CANCELLED || appointment.status === AppointmentStatus.NO_SHOW) {
-      return res.status(400).json({ message: 'Cannot create prescription for cancelled or no-show appointment.' });
-    }
-  }
+        if (appointment.status === AppointmentStatus.CANCELLED || appointment.status === AppointmentStatus.NO_SHOW) {
+          throw createHttpError(400, 'Cannot create prescription for cancelled or no-show appointment.');
+        }
+      }
 
-  const prescription = await prisma.$transaction(async (tx) => {
-    const created = await tx.prescription.create({
-      data: {
-        patientId,
-        doctorId,
-        consultationId: targetConsultationId,
-        appointmentId: targetAppointmentId,
-        notes,
-        items: {
-          create: items.map((it) => ({ ...it })),
+      const requestedTotals = new Map<number, number>();
+      items.forEach((item) => {
+        requestedTotals.set(item.medicineId, (requestedTotals.get(item.medicineId) ?? 0) + item.qty);
+      });
+
+      const medicineIds = [...requestedTotals.keys()];
+      const medicines = await tx.medicine.findMany({
+        where: { medicineId: { in: medicineIds } },
+        select: {
+          medicineId: true,
+          name: true,
+          quantity: true,
+          expiryDate: true,
+          approvalStatus: true,
         },
-      },
-      include: { items: true },
+      });
+
+      if (medicines.length !== medicineIds.length) {
+        throw createHttpError(404, 'One or more medicines were not found.');
+      }
+
+      for (const medicine of medicines) {
+        const requestedQty = requestedTotals.get(medicine.medicineId) ?? 0;
+
+        if (medicine.approvalStatus !== MedicineApprovalStatus.APPROVED) {
+          throw createHttpError(400, `${medicine.name} is not approved for prescribing.`);
+        }
+
+        if (isExpiredMedicine(medicine.expiryDate)) {
+          throw createHttpError(400, `${medicine.name} is expired and cannot be prescribed.`);
+        }
+
+        if (medicine.quantity < requestedQty) {
+          throw createHttpError(
+            400,
+            `Insufficient stock for ${medicine.name}. Available quantity: ${medicine.quantity}.`,
+          );
+        }
+      }
+
+      const created = await tx.prescription.create({
+        data: {
+          patientId,
+          doctorId,
+          consultationId: targetConsultationId,
+          appointmentId: targetAppointmentId,
+          notes,
+          items: {
+            create: items.map((it) => ({ ...it })),
+          },
+        },
+        include: {
+          items: { include: { medicine: true } },
+          patient: true,
+          consultation: true,
+          doctor: {
+            select: {
+              userId: true,
+              username: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      for (const [medicineId, requestedQty] of requestedTotals.entries()) {
+        const updateResult = await tx.medicine.updateMany({
+          where: {
+            medicineId,
+            approvalStatus: MedicineApprovalStatus.APPROVED,
+            quantity: { gte: requestedQty },
+          },
+          data: {
+            quantity: {
+              decrement: requestedQty,
+            },
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          const medicine = medicines.find((item) => item.medicineId === medicineId);
+          throw createHttpError(
+            400,
+            `Insufficient stock for ${medicine?.name ?? `medicine #${medicineId}`}. Available quantity: ${medicine?.quantity ?? 0}.`,
+          );
+        }
+      }
+
+      if (targetAppointmentId !== undefined) {
+        await tx.appointment.update({
+          where: { appointmentId: targetAppointmentId },
+          data: { status: AppointmentStatus.COMPLETED },
+        });
+      }
+
+      return created;
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
 
-    if (targetAppointmentId !== undefined) {
-      await tx.appointment.update({
-        where: { appointmentId: targetAppointmentId },
-        data: { status: AppointmentStatus.COMPLETED },
-      });
+    res.status(201).json(prescription);
+    try {
+      await logActivity(req.user?.userId, `create_prescription:${prescription.prescriptionId}`);
+    } catch (_) {}
+  } catch (error: unknown) {
+    const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
+    if (error instanceof Error && typeof httpStatus === 'number') {
+      return res.status(httpStatus).json({ message: error.message });
     }
-
-    return created;
-  });
-
-  res.status(201).json(prescription);
-  try {
-    await logActivity(req.user?.userId, `create_prescription:${prescription.prescriptionId}`);
-  } catch (_) {}
+    if (isUniqueConsultationPrescriptionConflict(error)) {
+      return res.status(409).json({ message: 'This consultation already has a prescription.' });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({ message: 'Prescription creation conflicted. Please retry.' });
+    }
+    throw error;
+  }
 };
 
 export const listPrescriptions = async (req: Request, res: Response) => {
@@ -162,7 +270,18 @@ export const listPrescriptions = async (req: Request, res: Response) => {
         lte: dateTo ? new Date(dateTo) : undefined,
       },
     },
-    include: { patient: true, consultation: true, items: { include: { medicine: true } } },
+    include: {
+      patient: true,
+      consultation: true,
+      doctor: {
+        select: {
+          userId: true,
+          username: true,
+          role: true,
+        },
+      },
+      items: { include: { medicine: true } },
+    },
     orderBy: { date: 'desc' },
   });
   res.json(prescriptions);
@@ -184,7 +303,18 @@ export const getPrescription = async (req: Request, res: Response) => {
         },
       },
     },
-    include: { patient: true, consultation: true, items: { include: { medicine: true } } },
+    include: {
+      patient: true,
+      consultation: true,
+      doctor: {
+        select: {
+          userId: true,
+          username: true,
+          role: true,
+        },
+      },
+      items: { include: { medicine: true } },
+    },
   });
   if (!prescription) return res.status(404).json({ message: 'Not found' });
   res.json(prescription);

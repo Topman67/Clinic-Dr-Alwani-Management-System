@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
+import { DateRangeFilter, getDateRangeForPreset } from '../components/DateRangeFilter';
 
 type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'INVENTORY' | 'PAYMENT' | 'RECEIPT';
 type PaymentType = 'CONSULTATION' | 'APPOINTMENT';
@@ -93,8 +94,8 @@ type Filters = {
 };
 
 const initialFilters: Filters = {
-  dateFrom: '',
-  dateTo: '',
+  dateFrom: getDateRangeForPreset('last7').dateFrom,
+  dateTo: getDateRangeForPreset('last7').dateTo,
   patientId: '',
   medicineId: '',
   paymentType: '',
@@ -137,6 +138,7 @@ export const ReportsPage = () => {
 
   const [reportType, setReportType] = useState<ReportType>('PAYMENT');
   const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [dateRange, setDateRange] = useState(() => getDateRangeForPreset('last7'));
 
   const [patients, setPatients] = useState<PatientOption[]>([]);
   const [medicines, setMedicines] = useState<MedicineOption[]>([]);
@@ -411,20 +413,13 @@ export const ReportsPage = () => {
           )}
 
           {(reportType === 'PRESCRIPTION' || reportType === 'PAYMENT' || reportType === 'RECEIPT') && (
-            <input
-              type="date"
-              value={filters.dateFrom}
-              onChange={(e) => setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
-              aria-label="Date from"
-            />
-          )}
-
-          {(reportType === 'PRESCRIPTION' || reportType === 'PAYMENT' || reportType === 'RECEIPT') && (
-            <input
-              type="date"
-              value={filters.dateTo}
-              onChange={(e) => setFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
-              aria-label="Date to"
+            <DateRangeFilter
+              value={dateRange}
+              onChange={(nextRange) => {
+                setDateRange(nextRange);
+                setFilters((prev) => ({ ...prev, dateFrom: nextRange.dateFrom, dateTo: nextRange.dateTo }));
+              }}
+              includeAll
             />
           )}
 
@@ -498,6 +493,18 @@ export const ReportsPage = () => {
       </form>
 
       <div className="action-row report-print-actions" style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => {
+            const nextRange = getDateRangeForPreset('last7');
+            setDateRange(nextRange);
+            setFilters({ ...initialFilters, dateFrom: nextRange.dateFrom, dateTo: nextRange.dateTo });
+          }}
+          disabled={loading}
+        >
+          Reset Filters
+        </button>
         <button type="button" className="btn-secondary" onClick={() => window.print()} disabled={loading}>
           Print
         </button>

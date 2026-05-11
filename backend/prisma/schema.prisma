@@ -67,6 +67,12 @@ enum MedicineApprovalStatus {
   REJECTED
 }
 
+enum MedicalCertificateStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
 model User {
   userId      Int          @id @default(autoincrement())
   username    String       @unique
@@ -77,6 +83,7 @@ model User {
   prescriptions Prescription[] @relation("PrescriptionDoctor")
   appointments Appointment[] @relation("AppointmentDoctor")
   consultations Consultation[] @relation("ConsultationDoctor")
+  medicalCertificates MedicalCertificate[] @relation("MedicalCertificateDoctor")
   payments    Payment[]    @relation("PaymentRecorder")
   auditLogs   AuditLog[]
 }
@@ -96,6 +103,7 @@ model Patient {
   prescriptions Prescription[]
   appointments  Appointment[]
   consultations Consultation[]
+  medicalCertificates MedicalCertificate[]
   payments      Payment[]
 }
 
@@ -157,11 +165,35 @@ model Consultation {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   prescription      Prescription?
+  followUpAppointments Appointment[]    @relation("ConsultationFollowUps")
+  medicalCertificates MedicalCertificate[]
 
   @@index([patientId])
   @@index([appointmentId])
   @@index([doctorId, status])
   @@index([createdAt])
+}
+
+model MedicalCertificate {
+  medicalCertificateId Int                      @id @default(autoincrement())
+  patient              Patient                  @relation(fields: [patientId], references: [patientId])
+  patientId            Int
+  consultation         Consultation             @relation(fields: [consultationId], references: [consultationId])
+  consultationId       Int
+  doctor               User                     @relation("MedicalCertificateDoctor", fields: [doctorId], references: [userId])
+  doctorId             Int
+  startDate            DateTime
+  days                 Int
+  returnToWorkDate     DateTime
+  diagnosis            String
+  notes                String?
+  status               MedicalCertificateStatus @default(ISSUED)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([patientId, createdAt])
+  @@unique([consultationId])
+  @@index([doctorId])
 }
 
 model Appointment {
@@ -176,6 +208,8 @@ model Appointment {
   notes                   String?
   previousPrescription    Prescription?       @relation("AppointmentPreviousPrescription", fields: [previousPrescriptionId], references: [prescriptionId])
   previousPrescriptionId  Int?
+  followUpFromConsultation Consultation?       @relation("ConsultationFollowUps", fields: [followUpFromConsultationId], references: [consultationId])
+  followUpFromConsultationId Int?
   prescriptions           Prescription[]
   consultations           Consultation[]
   createdAt               DateTime            @default(now())

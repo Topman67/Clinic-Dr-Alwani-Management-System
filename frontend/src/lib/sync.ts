@@ -33,6 +33,8 @@ export const emitDataChanged = () => {
     timestamp: Date.now(),
   };
 
+  notifyInAppDataSync(payload);
+
   if (channel) {
     channel.postMessage(payload);
   }

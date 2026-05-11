@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { roleBasePath } from '../config/rbac';
+import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
 
 type WalkInSale = {
   paymentId: number;
@@ -70,8 +71,7 @@ export const SalesPage = () => {
 
   const [sales, setSales] = useState<WalkInSale[]>([]);
   const [selectedSale, setSelectedSale] = useState<WalkInSale | null>(null);
-  const [queryDateFrom, setQueryDateFrom] = useState('');
-  const [queryDateTo, setQueryDateTo] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => getDateRangeForPreset('today'));
   const [queryCustomerId, setQueryCustomerId] = useState('');
   const [queryType, setQueryType] = useState<WalkInSale['type'] | ''>('');
   const [loading, setLoading] = useState(false);
@@ -98,25 +98,28 @@ export const SalesPage = () => {
   }, []);
 
   useEffect(() => {
-    void loadSales();
-  }, [loadSales]);
+    void loadSales({
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
+    });
+  }, [dateRange.dateFrom, dateRange.dateTo, loadSales]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
       void loadSales({
-        dateFrom: queryDateFrom || undefined,
-        dateTo: queryDateTo || undefined,
+        dateFrom: dateRange.dateFrom || undefined,
+        dateTo: dateRange.dateTo || undefined,
         customerId: queryCustomerId.trim() || undefined,
         type: queryType || undefined,
       });
     });
-  }, [loadSales, queryCustomerId, queryDateFrom, queryDateTo, queryType]);
+  }, [dateRange.dateFrom, dateRange.dateTo, loadSales, queryCustomerId, queryType]);
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
     await loadSales({
-      dateFrom: queryDateFrom || undefined,
-      dateTo: queryDateTo || undefined,
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
       customerId: queryCustomerId.trim() || undefined,
       type: queryType || undefined,
     });
@@ -152,18 +155,20 @@ export const SalesPage = () => {
           <option value="APPOINTMENT">Appointment Fee</option>
           <option value="MEDICINE">Walk-in Medicine</option>
         </select>
-        <input
-          type="date"
-          value={queryDateFrom}
-          onChange={(e) => setQueryDateFrom(e.target.value)}
-          aria-label="Date from"
-        />
-        <input
-          type="date"
-          value={queryDateTo}
-          onChange={(e) => setQueryDateTo(e.target.value)}
-          aria-label="Date to"
-        />
+        <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => {
+            const today = getDateRangeForPreset('today');
+            setDateRange(today);
+            setQueryCustomerId('');
+            setQueryType('');
+            void loadSales({ dateFrom: today.dateFrom, dateTo: today.dateTo });
+          }}
+        >
+          Reset
+        </button>
         <button type="submit" className="btn-secondary">Search</button>
       </form>
 

@@ -42,6 +42,19 @@ const hasSlotConflict = async (doctorId: number, dateTime: Date, excludeAppointm
   return Boolean(existing);
 };
 
+const getDateRange = (dateFrom?: string, dateTo?: string) => {
+  if (!dateFrom && !dateTo) return { range: undefined };
+  const start = dateFrom ? new Date(`${dateFrom}T00:00:00.000`) : undefined;
+  const end = dateTo ? new Date(`${dateTo}T23:59:59.999`) : undefined;
+  if ((start && Number.isNaN(start.getTime())) || (end && Number.isNaN(end.getTime()))) {
+    return { error: 'Invalid date range.' };
+  }
+  if (start && end && start > end) {
+    return { error: 'Date from cannot be later than date to.' };
+  }
+  return { range: { gte: start, lte: end } };
+};
+
 const getAppointmentEligibilityIssue = async (patientId: number) => {
   const [activeConsultation, activeAppointment] = await Promise.all([
     prisma.consultation.findFirst({
@@ -86,8 +99,10 @@ const canTransitionTo = (from: AppointmentStatus, to: AppointmentStatus) => {
 };
 
 export const listAppointments = async (req: Request, res: Response) => {
-  const { date, status, type, query, patientId } = req.query as {
+  const { date, dateFrom, dateTo, status, type, query, patientId } = req.query as {
     date?: string;
+    dateFrom?: string;
+    dateTo?: string;
     status?: string;
     type?: string;
     query?: string;
@@ -97,6 +112,11 @@ export const listAppointments = async (req: Request, res: Response) => {
   const dayRange = date ? getDayRange(date) : null;
   if (date && !dayRange) {
     return res.status(400).json({ message: 'Invalid date filter.' });
+  }
+
+  const parsedDateRange = !date ? getDateRange(dateFrom, dateTo) : { range: undefined };
+  if ('error' in parsedDateRange) {
+    return res.status(400).json({ message: parsedDateRange.error });
   }
 
   const normalizedStatus = status?.toUpperCase() as AppointmentStatus | undefined;
@@ -122,7 +142,7 @@ export const listAppointments = async (req: Request, res: Response) => {
             gte: dayRange.start,
             lte: dayRange.end,
           }
-        : undefined,
+        : parsedDateRange.range,
       status: normalizedStatus,
       type: normalizedType,
       patientId: parsedPatientId ?? undefined,
@@ -155,6 +175,13 @@ export const listAppointments = async (req: Request, res: Response) => {
         select: {
           prescriptionId: true,
           date: true,
+        },
+      },
+      followUpFromConsultation: {
+        select: {
+          consultationId: true,
+          createdAt: true,
+          diagnosis: true,
         },
       },
     },
