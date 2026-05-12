@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -26,10 +26,14 @@ type PatientDetails = Patient & {
 type Medicine = {
   medicineId: number;
   name: string;
+  category?: 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
+  brand?: string | null;
+  packaging?: string | null;
   batchNumber?: string;
   quantity: number;
   expiryDate: string;
   approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  availableForPrescription?: boolean;
 };
 
 type PrescriptionItem = {
@@ -39,8 +43,12 @@ type PrescriptionItem = {
   frequency: string;
   duration: string;
   qty: number;
-  medicine?: { name: string; batchNumber?: string; expiryDate?: string; quantity?: number };
+  medicine?: { medicineId?: number; name: string; batchNumber?: string; expiryDate?: string; quantity?: number; approvalStatus?: Medicine['approvalStatus'] };
 };
+
+type PrescriptionStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'DISPENSED' | 'REJECTED';
+type PrescriptionDetailsTab = 'details' | 'medicines' | 'print' | 'audit';
+type DoctorPrescriptionTab = 'create' | 'history';
 
 type Prescription = {
   prescriptionId: number;
@@ -48,6 +56,7 @@ type Prescription = {
   doctorId: number;
   consultationId?: number | null;
   date: string;
+  status?: PrescriptionStatus;
   notes?: string | null;
   patient?: { name: string; icOrPassport?: string | null; phone?: string | null };
   doctor?: { username: string };
@@ -60,6 +69,7 @@ type ConsultationOption = {
   appointmentId?: number | null;
   createdAt: string;
   status: 'WAITING' | 'IN_PROGRESS' | 'COMPLETED';
+  symptoms?: string | null;
   diagnosis?: string | null;
   prescription?: { prescriptionId: number; date: string } | null;
 };
@@ -111,6 +121,15 @@ const toDateInput = (value: string | null | undefined) => {
   return date.toISOString().slice(0, 10);
 };
 
+const toLocalDateKey = (value: string | Date) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const prettifyGender = (value: PatientDetails['gender']) => {
   if (value === 'MALE') return 'Male';
   if (value === 'FEMALE') return 'Female';
@@ -140,15 +159,41 @@ const getMedicineExpiryStatus = (medicine: Medicine | undefined) => {
 const getMedicineOptionLabel = (medicine: Medicine) => {
   const status = getMedicineExpiryStatus(medicine);
   const statusLabel = status === 'EXPIRED' ? ' - Expired' : status === 'NEAR_EXPIRY' ? ' - Near Expiry' : '';
+  const brandLabel = medicine.brand ? `${medicine.brand} - ` : '';
+  const packagingLabel = medicine.packaging ? ` - ${medicine.packaging}` : '';
   const batchLabel = medicine.batchNumber ? `Batch: ${medicine.batchNumber} - ` : '';
-  return `${medicine.name} - ${batchLabel}Stock: ${medicine.quantity} - Exp: ${toDateInput(medicine.expiryDate)}${statusLabel}`;
+  return `${brandLabel}${medicine.name}${packagingLabel} - ${batchLabel}Stock: ${medicine.quantity} - Exp: ${toDateInput(medicine.expiryDate)}${statusLabel}`;
 };
 
 const getPrescriptionItemsSummary = (items: PrescriptionItem[]) => {
   if (items.length === 0) return '-';
-  const first = items[0];
-  const firstName = first.medicine?.name ?? `Medicine #${first.medicineId}`;
-  return items.length === 1 ? `${firstName} x${first.qty}` : `${firstName} x${first.qty} + ${items.length - 1} more`;
+  return `${items.length} ${items.length === 1 ? 'Medicine' : 'Medicines'}`;
+};
+
+const truncateText = (value: string | null | undefined, maxLength = 52) => {
+  const normalized = value?.trim();
+  if (!normalized) return '';
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
+};
+
+const getConsultationOptionLabel = (consultation: ConsultationOption) => {
+  const summary = truncateText(consultation.diagnosis || consultation.symptoms || 'No diagnosis recorded', 34);
+  const suffix = consultation.prescription ? ' - Prescription Created' : '';
+  return `Consultation #${consultation.consultationId} - ${summary}${suffix}`;
+};
+
+const getPrescriptionStatusLabel = (status: PrescriptionStatus | undefined) => {
+  if (status === 'VERIFIED') return 'Verified';
+  if (status === 'DISPENSED') return 'Dispensed';
+  if (status === 'REJECTED') return 'Rejected';
+  return 'Pending Verification';
+};
+
+const getPrescriptionStatusClass = (status: PrescriptionStatus | undefined) => {
+  if (status === 'VERIFIED') return 'type-consultation';
+  if (status === 'DISPENSED') return 'status-good';
+  if (status === 'REJECTED') return 'status-critical';
+  return 'status-warning';
 };
 
 const parseUserIdFromToken = (token: string | null): number | null => {
@@ -179,26 +224,34 @@ export const PrescriptionsPage = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [summaryPrescriptions, setSummaryPrescriptions] = useState<Prescription[]>([]);
   const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
   const [selectedFormPatient, setSelectedFormPatient] = useState<PatientAutocompleteOption | null>(null);
   const [selectedPatientDetails, setSelectedPatientDetails] = useState<PatientDetails | null>(null);
   const [dateRange, setDateRange] = useState<DateRangeValue>(() => getDateRangeForPreset('last7'));
+  const [statusFilter, setStatusFilter] = useState<PrescriptionStatus | ''>(() => (role === 'PHARMACIST' ? 'PENDING_VERIFICATION' : ''));
   const [form, setForm] = useState<PrescriptionForm>(initialForm);
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [processingPrescriptionId, setProcessingPrescriptionId] = useState<number | null>(null);
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
+  const [detailsTab, setDetailsTab] = useState<PrescriptionDetailsTab>('details');
+  const [doctorTab, setDoctorTab] = useState<DoctorPrescriptionTab>('create');
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [linkedAppointmentId, setLinkedAppointmentId] = useState<number | null>(null);
   const [linkedConsultationId, setLinkedConsultationId] = useState<number | null>(null);
   const [availableConsultations, setAvailableConsultations] = useState<ConsultationOption[]>([]);
+  const bootstrappedQueryRef = useRef<string | null>(null);
 
   const doctorId = useMemo(() => parseUserIdFromToken(sessionStorage.getItem('cms_token')), []);
-  const initialPatientIdFromQuery = useMemo(() => Number(searchParams.get('patientId') || 0), [searchParams]);
-  const initialAppointmentIdFromQuery = useMemo(() => Number(searchParams.get('appointmentId') || 0), [searchParams]);
-  const initialConsultationIdFromQuery = useMemo(() => Number(searchParams.get('consultationId') || 0), [searchParams]);
+  const initialPatientIdFromQuery = Number(searchParams.get('patientId') || 0);
+  const initialAppointmentIdFromQuery = Number(searchParams.get('appointmentId') || 0);
+  const initialConsultationIdFromQuery = Number(searchParams.get('consultationId') || 0);
+  const selectedFilterPatientId = selectedFilterPatient?.patientId ?? 0;
   const medicineById = useMemo(() => new Map(medicines.map((medicine) => [medicine.medicineId, medicine])), [medicines]);
   const selectedConsultation = useMemo(
     () => availableConsultations.find((consultation) => consultation.consultationId === linkedConsultationId) ?? null,
@@ -206,6 +259,23 @@ export const PrescriptionsPage = () => {
   );
   const selectedConsultationPrescriptionId = selectedConsultation?.prescription?.prescriptionId ?? null;
   const hasSelectedCompletedConsultation = Boolean(selectedConsultation && selectedConsultation.status === 'COMPLETED');
+  const rowsPerPage = 12;
+
+  const prescriptionSummary = useMemo(() => {
+    const today = toLocalDateKey(new Date());
+    return {
+      pending: summaryPrescriptions.filter((item) => (item.status ?? 'PENDING_VERIFICATION') === 'PENDING_VERIFICATION').length,
+      verified: summaryPrescriptions.filter((item) => item.status === 'VERIFIED').length,
+      dispensedToday: summaryPrescriptions.filter((item) => item.status === 'DISPENSED' && toLocalDateKey(item.date) === today).length,
+      rejected: summaryPrescriptions.filter((item) => item.status === 'REJECTED').length,
+    };
+  }, [summaryPrescriptions]);
+
+  const totalPages = Math.max(1, Math.ceil(prescriptions.length / rowsPerPage));
+  const paginatedPrescriptions = useMemo(() => {
+    const start = (page - 1) * rowsPerPage;
+    return prescriptions.slice(start, start + rowsPerPage);
+  }, [page, prescriptions]);
 
   const filterPatientsForRole = useCallback(
     (list: Patient[]) => {
@@ -225,7 +295,7 @@ export const PrescriptionsPage = () => {
   const loadLookups = useCallback(async () => {
     const [patientsRes, medicinesRes] = await Promise.all([
       api.get('/patients'),
-      api.get('/medicine'),
+      api.get('/medicine', { params: { availableForPrescription: 'true' } }),
     ]);
     setPatients(filterPatientsForRole(patientsRes.data as Patient[]));
     setMedicines(
@@ -253,7 +323,7 @@ export const PrescriptionsPage = () => {
     }
   }, []);
 
-  const loadPrescriptions = useCallback(async (filters?: { patientId?: number; dateFrom?: string; dateTo?: string }) => {
+  const loadPrescriptions = useCallback(async (filters?: { patientId?: number; dateFrom?: string; dateTo?: string; status?: PrescriptionStatus | '' }) => {
     setLoading(true);
     setError(null);
     try {
@@ -262,9 +332,11 @@ export const PrescriptionsPage = () => {
           patientId: filters?.patientId,
           dateFrom: filters?.dateFrom || undefined,
           dateTo: filters?.dateTo || undefined,
+          status: filters?.status || undefined,
         },
       });
       setPrescriptions(response.data as Prescription[]);
+      setPage(1);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to load prescriptions'));
     } finally {
@@ -272,7 +344,22 @@ export const PrescriptionsPage = () => {
     }
   }, []);
 
-  const loadAvailableConsultations = useCallback(async (patientId: number) => {
+  const loadPrescriptionSummary = useCallback(async (filters?: { patientId?: number; dateFrom?: string; dateTo?: string }) => {
+    try {
+      const response = await api.get('/prescriptions', {
+        params: {
+          patientId: filters?.patientId,
+          dateFrom: filters?.dateFrom || undefined,
+          dateTo: filters?.dateTo || undefined,
+        },
+      });
+      setSummaryPrescriptions(response.data as Prescription[]);
+    } catch {
+      setSummaryPrescriptions([]);
+    }
+  }, []);
+
+  const loadAvailableConsultations = useCallback(async (patientId: number, preferredConsultationId?: number | null) => {
     try {
       const response = await api.get('/consultations', {
         params: {
@@ -284,7 +371,11 @@ export const PrescriptionsPage = () => {
       const consultations = response.data as ConsultationOption[];
       setAvailableConsultations(consultations);
 
-      if (linkedConsultationId && consultations.some((consultation) => consultation.consultationId === linkedConsultationId)) {
+      const preferredId = preferredConsultationId ?? null;
+      if (preferredId && consultations.some((consultation) => consultation.consultationId === preferredId)) {
+        const preferredConsultation = consultations.find((consultation) => consultation.consultationId === preferredId) ?? null;
+        setLinkedConsultationId(preferredConsultation?.consultationId ?? null);
+        setLinkedAppointmentId(preferredConsultation?.appointmentId ?? null);
         return;
       }
 
@@ -293,53 +384,72 @@ export const PrescriptionsPage = () => {
       setLinkedAppointmentId(nextConsultation?.appointmentId ?? null);
     } catch {
       setAvailableConsultations([]);
+      setLinkedConsultationId(null);
+      setLinkedAppointmentId(null);
     }
-  }, [linkedConsultationId]);
+  }, []);
 
   useEffect(() => {
     void (async () => {
       try {
         await loadLookups();
-        await loadPrescriptions({
-          patientId: selectedFilterPatient?.patientId,
-          dateFrom: dateRange.dateFrom,
-          dateTo: dateRange.dateTo,
-        });
       } catch {
         setError('Failed to load required data');
       }
     })();
-  }, [dateRange.dateFrom, dateRange.dateTo, loadLookups, loadPrescriptions, selectedFilterPatient]);
+  }, [loadLookups]);
+
+  useEffect(() => {
+    void loadPrescriptions({
+      patientId: selectedFilterPatientId || undefined,
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
+      status: statusFilter,
+    });
+    void loadPrescriptionSummary({
+      patientId: selectedFilterPatientId || undefined,
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
+    });
+  }, [dateRange.dateFrom, dateRange.dateTo, loadPrescriptionSummary, loadPrescriptions, selectedFilterPatientId, statusFilter]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
       void (async () => {
         await loadLookups();
-        if (selectedFilterPatient?.patientId) {
-          await loadPatientDetails(selectedFilterPatient.patientId);
+        if (selectedFilterPatientId) {
+          await loadPatientDetails(selectedFilterPatientId);
         }
-          await loadPrescriptions({
-          patientId: selectedFilterPatient?.patientId,
+        await loadPrescriptions({
+          patientId: selectedFilterPatientId || undefined,
+          dateFrom: dateRange.dateFrom || undefined,
+          dateTo: dateRange.dateTo || undefined,
+          status: statusFilter,
+        });
+        await loadPrescriptionSummary({
+          patientId: selectedFilterPatientId || undefined,
           dateFrom: dateRange.dateFrom || undefined,
           dateTo: dateRange.dateTo || undefined,
         });
       })();
     });
-  }, [dateRange.dateFrom, dateRange.dateTo, loadLookups, loadPatientDetails, loadPrescriptions, selectedFilterPatient]);
+  }, [dateRange.dateFrom, dateRange.dateTo, loadLookups, loadPatientDetails, loadPrescriptionSummary, loadPrescriptions, selectedFilterPatientId, statusFilter]);
 
   useEffect(() => {
     if (initialPatientIdFromQuery <= 0) return;
+    const bootstrapKey = `${initialPatientIdFromQuery}:${initialAppointmentIdFromQuery}:${initialConsultationIdFromQuery}`;
+    if (bootstrappedQueryRef.current === bootstrapKey) return;
 
     const patient = findPatientOptionById(initialPatientIdFromQuery);
     if (!patient) return;
 
+    bootstrappedQueryRef.current = bootstrapKey;
     setSelectedFilterPatient(patient);
     setSelectedFormPatient(patient);
     setForm((prev) => ({ ...prev, patientId: initialPatientIdFromQuery }));
     void loadPatientDetails(initialPatientIdFromQuery);
-    void loadPrescriptions({ patientId: initialPatientIdFromQuery });
     if (canCreate) {
-      void loadAvailableConsultations(initialPatientIdFromQuery);
+      void loadAvailableConsultations(initialPatientIdFromQuery, initialConsultationIdFromQuery || null);
     }
 
     if (canCreate && initialConsultationIdFromQuery > 0) {
@@ -354,56 +464,40 @@ export const PrescriptionsPage = () => {
     initialPatientIdFromQuery,
     loadAvailableConsultations,
     loadPatientDetails,
-    loadPrescriptions,
   ]);
 
   const onFilterPatientChange = async (patient: PatientAutocompleteOption | null) => {
     setError(null);
     setSuccess(null);
     setSelectedFilterPatient(patient);
+    setSelectedFormPatient(patient);
     setSelectedPatientDetails(null);
+    setForm((prev) => ({ ...prev, patientId: patient?.patientId ?? 0 }));
+    setAvailableConsultations([]);
+    setLinkedAppointmentId(null);
+    setLinkedConsultationId(null);
+    setSearchParams({});
     if (!patient) {
-      await loadPrescriptions({
-        dateFrom: dateRange.dateFrom || undefined,
-        dateTo: dateRange.dateTo || undefined,
-      });
       return;
     }
 
     await loadPatientDetails(patient.patientId);
-    await loadPrescriptions({
-      patientId: patient.patientId,
-      dateFrom: dateRange.dateFrom || undefined,
-      dateTo: dateRange.dateTo || undefined,
-    });
-  };
-
-  const onFormPatientChange = (patient: PatientAutocompleteOption | null) => {
-    setSelectedFormPatient(patient);
-    setForm((prev) => ({ ...prev, patientId: patient?.patientId ?? 0 }));
-    setAvailableConsultations([]);
-
-    if (!canCreate) return;
-
-    if (!patient) {
-      setLinkedAppointmentId(null);
-      setLinkedConsultationId(null);
-      setSearchParams({});
-      return;
+    if (canCreate) {
+      await loadAvailableConsultations(patient.patientId);
     }
-
-    setLinkedAppointmentId(null);
-    setLinkedConsultationId(null);
-    setSearchParams({});
-    void loadPatientDetails(patient.patientId);
-    void loadAvailableConsultations(patient.patientId);
   };
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     await loadPrescriptions({
-      patientId: selectedFilterPatient?.patientId,
+      patientId: selectedFilterPatientId || undefined,
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
+      status: statusFilter,
+    });
+    await loadPrescriptionSummary({
+      patientId: selectedFilterPatientId || undefined,
       dateFrom: dateRange.dateFrom || undefined,
       dateTo: dateRange.dateTo || undefined,
     });
@@ -412,6 +506,7 @@ export const PrescriptionsPage = () => {
   const onViewDetails = async (prescriptionId: number) => {
     if (!canViewDetails) return;
     setDetailsLoading(true);
+    setDetailsTab('details');
     setError(null);
     try {
       const response = await api.get(`/prescriptions/${prescriptionId}`);
@@ -441,9 +536,57 @@ export const PrescriptionsPage = () => {
     }));
   };
 
-  const resetForm = () => {
-    setForm(initialForm);
-    setSelectedFormPatient(null);
+  const resetForm = (nextPatientId = 0) => {
+    setForm({ ...initialForm, patientId: nextPatientId });
+    if (!nextPatientId) {
+      setSelectedFormPatient(null);
+    }
+    setAvailableConsultations([]);
+    setLinkedAppointmentId(null);
+    setLinkedConsultationId(null);
+  };
+
+  const refreshPrescriptionData = async () => {
+    await loadLookups();
+    await loadPrescriptions({
+      patientId: selectedFilterPatientId || undefined,
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
+      status: statusFilter,
+    });
+    await loadPrescriptionSummary({
+      patientId: selectedFilterPatientId || undefined,
+      dateFrom: dateRange.dateFrom || undefined,
+      dateTo: dateRange.dateTo || undefined,
+    });
+    if (selectedFilterPatientId) {
+      await loadPatientDetails(selectedFilterPatientId);
+    }
+  };
+
+  const runPharmacistAction = async (prescriptionId: number, action: 'verify' | 'dispense' | 'reject') => {
+    if (role !== 'PHARMACIST' || processingPrescriptionId) return;
+    setError(null);
+    setSuccess(null);
+    setProcessingPrescriptionId(prescriptionId);
+    try {
+      const response = await api.post(`/prescriptions/${prescriptionId}/${action}`);
+      const updatedPrescription = response.data as Prescription;
+      setSelectedPrescription((current) => (
+        current?.prescriptionId === updatedPrescription.prescriptionId ? updatedPrescription : current
+      ));
+      setPrescriptions((current) => current.map((item) => (
+        item.prescriptionId === updatedPrescription.prescriptionId ? updatedPrescription : item
+      )));
+      await refreshPrescriptionData();
+      if (action === 'verify') setSuccess('Prescription verified.');
+      if (action === 'dispense') setSuccess('Medicine dispensed and stock updated.');
+      if (action === 'reject') setSuccess('Prescription rejected.');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, `Failed to ${action} prescription`));
+    } finally {
+      setProcessingPrescriptionId(null);
+    }
   };
 
   const getFieldKey = (idx: number, key: keyof ItemForm) => `item-${idx}-${key}`;
@@ -453,12 +596,7 @@ export const PrescriptionsPage = () => {
     let validationMessage: string | null = null;
     if (!form.patientId) nextErrors.patientId = true;
 
-    const requestedTotals = new Map<number, number>();
-    form.items.forEach((item) => {
-      if (item.medicineId > 0) {
-        requestedTotals.set(item.medicineId, (requestedTotals.get(item.medicineId) ?? 0) + item.qty);
-      }
-    });
+    const nearExpiryMedicines = new Set<string>();
 
     form.items.forEach((item, idx) => {
       if (!item.medicineId) nextErrors[getFieldKey(idx, 'medicineId')] = true;
@@ -473,24 +611,17 @@ export const PrescriptionsPage = () => {
         if (expiryStatus === 'EXPIRED') {
           nextErrors[getFieldKey(idx, 'medicineId')] = true;
           validationMessage = `${medicine.name} is expired and cannot be prescribed.`;
+        } else if (expiryStatus === 'NEAR_EXPIRY') {
+          nearExpiryMedicines.add(medicine.name);
         }
       }
     });
 
-    for (const [medicineId, requestedQty] of requestedTotals.entries()) {
-      const medicine = medicineById.get(medicineId);
-      if (medicine && requestedQty > medicine.quantity) {
-        validationMessage = `Insufficient stock for ${medicine.name}. Available quantity: ${medicine.quantity}.`;
-        form.items.forEach((item, idx) => {
-          if (item.medicineId === medicineId) {
-            nextErrors[getFieldKey(idx, 'qty')] = true;
-          }
-        });
-      }
-    }
-
     setFieldErrors(nextErrors);
     if (validationMessage) setError(validationMessage);
+    if (!validationMessage && nearExpiryMedicines.size > 0) {
+      window.alert(`Near-expiry medicine selected: ${[...nearExpiryMedicines].join(', ')}.`);
+    }
     return Object.keys(nextErrors).length === 0;
   };
 
@@ -536,24 +667,27 @@ export const PrescriptionsPage = () => {
         items: form.items,
       });
       const createdPrescription = response.data as Prescription;
-      resetForm();
+      resetForm(selectedFilterPatientId);
       setLinkedAppointmentId(null);
       setLinkedConsultationId(null);
       setSearchParams({});
       setFieldErrors({});
-      setSuccess('Prescription Saved Successfully');
+      setSuccess('Prescription sent to pharmacist for verification.');
       setSelectedPrescription(createdPrescription);
       await loadLookups();
       await loadPrescriptions({
-        patientId: selectedFilterPatient?.patientId,
+        patientId: selectedFilterPatientId || undefined,
+        dateFrom: dateRange.dateFrom || undefined,
+        dateTo: dateRange.dateTo || undefined,
+        status: statusFilter,
+      });
+      await loadPrescriptionSummary({
+        patientId: selectedFilterPatientId || undefined,
         dateFrom: dateRange.dateFrom || undefined,
         dateTo: dateRange.dateTo || undefined,
       });
-      if (selectedFilterPatient?.patientId) {
-        await loadPatientDetails(selectedFilterPatient.patientId);
-      }
-      if (form.patientId) {
-        await loadAvailableConsultations(form.patientId);
+      if (selectedFilterPatientId) {
+        await loadPatientDetails(selectedFilterPatientId);
       }
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to create prescription'));
@@ -596,16 +730,34 @@ export const PrescriptionsPage = () => {
             onSelect={(patient) => {
               void onFilterPatientChange(patient);
             }}
-            placeholder="Filter prescriptions by patient"
+            placeholder="Search Patient"
           />
           <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as PrescriptionStatus | '')}
+            aria-label="Prescription status"
+          >
+            <option value="">All Statuses</option>
+            <option value="PENDING_VERIFICATION">Pending Verification</option>
+            <option value="VERIFIED">Verified</option>
+            <option value="DISPENSED">Dispensed</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
           <button
             type="button"
             className="btn-secondary consultation-clear-button"
             onClick={() => {
               setSelectedFilterPatient(null);
+              setSelectedFormPatient(null);
               setSelectedPatientDetails(null);
+              setAvailableConsultations([]);
+              setLinkedAppointmentId(null);
+              setLinkedConsultationId(null);
+              setForm(initialForm);
               setDateRange(getDateRangeForPreset('last7'));
+              setStatusFilter(role === 'PHARMACIST' ? 'PENDING_VERIFICATION' : '');
+              setSearchParams({});
             }}
           >
             Reset
@@ -614,33 +766,83 @@ export const PrescriptionsPage = () => {
         </form>
       </section>
 
-      {canCreate && (
-        <div className="prescription-workflow-grid">
-          <section className="card prescription-patient-card">
-            <div className="section-head compact-section-head">
-              <h3>Selected Patient</h3>
-              <p className="muted">Patient and consultation context for this prescription.</p>
-            </div>
+      {role === 'PHARMACIST' && (
+        <>
+          <section className="prescription-summary-grid">
+            <button type="button" className={statusFilter === 'PENDING_VERIFICATION' ? 'is-active' : ''} onClick={() => setStatusFilter('PENDING_VERIFICATION')}>
+              <span>Pending</span>
+              <strong>{prescriptionSummary.pending}</strong>
+            </button>
+            <button type="button" className={statusFilter === 'VERIFIED' ? 'is-active' : ''} onClick={() => setStatusFilter('VERIFIED')}>
+              <span>Verified</span>
+              <strong>{prescriptionSummary.verified}</strong>
+            </button>
+            <button type="button" className={statusFilter === 'DISPENSED' ? 'is-active' : ''} onClick={() => setStatusFilter('DISPENSED')}>
+              <span>Dispensed Today</span>
+              <strong>{prescriptionSummary.dispensedToday}</strong>
+            </button>
+            <button type="button" className={statusFilter === 'REJECTED' ? 'is-active' : ''} onClick={() => setStatusFilter('REJECTED')}>
+              <span>Rejected</span>
+              <strong>{prescriptionSummary.rejected}</strong>
+            </button>
+          </section>
 
+          <nav className="prescription-workflow-tabs" aria-label="Prescription status tabs">
+            <button type="button" className={statusFilter === 'PENDING_VERIFICATION' ? 'is-active' : ''} onClick={() => setStatusFilter('PENDING_VERIFICATION')}>Pending</button>
+            <button type="button" className={statusFilter === 'VERIFIED' ? 'is-active' : ''} onClick={() => setStatusFilter('VERIFIED')}>Verified</button>
+            <button type="button" className={statusFilter === 'DISPENSED' ? 'is-active' : ''} onClick={() => setStatusFilter('DISPENSED')}>Dispensed</button>
+            <button type="button" className={statusFilter === 'REJECTED' ? 'is-active' : ''} onClick={() => setStatusFilter('REJECTED')}>Rejected</button>
+          </nav>
+        </>
+      )}
+
+      {canCreate && (
+        <nav className="prescription-workflow-tabs" aria-label="Doctor prescription tabs">
+          <button type="button" className={doctorTab === 'create' ? 'is-active' : ''} onClick={() => setDoctorTab('create')}>Create Prescription</button>
+          <button type="button" className={doctorTab === 'history' ? 'is-active' : ''} onClick={() => setDoctorTab('history')}>Prescription History</button>
+        </nav>
+      )}
+
+      {!canCreate && selectedPatientDetails && (
+        <section className="card prescription-patient-card">
+          <div className="section-head compact-section-head">
+            <h3>Selected Patient</h3>
+            <p className="muted">Compact verification context.</p>
+          </div>
+          <div className="prescription-patient-grid">
+            <div><span>Name</span><strong>{selectedPatientDetails.name}</strong></div>
+            <div><span>IC/ID</span><strong>{selectedPatientDetails.icOrPassport}</strong></div>
+            <div><span>Phone</span><strong>{selectedPatientDetails.phone}</strong></div>
+            <div><span>Gender</span><strong>{prettifyGender(selectedPatientDetails.gender)}</strong></div>
+            <div><span>DOB</span><strong>{toDateInput(selectedPatientDetails.dateOfBirth)}</strong></div>
+            <div className="prescription-address-cell"><span>Address</span><strong>{selectedPatientDetails.address || '-'}</strong></div>
+          </div>
+        </section>
+      )}
+
+      {canCreate && doctorTab === 'create' && (
+        <div className="prescription-workflow-grid">
+          <section className="card prescription-patient-card prescription-compact-context-card">
             {selectedPatientDetails ? (
               <>
-                <div className="prescription-patient-grid">
-                  <div><span>Name</span><strong>{selectedPatientDetails.name}</strong></div>
-                  <div><span>IC/ID</span><strong>{selectedPatientDetails.icOrPassport}</strong></div>
-                  <div><span>Phone</span><strong>{selectedPatientDetails.phone}</strong></div>
-                  <div><span>Gender</span><strong>{prettifyGender(selectedPatientDetails.gender)}</strong></div>
-                  <div><span>DOB</span><strong>{toDateInput(selectedPatientDetails.dateOfBirth)}</strong></div>
-                  <div className="prescription-address-cell"><span>Address</span><strong>{selectedPatientDetails.address || '-'}</strong></div>
+                <div className="prescription-context-summary">
+                  <div><span>Patient</span><strong>{selectedPatientDetails.name}</strong><small>{selectedPatientDetails.icOrPassport} / {selectedPatientDetails.phone}</small></div>
+                  <div><span>Consultation</span><strong>{selectedConsultation?.diagnosis || 'Select consultation'}</strong><small>{selectedConsultation ? toDisplayDateTime(selectedConsultation.createdAt) : 'Completed consultations only'}</small></div>
+                  <div><span>Status</span><strong>{selectedConsultationPrescriptionId ? 'Prescription Created' : selectedConsultation ? 'Ready' : 'Waiting'}</strong><small>{selectedPatientDetails.prescriptions.length} prescriptions</small></div>
                 </div>
-                <div className="prescription-mini-stats">
-                  <span>Prescriptions {selectedPatientDetails.prescriptions.length}</span>
-                  <span>Payments {selectedPatientDetails.payments.length}</span>
-                </div>
+                <details className="prescription-collapse">
+                  <summary>Patient Details</summary>
+                  <div className="prescription-patient-grid">
+                    <div><span>Gender</span><strong>{prettifyGender(selectedPatientDetails.gender)}</strong></div>
+                    <div><span>DOB</span><strong>{toDateInput(selectedPatientDetails.dateOfBirth)}</strong></div>
+                    <div className="prescription-address-cell"><span>Address</span><strong>{selectedPatientDetails.address || '-'}</strong></div>
+                  </div>
+                </details>
               </>
             ) : (
               <div className="prescription-empty-panel">
                 <strong>No patient selected</strong>
-                <span>Search a patient in the creation card to start.</span>
+                <span>Use the search filter above to start.</span>
               </div>
             )}
           </section>
@@ -652,15 +854,6 @@ export const PrescriptionsPage = () => {
             </div>
 
             <div className="prescription-context-grid">
-              <PatientAutocomplete
-                selectedPatient={selectedFormPatient}
-                onSelect={onFormPatientChange}
-                placeholder="Search patient..."
-                invalid={Boolean(fieldErrors.patientId)}
-                helperText="Patient selection is required."
-                required
-              />
-
               <label className="field-block">
                 <span>Completed Consultation</span>
                 <select
@@ -683,9 +876,7 @@ export const PrescriptionsPage = () => {
                   </option>
                   {availableConsultations.map((consultation) => (
                     <option key={consultation.consultationId} value={consultation.consultationId}>
-                      {`Consultation #${consultation.consultationId} - ${toDisplayDateTime(consultation.createdAt)}${
-                        consultation.diagnosis ? ` - ${consultation.diagnosis}` : ''
-                      }${consultation.prescription ? ' - Prescription Created' : ''}`}
+                      {getConsultationOptionLabel(consultation)}
                     </option>
                   ))}
                 </select>
@@ -698,16 +889,28 @@ export const PrescriptionsPage = () => {
 
             {selectedConsultation && (
               <section className="prescription-consultation-card">
-                <div>
-                  <span>Selected Consultation</span>
-                  <strong>Consultation #{selectedConsultation.consultationId}</strong>
-                  <small>{selectedConsultation.diagnosis ? `Diagnosis: ${selectedConsultation.diagnosis}` : 'Diagnosis not recorded'}</small>
-                  <small>Date: {toDisplayDateTime(selectedConsultation.createdAt)}</small>
+                <div className="prescription-consultation-summary">
+                  <div>
+                    <span>Consultation ID</span>
+                    <strong>#{selectedConsultation.consultationId}</strong>
+                  </div>
+                  <div>
+                    <span>Diagnosis</span>
+                    <strong>{truncateText(selectedConsultation.diagnosis, 42) || 'Not recorded'}</strong>
+                  </div>
+                  <div>
+                    <span>Symptoms</span>
+                    <strong>{truncateText(selectedConsultation.symptoms, 42) || 'Not recorded'}</strong>
+                  </div>
+                  <div>
+                    <span>Date / Time</span>
+                    <strong>{toDisplayDateTime(selectedConsultation.createdAt)}</strong>
+                  </div>
                 </div>
                 {selectedConsultationPrescriptionId ? (
-                  <span className="status-badge status-warning">Prescription Created</span>
+                  <span className="status-badge status-warning">COMPLETED</span>
                 ) : (
-                  <span className="status-badge status-good">Ready</span>
+                  <span className="status-badge status-good">READY</span>
                 )}
               </section>
             )}
@@ -727,7 +930,7 @@ export const PrescriptionsPage = () => {
                 value={form.notes}
                 onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
                 placeholder="Notes (optional)"
-                rows={3}
+                rows={2}
               />
             </label>
 
@@ -761,10 +964,11 @@ export const PrescriptionsPage = () => {
                           const disabled =
                             status === 'EXPIRED' ||
                             medicine.quantity <= 0 ||
+                            medicine.availableForPrescription === false ||
                             (medicine.approvalStatus !== undefined && medicine.approvalStatus !== 'APPROVED');
                           return (
                             <option key={medicine.medicineId} value={medicine.medicineId} disabled={disabled}>
-                              {getMedicineOptionLabel(medicine)}{medicine.quantity <= 0 ? ' - Out of Stock' : ''}
+                              {getMedicineOptionLabel(medicine)}{medicine.quantity <= 0 ? ' - Out of Stock' : ''}{medicine.availableForPrescription === false ? ' - Not for prescription' : ''}
                             </option>
                           );
                         })}
@@ -831,10 +1035,11 @@ export const PrescriptionsPage = () => {
         </div>
       )}
 
+      {(!canCreate || doctorTab === 'history') && (
       <section className="card prescription-list-card">
         <div className="section-head compact-section-head">
           <h3>Prescription List</h3>
-          <p className="muted">Filtered by the selected patient and date range.</p>
+          <p className="muted">{role === 'PHARMACIST' ? 'Pending prescriptions are ready for verification and dispensing.' : 'Filtered by the selected patient, date range, and status.'}</p>
         </div>
 
         {loading && <p className="muted">Loading prescriptions...</p>}
@@ -845,6 +1050,7 @@ export const PrescriptionsPage = () => {
               <tr>
                 <th>Date</th>
                 <th>Patient</th>
+                <th>Status</th>
                 <th>Consultation</th>
                 <th>Items</th>
                 <th>Notes</th>
@@ -852,21 +1058,54 @@ export const PrescriptionsPage = () => {
               </tr>
             </thead>
             <tbody>
-              {prescriptions.map((p) => (
+              {paginatedPrescriptions.map((p) => (
                 <tr key={p.prescriptionId}>
                   <td>{toDisplayDateTime(p.date)}</td>
                   <td>
                     <strong>{p.patient?.name ?? `Patient #${p.patientId}`}</strong>
                     <small>{p.patient?.icOrPassport ?? ''}</small>
                   </td>
+                  <td><span className={`status-badge ${getPrescriptionStatusClass(p.status)}`}>{getPrescriptionStatusLabel(p.status)}</span></td>
                   <td>{p.consultationId ? `#${p.consultationId}` : '-'}</td>
                   <td>{getPrescriptionItemsSummary(p.items)}</td>
                   <td className="prescription-notes-cell">{p.notes || '-'}</td>
                   <td>
                     {canViewDetails ? (
-                      <button type="button" className="btn-secondary" onClick={() => onViewDetails(p.prescriptionId)}>
-                        View Details
-                      </button>
+                      <div className="prescription-row-actions">
+                        <button type="button" className="btn-secondary" onClick={() => onViewDetails(p.prescriptionId)}>
+                          View Details
+                        </button>
+                        {role === 'PHARMACIST' && (
+                          <details className="prescription-more-menu">
+                            <summary aria-label="More prescription actions">...</summary>
+                            <div>
+                              {p.status === 'PENDING_VERIFICATION' && (
+                                <>
+                                  <button type="button" onClick={() => void runPharmacistAction(p.prescriptionId, 'verify')} disabled={processingPrescriptionId === p.prescriptionId}>Verify</button>
+                                  <button type="button" className="danger" onClick={() => void runPharmacistAction(p.prescriptionId, 'reject')} disabled={processingPrescriptionId === p.prescriptionId}>Reject</button>
+                                </>
+                              )}
+                              {p.status === 'VERIFIED' && (
+                                <>
+                                  <button type="button" onClick={() => void runPharmacistAction(p.prescriptionId, 'dispense')} disabled={processingPrescriptionId === p.prescriptionId}>
+                                    {processingPrescriptionId === p.prescriptionId ? 'Dispensing...' : 'Dispense'}
+                                  </button>
+                                  <button type="button" onClick={() => window.print()}>Print Prescription</button>
+                                  <button type="button" onClick={() => window.print()}>Print Medicine Label</button>
+                                  <button type="button" className="danger" onClick={() => void runPharmacistAction(p.prescriptionId, 'reject')} disabled={processingPrescriptionId === p.prescriptionId}>Reject</button>
+                                </>
+                              )}
+                              {p.status === 'DISPENSED' && (
+                                <>
+                                  <button type="button" onClick={() => window.print()}>Print Prescription</button>
+                                  <button type="button" onClick={() => window.print()}>Print Medicine Label</button>
+                                </>
+                              )}
+                              {p.status === 'REJECTED' && <span>View only</span>}
+                            </div>
+                          </details>
+                        )}
+                      </div>
                     ) : (
                       <span className="muted">Restricted</span>
                     )}
@@ -878,11 +1117,12 @@ export const PrescriptionsPage = () => {
         </div>
 
         <div className="mobile-cards">
-          {prescriptions.map((p) => (
+          {paginatedPrescriptions.map((p) => (
             <article key={p.prescriptionId} className="mobile-card">
               <h4>{p.patient?.name ?? `Patient #${p.patientId}`}</h4>
               <dl className="kv">
                 <div><dt>Date</dt><dd>{toDisplayDateTime(p.date)}</dd></div>
+                <div><dt>Status</dt><dd>{getPrescriptionStatusLabel(p.status)}</dd></div>
                 <div><dt>Consult</dt><dd>{p.consultationId ? `#${p.consultationId}` : '-'}</dd></div>
                 <div><dt>Items</dt><dd>{getPrescriptionItemsSummary(p.items)}</dd></div>
                 <div><dt>Notes</dt><dd>{p.notes || '-'}</dd></div>
@@ -899,7 +1139,19 @@ export const PrescriptionsPage = () => {
         </div>
 
         {!loading && prescriptions.length === 0 && <p className="muted">No prescriptions found for current filters.</p>}
+        {prescriptions.length > rowsPerPage && (
+          <div className="prescription-pagination">
+            <button type="button" className="btn-secondary" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </button>
+            <span>Page {page} of {totalPages}</span>
+            <button type="button" className="btn-secondary" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>
+              Next
+            </button>
+          </div>
+        )}
       </section>
+      )}
 
       {(detailsLoading || selectedPrescription) && canViewDetails && (
         <div className="appointment-drawer-layer prescription-details-layer" role="presentation">
@@ -908,7 +1160,7 @@ export const PrescriptionsPage = () => {
             <div className="patient-drawer-head">
               <div>
                 <h3 id="prescription-details-title">Prescription Details</h3>
-                <p className="muted">Read-only prescription review and print view.</p>
+                <p className="muted">{role === 'PHARMACIST' ? 'Verify, dispense, print prescription, or print medicine labels.' : 'Preview prescription details before pharmacist verification.'}</p>
               </div>
               <button type="button" className="patient-drawer-close" onClick={() => setSelectedPrescription(null)} disabled={detailsLoading}>
                 X
@@ -920,55 +1172,131 @@ export const PrescriptionsPage = () => {
 
               {!detailsLoading && selectedPrescription && (
                 <div className="prescription-details-stack">
-                  <section className="prescription-print-area prescription-print-sheet">
-                    <div className="prescription-print-header-block">
-                      <img src={clinicLogo} alt={CLINIC_NAME} />
-                      <div>
-                        <h3>{CLINIC_NAME}</h3>
-                        <p>Prescription #{selectedPrescription.prescriptionId}</p>
-                      </div>
-                    </div>
+                  <nav className="prescription-detail-tabs" aria-label="Prescription detail tabs">
+                    <button type="button" className={detailsTab === 'details' ? 'is-active' : ''} onClick={() => setDetailsTab('details')}>Details</button>
+                    <button type="button" className={detailsTab === 'medicines' ? 'is-active' : ''} onClick={() => setDetailsTab('medicines')}>Medicines</button>
+                    <button type="button" className={detailsTab === 'print' ? 'is-active' : ''} onClick={() => setDetailsTab('print')}>Print Preview</button>
+                    <button type="button" className={detailsTab === 'audit' ? 'is-active' : ''} onClick={() => setDetailsTab('audit')}>Audit Trail</button>
+                  </nav>
 
-                    <dl className="prescription-details-grid">
-                      <div><dt>Patient</dt><dd>{selectedPrescription.patient?.name ?? `Patient #${selectedPrescription.patientId}`}</dd></div>
-                      <div><dt>IC/ID</dt><dd>{selectedPrescription.patient?.icOrPassport ?? '-'}</dd></div>
-                      <div><dt>Consultation Date</dt><dd>{toDisplayDateTime(selectedPrescription.consultation?.createdAt ?? selectedPrescription.date)}</dd></div>
-                      <div><dt>Doctor</dt><dd>{selectedPrescription.doctor?.username ?? 'Doctor'}</dd></div>
-                      <div><dt>Consultation</dt><dd>{selectedPrescription.consultationId ? `#${selectedPrescription.consultationId}` : '-'}</dd></div>
-                      <div><dt>Diagnosis</dt><dd>{selectedPrescription.consultation?.diagnosis ?? '-'}</dd></div>
-                      <div className="prescription-details-wide"><dt>Notes</dt><dd>{selectedPrescription.notes || '-'}</dd></div>
-                    </dl>
+                  {detailsTab === 'details' && (
+                    <section className="prescription-tab-panel">
+                      <dl className="prescription-details-grid">
+                        <div><dt>Patient</dt><dd>{selectedPrescription.patient?.name ?? `Patient #${selectedPrescription.patientId}`}</dd></div>
+                        <div><dt>IC/ID</dt><dd>{selectedPrescription.patient?.icOrPassport ?? '-'}</dd></div>
+                        <div><dt>Status</dt><dd><span className={`status-badge ${getPrescriptionStatusClass(selectedPrescription.status)}`}>{getPrescriptionStatusLabel(selectedPrescription.status)}</span></dd></div>
+                        <div><dt>Consultation Date</dt><dd>{toDisplayDateTime(selectedPrescription.consultation?.createdAt ?? selectedPrescription.date)}</dd></div>
+                        <div><dt>Doctor</dt><dd>{selectedPrescription.doctor?.username ?? 'Doctor'}</dd></div>
+                        <div><dt>Consultation</dt><dd>{selectedPrescription.consultationId ? `#${selectedPrescription.consultationId}` : '-'}</dd></div>
+                        <div><dt>Diagnosis</dt><dd>{selectedPrescription.consultation?.diagnosis ?? '-'}</dd></div>
+                        <div className="prescription-details-wide"><dt>Notes</dt><dd>{selectedPrescription.notes || '-'}</dd></div>
+                      </dl>
+                    </section>
+                  )}
 
-                    <div className="table-wrap prescription-detail-table-wrap">
-                      <table className="data-table prescription-detail-table">
-                        <thead>
-                          <tr>
-                            <th>Medicine</th>
-                            <th>Dosage</th>
-                            <th>Frequency</th>
-                            <th>Duration</th>
-                            <th>Qty</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedPrescription.items.map((item) => (
-                            <tr key={item.pmId}>
-                              <td>{item.medicine?.name ?? `Medicine #${item.medicineId}`}</td>
-                              <td>{item.dosage}</td>
-                              <td>{item.frequency}</td>
-                              <td>{item.duration}</td>
-                              <td>{item.qty}</td>
+                  {detailsTab === 'medicines' && (
+                    <section className="prescription-tab-panel">
+                      <div className="table-wrap prescription-detail-table-wrap">
+                        <table className="data-table prescription-detail-table">
+                          <thead>
+                            <tr>
+                              <th>Medicine</th>
+                              <th>Expiry</th>
+                              <th>Dosage</th>
+                              <th>Frequency</th>
+                              <th>Duration</th>
+                              <th>Qty</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
+                          </thead>
+                          <tbody>
+                            {selectedPrescription.items.map((item) => (
+                              <tr key={item.pmId}>
+                                <td>
+                                  <strong>{item.medicine?.name ?? `Medicine #${item.medicineId}`}</strong>
+                                  <small>{item.medicine?.batchNumber ? `Batch ${item.medicine.batchNumber}` : ''}</small>
+                                </td>
+                                <td>
+                                  {toDateInput(item.medicine?.expiryDate)}
+                                  {getMedicineExpiryStatus(item.medicine as Medicine | undefined) === 'NEAR_EXPIRY' && <small className="medicine-warning">Near Expiry</small>}
+                                  {getMedicineExpiryStatus(item.medicine as Medicine | undefined) === 'EXPIRED' && <small className="medicine-danger">Expired</small>}
+                                </td>
+                                <td>{item.dosage}</td>
+                                <td>{item.frequency}</td>
+                                <td>{item.duration}</td>
+                                <td>{item.qty}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+
+                  {detailsTab === 'print' && (
+                    <section className="prescription-print-area prescription-print-sheet prescription-tab-panel">
+                      <div className="prescription-print-header-block">
+                        <img src={clinicLogo} alt={CLINIC_NAME} />
+                        <div>
+                          <h3>{CLINIC_NAME}</h3>
+                          <p>Prescription #{selectedPrescription.prescriptionId}</p>
+                        </div>
+                      </div>
+                      <dl className="prescription-details-grid">
+                        <div><dt>Patient</dt><dd>{selectedPrescription.patient?.name ?? `Patient #${selectedPrescription.patientId}`}</dd></div>
+                        <div><dt>IC/ID</dt><dd>{selectedPrescription.patient?.icOrPassport ?? '-'}</dd></div>
+                        <div><dt>Doctor</dt><dd>{selectedPrescription.doctor?.username ?? 'Doctor'}</dd></div>
+                        <div><dt>Date</dt><dd>{toDisplayDateTime(selectedPrescription.date)}</dd></div>
+                      </dl>
+                      <p className="muted">{selectedPrescription.items.length} medicine item(s). Open Medicines tab for full dispensing detail.</p>
+                    </section>
+                  )}
+
+                  {detailsTab === 'audit' && (
+                    <section className="prescription-tab-panel prescription-audit-panel">
+                      <p><strong>Created</strong><span>{toDisplayDateTime(selectedPrescription.date)}</span></p>
+                      <p><strong>Status</strong><span>{getPrescriptionStatusLabel(selectedPrescription.status)}</span></p>
+                      <p><strong>Dispensing rule</strong><span>Stock is deducted only when pharmacist dispenses.</span></p>
+                    </section>
+                  )}
 
                   <div className="action-row prescription-print-actions">
-                    <button type="button" className="prescription-print-button" onClick={() => window.print()}>
-                      Print Prescription
-                    </button>
+                    {role === 'PHARMACIST' && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => void runPharmacistAction(selectedPrescription.prescriptionId, 'verify')}
+                          disabled={processingPrescriptionId === selectedPrescription.prescriptionId || selectedPrescription.status !== 'PENDING_VERIFICATION'}
+                        >
+                          Verify Prescription
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void runPharmacistAction(selectedPrescription.prescriptionId, 'dispense')}
+                          disabled={processingPrescriptionId === selectedPrescription.prescriptionId || selectedPrescription.status !== 'VERIFIED'}
+                        >
+                          {processingPrescriptionId === selectedPrescription.prescriptionId ? 'Dispensing...' : 'Dispense Medicine'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          onClick={() => void runPharmacistAction(selectedPrescription.prescriptionId, 'reject')}
+                          disabled={processingPrescriptionId === selectedPrescription.prescriptionId || selectedPrescription.status === 'DISPENSED' || selectedPrescription.status === 'REJECTED'}
+                        >
+                          Reject Prescription
+                        </button>
+                      </>
+                    )}
+                    {(role !== 'PHARMACIST' || selectedPrescription.status === 'VERIFIED' || selectedPrescription.status === 'DISPENSED') && (
+                      <button type="button" className="prescription-print-button" onClick={() => window.print()}>
+                        Print Prescription
+                      </button>
+                    )}
+                    {role === 'PHARMACIST' && (selectedPrescription.status === 'VERIFIED' || selectedPrescription.status === 'DISPENSED') && (
+                      <button type="button" className="btn-secondary" onClick={() => window.print()}>
+                        Print Medicine Label
+                      </button>
+                    )}
                     <button type="button" className="btn-secondary" onClick={() => setSelectedPrescription(null)}>
                       Close Details
                     </button>

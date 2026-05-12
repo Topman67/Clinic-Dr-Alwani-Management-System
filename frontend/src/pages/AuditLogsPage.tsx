@@ -3,6 +3,8 @@ import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { Button, Card, Input, Table, TableHead, TableWrap, Td, Th } from '../components/ui';
+import { ui } from '../styles/ui';
 
 type AuditLog = {
   logId: number;
@@ -125,85 +127,85 @@ export const AuditLogsPage = () => {
   };
 
   return (
-    <section className="card">
-      <div className="section-head">
-        <h1>Audit Logs</h1>
-        <p className="muted">Monitor recent system activity (latest 200 records from server).</p>
+    <Card>
+      <div className={ui.sectionHead}>
+        <h1 className={ui.sectionTitle}>Audit Logs</h1>
+        <p className={ui.sectionSubtitle}>Monitor recent system activity (latest 200 records from server).</p>
       </div>
 
-      <form onSubmit={onFilterSubmit} className="audit-filters-grid">
-        <input
+      <form onSubmit={onFilterSubmit} className="grid grid-cols-[1.4fr_1.4fr_1fr_1fr_auto] items-center gap-2.5 max-[1080px]:grid-cols-2 max-[640px]:grid-cols-1">
+        <Input
           value={queryUser}
           onChange={(e) => setQueryUser(e.target.value)}
           placeholder="User / role / user ID"
         />
-        <input
+        <Input
           value={queryActivity}
           onChange={(e) => setQueryActivity(e.target.value)}
           placeholder="Activity keyword"
         />
         <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
-        <button type="button" className="btn-secondary" onClick={onReset}>Reset</button>
+        <Button variant="secondary" onClick={onReset}>Reset</Button>
       </form>
 
-      <div className="action-row" style={{ marginTop: 10 }}>
-        <button type="button" className="btn-secondary" onClick={() => void loadLogs()}>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+        <Button variant="secondary" onClick={() => void loadLogs()}>
           Refresh
-        </button>
-        <button type="button" onClick={onExportCsv} disabled={filteredLogs.length === 0}>
+        </Button>
+        <Button onClick={onExportCsv} disabled={filteredLogs.length === 0}>
           Export CSV
-        </button>
+        </Button>
       </div>
 
-      {error && <p className="error">{error}</p>}
-      {loading && <p className="muted">Loading...</p>}
+      {error && <p className={ui.error}>{error}</p>}
+      {loading && <p className={ui.muted}>Loading...</p>}
 
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
+      <TableWrap className="max-[640px]:hidden">
+        <Table>
+          <TableHead>
             <tr>
-              <th>Timestamp</th>
-              <th>User</th>
-              <th>Role</th>
-              <th>User ID</th>
-              <th>Activity</th>
+              <Th>Timestamp</Th>
+              <Th>User</Th>
+              <Th>Role</Th>
+              <Th>User ID</Th>
+              <Th>Activity</Th>
             </tr>
-          </thead>
+          </TableHead>
           <tbody>
             {filteredLogs.map((log) => (
               <tr key={log.logId}>
-                <td>{new Date(log.timestamp).toLocaleString()}</td>
-                <td>{log.user?.username ?? 'System'}</td>
-                <td>{log.user?.role ?? '-'}</td>
-                <td>{log.userId ?? '-'}</td>
-                <td>
+                <Td>{new Date(log.timestamp).toLocaleString()}</Td>
+                <Td>{log.user?.username ?? 'System'}</Td>
+                <Td>{log.user?.role ?? '-'}</Td>
+                <Td>{log.userId ?? '-'}</Td>
+                <Td>
                   <span className="activity-pill">{log.activityType}</span>
-                </td>
+                </Td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableWrap>
 
-      <div className="mobile-cards">
+      <div className={ui.mobileCards}>
         {filteredLogs.map((log) => (
-          <article key={log.logId} className="mobile-card">
-            <h4>{log.user?.username ?? 'System'}</h4>
-            <dl className="kv">
-              <div>
-                <dt>Timestamp</dt>
+          <article key={log.logId} className={ui.mobileCard}>
+            <h4 className={ui.mobileCardTitle}>{log.user?.username ?? 'System'}</h4>
+            <dl className={ui.kv}>
+              <div className={ui.kvRow}>
+                <dt className={ui.kvTerm}>Timestamp</dt>
                 <dd>{new Date(log.timestamp).toLocaleString()}</dd>
               </div>
-              <div>
-                <dt>Role</dt>
+              <div className={ui.kvRow}>
+                <dt className={ui.kvTerm}>Role</dt>
                 <dd>{log.user?.role ?? '-'}</dd>
               </div>
-              <div>
-                <dt>User ID</dt>
+              <div className={ui.kvRow}>
+                <dt className={ui.kvTerm}>User ID</dt>
                 <dd>{log.userId ?? '-'}</dd>
               </div>
-              <div>
-                <dt>Activity</dt>
+              <div className={ui.kvRow}>
+                <dt className={ui.kvTerm}>Activity</dt>
                 <dd><span className="activity-pill">{log.activityType}</span></dd>
               </div>
             </dl>
@@ -211,7 +213,7 @@ export const AuditLogsPage = () => {
         ))}
       </div>
 
-      {!loading && filteredLogs.length === 0 && <p className="muted">No audit logs match the current filters.</p>}
-    </section>
+      {!loading && filteredLogs.length === 0 && <p className={ui.muted}>No audit logs match the current filters.</p>}
+    </Card>
   );
 };

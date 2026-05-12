@@ -1,0 +1,7 @@
+CREATE TYPE "PrescriptionStatus" AS ENUM ('PENDING_VERIFICATION', 'VERIFIED', 'DISPENSED', 'REJECTED');
+
+ALTER TABLE "Prescription"
+ADD COLUMN "status" "PrescriptionStatus" NOT NULL DEFAULT 'PENDING_VERIFICATION';
+
+UPDATE "Prescription"
+SET "status" = 'DISPENSED';

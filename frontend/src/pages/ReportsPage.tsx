@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { DateRangeFilter, getDateRangeForPreset } from '../components/DateRangeFilter';
+import { Button, Input, Select } from '../components/ui';
 
 type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'INVENTORY' | 'PAYMENT' | 'RECEIPT';
 type PaymentType = 'CONSULTATION' | 'APPOINTMENT';
@@ -396,16 +397,16 @@ export const ReportsPage = () => {
         }}
       >
         <div className="filters-grid">
-          <select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)}>
+          <Select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)}>
             <option value="PATIENT">Patient Report</option>
             <option value="PRESCRIPTION">Prescription Report</option>
             <option value="INVENTORY">Inventory Report</option>
             <option value="PAYMENT">Payment Report</option>
             <option value="RECEIPT">Receipt Report</option>
-          </select>
+          </Select>
 
           {(reportType === 'PATIENT' || reportType === 'PRESCRIPTION') && (
-            <input
+            <Input
               value={filters.query}
               onChange={(e) => setFilters((prev) => ({ ...prev, query: e.target.value }))}
               placeholder="Search keyword"
@@ -423,12 +424,12 @@ export const ReportsPage = () => {
             />
           )}
 
-          <button type="submit">Generate</button>
+          <Button type="submit">Generate</Button>
         </div>
 
         {reportType === 'PRESCRIPTION' && (
           <div className="filters-grid">
-            <select
+            <Select
               value={filters.patientId}
               onChange={(e) => setFilters((prev) => ({ ...prev, patientId: e.target.value ? Number(e.target.value) : '' }))}
             >
@@ -438,10 +439,10 @@ export const ReportsPage = () => {
                   {p.name}
                 </option>
               ))}
-            </select>
+            </Select>
 
             {medicines.length > 0 ? (
-              <select
+              <Select
                 value={filters.medicineId}
                 onChange={(e) => setFilters((prev) => ({ ...prev, medicineId: e.target.value ? Number(e.target.value) : '' }))}
               >
@@ -451,7 +452,7 @@ export const ReportsPage = () => {
                     {m.name} ({m.batchNumber})
                   </option>
                 ))}
-              </select>
+              </Select>
             ) : (
               <p className="muted" style={{ margin: 0 }}>Medicine filter is unavailable for this account.</p>
             )}
@@ -460,7 +461,7 @@ export const ReportsPage = () => {
 
         {reportType === 'INVENTORY' && (
           <div className="form-row">
-            <input
+            <Input
               type="number"
               min={1}
               value={filters.expiringDays}
@@ -472,17 +473,17 @@ export const ReportsPage = () => {
 
         {(reportType === 'PAYMENT' || reportType === 'RECEIPT') && (
           <div className="filters-grid">
-            <select
+            <Select
               value={filters.paymentType}
               onChange={(e) => setFilters((prev) => ({ ...prev, paymentType: (e.target.value as PaymentType | '') || '' }))}
             >
               <option value="">All payment types</option>
               <option value="CONSULTATION">Consultation Fee</option>
               <option value="APPOINTMENT">Appointment Fee</option>
-            </select>
+            </Select>
 
             {reportType === 'RECEIPT' && (
-              <input
+              <Input
                 value={filters.receiptNo}
                 onChange={(e) => setFilters((prev) => ({ ...prev, receiptNo: e.target.value }))}
                 placeholder="Receipt no"
@@ -493,9 +494,8 @@ export const ReportsPage = () => {
       </form>
 
       <div className="action-row report-print-actions" style={{ marginTop: 12 }}>
-        <button
-          type="button"
-          className="btn-secondary"
+        <Button
+          variant="secondary"
           onClick={() => {
             const nextRange = getDateRangeForPreset('last7');
             setDateRange(nextRange);
@@ -504,13 +504,13 @@ export const ReportsPage = () => {
           disabled={loading}
         >
           Reset Filters
-        </button>
-        <button type="button" className="btn-secondary" onClick={() => window.print()} disabled={loading}>
+        </Button>
+        <Button variant="secondary" onClick={() => window.print()} disabled={loading}>
           Print
-        </button>
-        <button type="button" className="btn-secondary" onClick={exportCsv} disabled={loading}>
+        </Button>
+        <Button variant="secondary" onClick={exportCsv} disabled={loading}>
           Export CSV
-        </button>
+        </Button>
       </div>
 
       {generatedAt && <p className="muted" style={{ marginTop: 10 }}>Generated at: {new Date(generatedAt).toLocaleString()}</p>}

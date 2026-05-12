@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import { AppointmentStatus, ConsultationStatus, MedicineApprovalStatus, Prisma } from '@prisma/client';
+import { AppointmentStatus, ConsultationStatus, InventoryStockAction, MedicineApprovalStatus, PrescriptionStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
+import { createInventoryLog } from '../medicine/medicineController';
 
 const isNonEmptyText = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
 const WALKIN_CUSTOMER_PREFIX = 'WALKIN-';
@@ -11,6 +12,19 @@ const createHttpError = (statusCode: number, message: string) => Object.assign(n
 const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
 
 const isExpiredMedicine = (expiryDate: Date) => toDateKey(expiryDate) < toDateKey(new Date());
+
+const prescriptionInclude = {
+  patient: true,
+  consultation: true,
+  doctor: {
+    select: {
+      userId: true,
+      username: true,
+      role: true,
+    },
+  },
+  items: { include: { medicine: true } },
+};
 
 const isUniqueConsultationPrescriptionConflict = (error: unknown) => {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
@@ -145,6 +159,7 @@ export const createPrescription = async (req: Request, res: Response) => {
           quantity: true,
           expiryDate: true,
           approvalStatus: true,
+          availableForPrescription: true,
         },
       });
 
@@ -153,21 +168,16 @@ export const createPrescription = async (req: Request, res: Response) => {
       }
 
       for (const medicine of medicines) {
-        const requestedQty = requestedTotals.get(medicine.medicineId) ?? 0;
-
         if (medicine.approvalStatus !== MedicineApprovalStatus.APPROVED) {
           throw createHttpError(400, `${medicine.name} is not approved for prescribing.`);
         }
 
-        if (isExpiredMedicine(medicine.expiryDate)) {
-          throw createHttpError(400, `${medicine.name} is expired and cannot be prescribed.`);
+        if (!medicine.availableForPrescription) {
+          throw createHttpError(400, `${medicine.name} is not available for prescriptions.`);
         }
 
-        if (medicine.quantity < requestedQty) {
-          throw createHttpError(
-            400,
-            `Insufficient stock for ${medicine.name}. Available quantity: ${medicine.quantity}.`,
-          );
+        if (isExpiredMedicine(medicine.expiryDate)) {
+          throw createHttpError(400, `${medicine.name} is expired and cannot be prescribed.`);
         }
       }
 
@@ -177,47 +187,14 @@ export const createPrescription = async (req: Request, res: Response) => {
           doctorId,
           consultationId: targetConsultationId,
           appointmentId: targetAppointmentId,
+          status: PrescriptionStatus.PENDING_VERIFICATION,
           notes,
           items: {
             create: items.map((it) => ({ ...it })),
           },
         },
-        include: {
-          items: { include: { medicine: true } },
-          patient: true,
-          consultation: true,
-          doctor: {
-            select: {
-              userId: true,
-              username: true,
-              role: true,
-            },
-          },
-        },
+        include: prescriptionInclude,
       });
-
-      for (const [medicineId, requestedQty] of requestedTotals.entries()) {
-        const updateResult = await tx.medicine.updateMany({
-          where: {
-            medicineId,
-            approvalStatus: MedicineApprovalStatus.APPROVED,
-            quantity: { gte: requestedQty },
-          },
-          data: {
-            quantity: {
-              decrement: requestedQty,
-            },
-          },
-        });
-
-        if (updateResult.count !== 1) {
-          const medicine = medicines.find((item) => item.medicineId === medicineId);
-          throw createHttpError(
-            400,
-            `Insufficient stock for ${medicine?.name ?? `medicine #${medicineId}`}. Available quantity: ${medicine?.quantity ?? 0}.`,
-          );
-        }
-      }
 
       if (targetAppointmentId !== undefined) {
         await tx.appointment.update({
@@ -251,11 +228,15 @@ export const createPrescription = async (req: Request, res: Response) => {
 };
 
 export const listPrescriptions = async (req: Request, res: Response) => {
-  const { patientId, dateFrom, dateTo } = req.query as { patientId?: string; dateFrom?: string; dateTo?: string };
+  const { patientId, dateFrom, dateTo, status } = req.query as { patientId?: string; dateFrom?: string; dateTo?: string; status?: string };
+  const normalizedStatus = status && Object.values(PrescriptionStatus).includes(status as PrescriptionStatus)
+    ? status as PrescriptionStatus
+    : undefined;
 
   const prescriptions = await prisma.prescription.findMany({
     where: {
       patientId: patientId ? Number(patientId) : undefined,
+      status: normalizedStatus,
       patient: {
         is: {
           icOrPassport: {
@@ -270,18 +251,7 @@ export const listPrescriptions = async (req: Request, res: Response) => {
         lte: dateTo ? new Date(dateTo) : undefined,
       },
     },
-    include: {
-      patient: true,
-      consultation: true,
-      doctor: {
-        select: {
-          userId: true,
-          username: true,
-          role: true,
-        },
-      },
-      items: { include: { medicine: true } },
-    },
+    include: prescriptionInclude,
     orderBy: { date: 'desc' },
   });
   res.json(prescriptions);
@@ -303,19 +273,194 @@ export const getPrescription = async (req: Request, res: Response) => {
         },
       },
     },
-    include: {
-      patient: true,
-      consultation: true,
-      doctor: {
-        select: {
-          userId: true,
-          username: true,
-          role: true,
-        },
-      },
-      items: { include: { medicine: true } },
-    },
+    include: prescriptionInclude,
   });
   if (!prescription) return res.status(404).json({ message: 'Not found' });
+  res.json(prescription);
+};
+
+const validatePrescriptionInventory = async (
+  tx: Prisma.TransactionClient,
+  items: Array<{ medicineId: number; qty: number }>,
+) => {
+  const requestedTotals = new Map<number, number>();
+  items.forEach((item) => {
+    requestedTotals.set(item.medicineId, (requestedTotals.get(item.medicineId) ?? 0) + item.qty);
+  });
+
+  const medicines = await tx.medicine.findMany({
+    where: { medicineId: { in: [...requestedTotals.keys()] } },
+    select: {
+      medicineId: true,
+      name: true,
+      quantity: true,
+      expiryDate: true,
+      approvalStatus: true,
+      availableForPrescription: true,
+      batchNumber: true,
+    },
+  });
+
+  for (const [medicineId, requestedQty] of requestedTotals.entries()) {
+    const medicine = medicines.find((item) => item.medicineId === medicineId);
+    if (!medicine) {
+      throw createHttpError(404, 'One or more medicines were not found.');
+    }
+
+    if (medicine.approvalStatus !== MedicineApprovalStatus.APPROVED) {
+      throw createHttpError(400, `${medicine.name} is not approved for dispensing.`);
+    }
+
+    if (!medicine.availableForPrescription) {
+      throw createHttpError(400, `${medicine.name} is not available for prescriptions.`);
+    }
+
+    if (isExpiredMedicine(medicine.expiryDate)) {
+      throw createHttpError(400, 'Expired medicine cannot be dispensed.');
+    }
+
+    if (medicine.quantity < requestedQty) {
+      throw createHttpError(400, `Insufficient stock for ${medicine.name}. Available quantity: ${medicine.quantity}.`);
+    }
+  }
+
+  return requestedTotals;
+};
+
+export const verifyPrescription = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid prescription reference.' });
+
+  try {
+    const prescription = await prisma.$transaction(async (tx) => {
+      const existing = await tx.prescription.findUnique({
+        where: { prescriptionId: id },
+        include: { items: true },
+      });
+
+      if (!existing) throw createHttpError(404, 'Prescription not found.');
+      if (existing.status === PrescriptionStatus.REJECTED) throw createHttpError(400, 'Rejected prescriptions cannot be verified.');
+      if (existing.status === PrescriptionStatus.DISPENSED) throw createHttpError(400, 'Dispensed prescriptions cannot be verified again.');
+
+      await validatePrescriptionInventory(tx, existing.items);
+
+      return tx.prescription.update({
+        where: { prescriptionId: id },
+        data: { status: PrescriptionStatus.VERIFIED },
+        include: prescriptionInclude,
+      });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+
+    try {
+      await logActivity(req.user?.userId, `verify_prescription:${prescription.prescriptionId}`);
+    } catch (_) {}
+    res.json(prescription);
+  } catch (error: unknown) {
+    const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
+    if (error instanceof Error && typeof httpStatus === 'number') {
+      return res.status(httpStatus).json({ message: error.message });
+    }
+    throw error;
+  }
+};
+
+export const dispensePrescription = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid prescription reference.' });
+
+  try {
+    const prescription = await prisma.$transaction(async (tx) => {
+      const existing = await tx.prescription.findUnique({
+        where: { prescriptionId: id },
+        include: { items: true },
+      });
+
+      if (!existing) throw createHttpError(404, 'Prescription not found.');
+      if (existing.status === PrescriptionStatus.DISPENSED) throw createHttpError(409, 'This prescription has already been dispensed.');
+      if (existing.status === PrescriptionStatus.REJECTED) throw createHttpError(400, 'Rejected prescriptions cannot be dispensed.');
+      if (existing.status !== PrescriptionStatus.VERIFIED) throw createHttpError(400, 'Verify prescription before dispensing.');
+
+      const requestedTotals = await validatePrescriptionInventory(tx, existing.items);
+
+      for (const [medicineId, requestedQty] of requestedTotals.entries()) {
+        const updateResult = await tx.medicine.updateMany({
+          where: {
+            medicineId,
+            approvalStatus: MedicineApprovalStatus.APPROVED,
+            availableForPrescription: true,
+            quantity: { gte: requestedQty },
+          },
+          data: {
+            quantity: {
+              decrement: requestedQty,
+            },
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          throw createHttpError(409, 'Prescription dispensing conflicted. Please retry.');
+        }
+
+        const medicineRecord = await tx.medicine.findUnique({
+          where: { medicineId },
+          select: { name: true, batchNumber: true },
+        });
+
+        await createInventoryLog(tx, {
+          medicineId,
+          itemName: medicineRecord?.name ?? `Medicine #${medicineId}`,
+          batchNumber: medicineRecord?.batchNumber ?? '-',
+          quantityChange: -requestedQty,
+          actionType: InventoryStockAction.PRESCRIPTION_DISPENSED,
+          performedById: req.user?.userId,
+          performedByUsername: req.user?.username,
+          relatedPrescriptionId: existing.prescriptionId,
+        });
+      }
+
+      return tx.prescription.update({
+        where: { prescriptionId: id },
+        data: { status: PrescriptionStatus.DISPENSED },
+        include: prescriptionInclude,
+      });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+
+    try {
+      await logActivity(req.user?.userId, `dispense_prescription:${prescription.prescriptionId}`);
+    } catch (_) {}
+    res.json(prescription);
+  } catch (error: unknown) {
+    const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
+    if (error instanceof Error && typeof httpStatus === 'number') {
+      return res.status(httpStatus).json({ message: error.message });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({ message: 'Prescription dispensing conflicted. Please retry.' });
+    }
+    throw error;
+  }
+};
+
+export const rejectPrescription = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid prescription reference.' });
+
+  const existing = await prisma.prescription.findUnique({ where: { prescriptionId: id } });
+  if (!existing) return res.status(404).json({ message: 'Prescription not found.' });
+  if (existing.status === PrescriptionStatus.DISPENSED) return res.status(400).json({ message: 'Dispensed prescriptions cannot be rejected.' });
+
+  const prescription = await prisma.prescription.update({
+    where: { prescriptionId: id },
+    data: { status: PrescriptionStatus.REJECTED },
+    include: prescriptionInclude,
+  });
+
+  try {
+    await logActivity(req.user?.userId, `reject_prescription:${prescription.prescriptionId}`);
+  } catch (_) {}
   res.json(prescription);
 };

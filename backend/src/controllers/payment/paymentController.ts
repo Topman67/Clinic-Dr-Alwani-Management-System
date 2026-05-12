@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
-import { MedicineApprovalStatus, PaymentMethod, PaymentStatus, PaymentType, Prisma } from '@prisma/client';
+import { InventoryStockAction, MedicineApprovalStatus, PaymentMethod, PaymentStatus, PaymentType, Prisma } from '@prisma/client';
 import { generateReceiptNo } from '../../utils/receipt';
 import { logActivity } from '../../utils/audit';
+import { createInventoryLog, isExpiredMedicine } from '../medicine/medicineController';
 
 type WalkInMedicineInput = {
   medicineId?: number | string;
@@ -144,15 +145,22 @@ const parseWalkInItems = (value: unknown): Array<{ medicineId: number; qty: numb
 };
 
 export const listWalkInMedicines = async (_req: Request, res: Response) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const medicines = await prisma.medicine.findMany({
     where: {
       approvalStatus: MedicineApprovalStatus.APPROVED,
       quantity: { gt: 0 },
+      expiryDate: { gte: today },
     },
     select: {
       medicineId: true,
       name: true,
       batchNumber: true,
+      category: true,
+      brand: true,
+      packaging: true,
       quantity: true,
       price: true,
       expiryDate: true,
@@ -247,6 +255,7 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
       batchNumber: true,
       quantity: true,
       price: true,
+      expiryDate: true,
     },
   });
 
@@ -262,6 +271,10 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
       return res.status(400).json({
         message: `Insufficient stock for ${medicine?.name ?? `medicine #${item.medicineId}`}.`,
       });
+    }
+
+    if (isExpiredMedicine(medicine.expiryDate)) {
+      return res.status(400).json({ message: `${medicine.name} is expired and cannot be sold.` });
     }
   }
 
@@ -318,16 +331,26 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
     );
 
     await Promise.all(
-      pricedItems.map((item) =>
-        tx.medicine.update({
+      pricedItems.map(async (item) => {
+        await tx.medicine.update({
           where: { medicineId: item.medicineId },
           data: {
             quantity: {
               decrement: item.qty,
             },
           },
-        }),
-      ),
+        });
+
+        await createInventoryLog(tx, {
+          medicineId: item.medicineId,
+          itemName: item.medicineName,
+          batchNumber: item.batchNumber,
+          quantityChange: -item.qty,
+          actionType: InventoryStockAction.STOCK_DEDUCTED,
+          performedById: recordedById,
+          performedByUsername: req.user?.username,
+        });
+      }),
     );
 
     const receipt = await createReceiptWithRetry(tx, payment.paymentId, amount);

@@ -36,7 +36,7 @@ type PatientAutocompleteProps = {
 };
 
 const formatPatientMeta = (patient: PatientAutocompleteOption) => {
-  const secondary = [patient.icOrPassport, patient.phone].filter(Boolean).join(' / ');
+  const secondary = [patient.phone, patient.icOrPassport].filter(Boolean).join(' / ');
   return secondary.length > 0 ? secondary : `Patient #${patient.patientId}`;
 };
 
@@ -179,7 +179,7 @@ export const PatientAutocomplete = ({
 
       {selectedPatient && (
         <div className="patient-autocomplete__selected">
-          <strong>{selectedPatient.name}</strong>
+          <strong title={selectedPatient.name}>{selectedPatient.name}</strong>
           <span>{formatPatientMeta(selectedPatient)}</span>
         </div>
       )}
@@ -199,7 +199,7 @@ export const PatientAutocomplete = ({
                   handleSelect(patient);
                 }}
               >
-                <strong>{patient.name}</strong>
+                <strong title={patient.name}>{patient.name}</strong>
                 <span>{formatPatientMeta(patient)}</span>
               </button>
             ))

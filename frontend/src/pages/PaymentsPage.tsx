@@ -54,6 +54,9 @@ type Payment = {
 type WalkInMedicine = {
   medicineId: number;
   name: string;
+  category?: 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
+  brand?: string | null;
+  packaging?: string | null;
   batchNumber: string;
   quantity: number;
   price: number | string;
@@ -86,6 +89,13 @@ const initialForm: PaymentForm = {
 const formatMoney = (value: number | string) => {
   const n = typeof value === 'string' ? Number(value) : value;
   return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+};
+
+const toDateInput = (value: string | null | undefined) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toISOString().slice(0, 10);
 };
 
 const prettifyType = (t: PaymentType) => {
@@ -625,7 +635,7 @@ export const PaymentsPage = () => {
                       <option value="">Select medicine</option>
                       {walkInMedicines.map((medicine) => (
                         <option key={`${medicine.medicineId}-${medicine.batchNumber}`} value={medicine.medicineId}>
-                          {medicine.name} ({medicine.batchNumber}) - Stock: {medicine.quantity}
+                          {medicine.brand ? `${medicine.brand} - ` : ''}{medicine.name}{medicine.packaging ? ` - ${medicine.packaging}` : ''} ({medicine.batchNumber}) - Stock: {medicine.quantity} - Exp: {toDateInput(medicine.expiryDate)}
                         </option>
                       ))}
                     </select>

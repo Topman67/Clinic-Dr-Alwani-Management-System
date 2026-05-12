@@ -2355,6 +2355,8 @@ body {
 .prescription-page {
   display: grid;
   gap: 14px;
+  position: relative;
+  isolation: isolate;
 }
 
 .prescription-page-head {
@@ -2368,7 +2370,7 @@ body {
 }
 
 .compact-section-head {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .compact-section-head h3 {
@@ -2426,13 +2428,28 @@ body {
 }
 
 .prescription-filter-card {
-  padding: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  align-self: start;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.prescription-list-card,
+.prescription-list-card .table-wrap {
+  position: relative;
+  z-index: 1;
 }
 
 .prescription-filter-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 190px auto auto;
-  gap: 8px;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, auto) 170px auto auto;
+  gap: 10px;
   align-items: start;
 }
 
@@ -2440,43 +2457,170 @@ body {
 .prescription-filter-bar select,
 .prescription-filter-bar button {
   min-height: 38px;
+  height: 38px;
+}
+
+.prescription-filter-bar .patient-autocomplete__control input {
+  min-height: 38px;
+  height: 38px;
+}
+
+.prescription-filter-bar .patient-autocomplete__selected {
+  display: grid;
+}
+
+.prescription-filter-bar .patient-autocomplete__menu button {
+  height: auto;
+  min-height: 0;
 }
 
 .prescription-workflow-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.55fr);
-  gap: 14px;
+  grid-template-columns: minmax(300px, 0.62fr) minmax(0, 1.8fr);
+  gap: 12px;
   align-items: start;
+}
+
+.prescription-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.prescription-summary-grid button,
+.prescription-workflow-tabs button,
+.prescription-detail-tabs button {
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.prescription-summary-grid button {
+  min-height: 70px;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.prescription-summary-grid button:hover,
+.prescription-summary-grid button.is-active,
+.prescription-workflow-tabs button:hover,
+.prescription-workflow-tabs button.is-active,
+.prescription-detail-tabs button:hover,
+.prescription-detail-tabs button.is-active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+}
+
+.prescription-summary-grid span {
+  font-size: 0.76rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.prescription-summary-grid strong {
+  color: var(--text);
+  font-size: 1.35rem;
+}
+
+.prescription-workflow-tabs,
+.prescription-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prescription-workflow-tabs button,
+.prescription-detail-tabs button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border-radius: 999px;
+}
+
+.prescription-compact-context-card {
+  display: grid;
+  gap: 10px;
+}
+
+.prescription-context-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.prescription-context-summary div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+}
+
+.prescription-context-summary span,
+.prescription-collapse summary {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prescription-context-summary strong,
+.prescription-context-summary small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prescription-context-summary strong {
+  margin-top: 3px;
+  color: var(--text);
+}
+
+.prescription-context-summary small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.prescription-collapse {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.prescription-collapse summary {
+  cursor: pointer;
 }
 
 .prescription-patient-card,
 .prescription-create-card,
 .prescription-list-card {
-  padding: 14px;
+  padding: 12px;
 }
 
 .prescription-patient-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 7px;
 }
 
 .prescription-patient-grid div,
 .prescription-details-grid div {
   min-width: 0;
-  padding: 9px 10px;
+  padding: 7px 9px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
 }
 
 .prescription-patient-grid strong,
 .prescription-details-grid dd {
   display: block;
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--text);
-  font-size: 0.86rem;
-  line-height: 1.35;
+  font-size: 0.83rem;
+  line-height: 1.28;
   overflow-wrap: anywhere;
 }
 
@@ -2488,15 +2632,15 @@ body {
 .prescription-mini-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .prescription-mini-stats span {
-  min-height: 26px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--muted);
@@ -2521,14 +2665,25 @@ body {
 
 .prescription-create-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+}
+
+.prescription-create-card textarea {
+  min-height: 64px;
 }
 
 .prescription-context-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1.1fr);
-  gap: 10px;
+  grid-template-columns: minmax(260px, 1fr);
+  gap: 8px;
   align-items: start;
+}
+
+.prescription-context-grid select {
+  height: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prescription-consultation-card,
@@ -2541,10 +2696,30 @@ body {
 }
 
 .prescription-consultation-card {
-  padding: 11px 12px;
+  padding: 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--primary) 6%, var(--surface-soft));
+}
+
+.prescription-consultation-summary {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 96px minmax(120px, 1fr) minmax(120px, 1fr) minmax(150px, auto);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.prescription-consultation-summary div {
+  min-width: 0;
+}
+
+.prescription-consultation-summary strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prescription-duplicate-notice {
@@ -2569,17 +2744,17 @@ body {
 
 .prescription-items-list {
   display: grid;
-  gap: 9px;
+  gap: 8px;
 }
 
 .prescription-item-row {
   display: grid;
-  grid-template-columns: minmax(210px, 1.35fr) minmax(100px, 0.75fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) 76px auto;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(100px, 0.74fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) 76px auto;
   gap: 8px;
-  align-items: start;
-  padding: 10px;
+  align-items: end;
+  padding: 9px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
 }
 
@@ -2593,10 +2768,10 @@ body {
 .prescription-item-row select,
 .prescription-remove-item {
   min-height: 38px;
+  height: 38px;
 }
 
 .prescription-remove-item {
-  align-self: end;
   padding-inline: 11px;
 }
 
@@ -2619,7 +2794,7 @@ body {
 }
 
 .prescription-table {
-  min-width: 820px;
+  min-width: 980px;
   table-layout: fixed;
 }
 
@@ -2635,12 +2810,92 @@ body {
 
 .prescription-table th:nth-child(3),
 .prescription-table td:nth-child(3) {
-  width: 12%;
+  width: 15%;
+}
+
+.prescription-table th:nth-child(4),
+.prescription-table td:nth-child(4) {
+  width: 10%;
 }
 
 .prescription-table th:last-child,
 .prescription-table td:last-child {
-  width: 120px;
+  width: 190px;
+}
+
+.prescription-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.prescription-row-actions button {
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 0.76rem;
+}
+
+.prescription-more-menu {
+  position: relative;
+}
+
+.prescription-more-menu summary {
+  width: 34px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-soft);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 900;
+}
+
+.prescription-more-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.prescription-more-menu div {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 25;
+  min-width: 180px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.prescription-more-menu div button,
+.prescription-more-menu div span {
+  width: 100%;
+  min-height: 32px;
+  justify-content: flex-start;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.prescription-more-menu div button {
+  border: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.prescription-more-menu div button:hover {
+  background: var(--surface-soft);
+}
+
+.prescription-more-menu div button.danger {
+  color: var(--danger);
 }
 
 .prescription-table td strong,
@@ -2659,6 +2914,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 1px;
 }
 
 .prescription-details-drawer {
@@ -2668,6 +2924,10 @@ body {
 .prescription-details-stack {
   display: grid;
   gap: 12px;
+}
+
+.prescription-tab-panel {
+  min-height: 260px;
 }
 
 .prescription-print-sheet {
@@ -2714,6 +2974,48 @@ body {
 
 .prescription-detail-table {
   min-width: 560px;
+}
+
+.prescription-detail-table td strong,
+.prescription-detail-table td small {
+  display: block;
+}
+
+.prescription-detail-table td small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.prescription-audit-panel {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.prescription-audit-panel p {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.prescription-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.prescription-pagination span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 720;
 }
 
 :root[data-theme='dark'] .prescription-filter-card,
@@ -2765,18 +3067,6 @@ body {
   box-shadow: var(--shadow-soft);
 }
 
-.reports-grid {
-  display: grid;
-  gap: 14px;
-}
-
-.audit-filters-grid {
-  display: grid;
-  grid-template-columns: 1.4fr 1.4fr 1fr 1fr auto;
-  gap: 10px;
-  align-items: center;
-}
-
 .activity-pill {
   display: inline-flex;
   align-items: center;
@@ -2798,10 +3088,6 @@ body {
   border-radius: var(--radius-lg);
   background: var(--surface-soft);
   padding: 18px;
-}
-
-.report-filters {
-  margin-top: 4px;
 }
 
 .metrics-grid {
@@ -3074,12 +3360,12 @@ body {
 
 .inventory-table th,
 .inventory-table td {
-  padding: 10px 12px;
+  padding: 8px 10px;
   vertical-align: middle;
 }
 
 .inventory-table td {
-  height: 56px;
+  height: 48px;
 }
 
 .inventory-cell-text {
@@ -3108,17 +3394,771 @@ body {
 .inventory-action-row {
   flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .inventory-action-btn {
-  min-width: 96px;
-  height: 36px;
-  padding: 0 14px;
+  min-width: 78px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   white-space: nowrap;
+  font-size: 0.76rem;
+}
+
+.inventory-page {
+  display: grid;
+  gap: 12px;
+  position: relative;
+  isolation: isolate;
+}
+
+.inventory-page .card {
+  padding: 16px;
+}
+
+.inventory-page .status-badge {
+  min-width: 0;
+  min-height: 22px;
+  padding: 2px 7px;
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.inventory-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.inventory-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, auto));
+  gap: 8px;
+  align-items: center;
+  justify-content: start;
+}
+
+.inventory-filter-card {
+  position: sticky;
+  top: 0;
+  z-index: 22;
+  padding: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.inventory-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(140px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.inventory-filter-grid > input:first-child {
+  grid-column: 1 / -1;
+}
+
+.inventory-filter-grid input,
+.inventory-filter-grid select,
+.inventory-filter-grid button {
+  min-height: 38px;
+  height: 38px;
+}
+
+.inventory-check-filter {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+  justify-content: center;
+}
+
+.inventory-check-filter input {
+  width: auto;
+  min-height: 0;
+  height: 16px;
+  margin: 0;
+}
+
+.inventory-approval-section,
+.inventory-table-card,
+.inventory-history-card {
+  position: relative;
+  z-index: 1;
+}
+
+.inventory-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 12px;
+  align-items: start;
+}
+
+.inventory-side-column {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.inventory-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.inventory-list-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-soft));
+  box-shadow: var(--shadow-soft);
+}
+
+.inventory-list-main {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.inventory-list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.inventory-list-head > div {
+  min-width: 0;
+}
+
+.inventory-list-head h4 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 0.98rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-list-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-list-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.inventory-list-badges strong {
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.inventory-list-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.inventory-list-actions .inventory-action-row {
+  justify-content: flex-end;
+}
+
+.inventory-card-details {
+  max-width: 760px;
+}
+
+.inventory-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 8px 0 0;
+}
+
+.inventory-detail-grid div {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-soft) 64%, transparent);
+}
+
+.inventory-detail-grid dt {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.inventory-detail-grid dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 680;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-rejection-note {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+.inventory-approval-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.inventory-approval-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--surface-soft));
+  box-shadow: var(--shadow-soft);
+}
+
+.inventory-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.inventory-card-head h4 {
+  max-width: 230px;
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-request-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inventory-request-meta span {
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-request-user {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.inventory-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.inventory-review-grid div {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+}
+
+.inventory-review-grid dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.inventory-review-grid dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-more-details {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.inventory-more-details summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 760;
+}
+
+.inventory-more-details p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.inventory-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.inventory-card-actions .inventory-action-row {
+  width: 100%;
+}
+
+.inventory-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.inventory-table th:first-child,
+.inventory-table td:first-child {
+  width: 26%;
+}
+
+.inventory-table th:nth-child(2),
+.inventory-table td:nth-child(2) {
+  width: 11%;
+}
+
+.inventory-table th:nth-child(3),
+.inventory-table td:nth-child(3) {
+  width: 14%;
+}
+
+.inventory-table th:nth-child(4),
+.inventory-table td:nth-child(4),
+.inventory-table th:nth-child(5),
+.inventory-table td:nth-child(5) {
+  width: 13%;
+}
+
+.inventory-table th:last-child,
+.inventory-table td:last-child {
+  width: 150px;
+}
+
+.inventory-name-cell {
+  min-width: 0;
+  display: grid;
+}
+
+.inventory-name-cell strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-expiry-helper {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.inventory-expiry-helper {
+  display: block;
+  margin-top: 4px;
+}
+
+.inventory-category-text {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 740;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-category-cell {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
+.inventory-history-list {
+  display: grid;
+  gap: 7px;
+}
+
+.inventory-history-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-soft) 64%, transparent);
+}
+
+.inventory-history-item > .status-badge {
+  width: 26px;
+  min-width: 26px;
+  height: 22px;
+  padding: 0;
+}
+
+.inventory-history-item div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-history-item strong,
+.inventory-history-item span:not(.status-badge) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-history-item span:not(.status-badge),
+.inventory-history-item small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.inventory-history-item small {
+  text-align: left;
+}
+
+.inventory-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.inventory-drawer {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100vw);
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-soft));
+  box-shadow: -24px 0 60px rgba(15, 23, 42, 0.22);
+  animation: patient-drawer-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.inventory-drawer-form {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.inventory-drawer-body {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.inventory-form-section {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
+}
+
+.inventory-form-section h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.inventory-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.inventory-form-wide {
+  grid-column: 1 / -1;
+}
+
+.inventory-drawer-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.08);
+}
+
+/* Inventory is table-first on desktop so stock, expiry, price, and approval are easy to compare. */
+.inventory-table-card {
+  overflow: hidden;
+}
+
+.inventory-table-wrap {
+  margin-top: 10px;
+  max-height: min(620px, calc(100vh - 340px));
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.inventory-table {
+  min-width: 0;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.inventory-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-soft);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.inventory-table th,
+.inventory-table td {
+  height: 46px;
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+.inventory-table th:first-child,
+.inventory-table td:first-child {
+  width: 22%;
+}
+
+.inventory-table th:nth-child(2),
+.inventory-table td:nth-child(2) {
+  width: 11%;
+}
+
+.inventory-table th:nth-child(3),
+.inventory-table td:nth-child(3) {
+  width: 12%;
+}
+
+.inventory-table th:nth-child(4),
+.inventory-table td:nth-child(4) {
+  width: 13%;
+}
+
+.inventory-table th:nth-child(5),
+.inventory-table td:nth-child(5) {
+  width: 14%;
+}
+
+.inventory-table th:nth-child(6),
+.inventory-table td:nth-child(6) {
+  width: 9%;
+}
+
+.inventory-table th:nth-child(7),
+.inventory-table td:nth-child(7) {
+  width: 11%;
+}
+
+.inventory-table th:last-child,
+.inventory-table td:last-child {
+  width: 150px;
+}
+
+.inventory-name-cell {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.inventory-name-cell strong,
+.inventory-name-cell small,
+.inventory-cell-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-name-cell small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.inventory-expiry-cell {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+}
+
+.inventory-expiry-cell small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.1;
+}
+
+.inventory-price-cell {
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.inventory-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.inventory-action-row {
+  width: 100%;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.inventory-action-btn {
+  min-width: 58px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 0.72rem;
+}
+
+.inventory-approval-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.inventory-approval-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+}
+
+.inventory-card-head {
+  min-width: 0;
+}
+
+.inventory-card-head > div {
+  min-width: 0;
+}
+
+.inventory-card-head h4 {
+  max-width: none;
+  margin-bottom: 4px;
+}
+
+.inventory-card-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 680;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-approval-card .inventory-request-user {
+  grid-column: 1;
+}
+
+.inventory-approval-card .inventory-more-details {
+  grid-column: 1 / -1;
+}
+
+.inventory-approval-card .inventory-card-actions {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: end;
+}
+
+.inventory-mobile-list {
+  margin-top: 10px;
+}
+
+.inventory-mobile-card {
+  display: grid;
+  gap: 10px;
+}
+
+.inventory-mobile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.inventory-mobile-meta strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+:root[data-theme='dark'] .inventory-filter-card,
+:root[data-theme='dark'] .inventory-table-wrap,
+:root[data-theme='dark'] .inventory-approval-card,
+:root[data-theme='dark'] .inventory-drawer {
+  background: color-mix(in srgb, var(--surface) 88%, #020617);
 }
 
 input,
@@ -3262,21 +4302,28 @@ textarea::placeholder {
 
 .patient-autocomplete__selected {
   margin-top: 8px;
-  padding: 10px 12px;
+  padding: 12px;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
   background: color-mix(in srgb, var(--primary) 10%, var(--surface));
   display: grid;
-  gap: 3px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .patient-autocomplete__selected strong {
+  overflow: hidden;
   color: var(--text);
+  font-size: 0.96rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .patient-autocomplete__selected span {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 650;
 }
 
 .patient-autocomplete__menu {
@@ -3296,7 +4343,8 @@ textarea::placeholder {
 }
 
 .patient-autocomplete__option {
-  border-radius: 12px;
+  width: 100%;
+  border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text);
@@ -3306,6 +4354,15 @@ textarea::placeholder {
   text-align: left;
   padding: 10px 12px;
   box-shadow: none;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.patient-autocomplete__option strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .patient-autocomplete__option span,
@@ -3315,9 +4372,9 @@ textarea::placeholder {
 }
 
 .patient-autocomplete__option:hover:not(:disabled) {
-  transform: none;
-  background: var(--surface-soft);
-  border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface-soft));
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
   box-shadow: none;
 }
 
@@ -3688,11 +4745,13 @@ button:disabled {
   font-size: clamp(1.25rem, 3.5vw, 1.5rem);
   letter-spacing: 0;
   margin-top: -12px;
+  color: #1e3a5f;
 }
 
 .login-head p {
   margin-top: 0;
   font-size: 1rem;
+  color: #64748b;
 }
 
 .login-logo {
@@ -3713,6 +4772,7 @@ button:disabled {
   border-radius: 14px;
   border-color: #cbd5e1;
   background: rgba(255, 255, 255, 0.96);
+  color: #1e293b;
 }
 
 .login-input:focus {
@@ -3738,6 +4798,10 @@ button:disabled {
 .login-button:hover:not(:disabled) {
   background: linear-gradient(135deg, #0ea5e9 0%, #1d4ed8 100%);
   box-shadow: 0 18px 34px rgba(37, 99, 235, 0.28);
+}
+
+.login-input::placeholder {
+  color: #94a3b8;
 }
 
 .muted {
@@ -3822,6 +4886,24 @@ button:disabled {
     grid-template-columns: 1fr 1fr;
   }
 
+  .inventory-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-summary-grid,
+  .inventory-filter-grid,
+  .inventory-approval-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-check-filter {
+    justify-content: center;
+  }
+
   .payments-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -3837,10 +4919,6 @@ button:disabled {
   .users-create-grid,
   .users-edit-grid,
   .users-password-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .audit-filters-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -4035,6 +5113,24 @@ button:disabled {
     padding-bottom: 88px;
   }
 
+  .login-wrap {
+    padding: 16px;
+  }
+
+  .login-card {
+    gap: 16px;
+    padding: 26px 18px 20px;
+    border-radius: 20px;
+  }
+
+  .login-logo {
+    max-width: 195px;
+  }
+
+  .login-head h1 {
+    font-size: 1.6rem;
+  }
+
   .card {
     padding: 18px;
     border-radius: 14px;
@@ -4053,6 +5149,66 @@ button:disabled {
 
   .inventory-grid {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-page-head,
+  .inventory-card-head,
+  .inventory-linked-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-summary-grid,
+  .inventory-filter-grid,
+  .inventory-approval-grid,
+  .inventory-review-grid,
+  .inventory-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-dashboard-grid,
+  .inventory-list-card,
+  .inventory-list-head {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-list-head {
+    display: grid;
+  }
+
+  .inventory-approval-card {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-approval-card .inventory-card-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: stretch;
+  }
+
+  .inventory-history-item {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .inventory-filter-card {
+    position: static;
+  }
+
+  .inventory-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .inventory-drawer-body {
+    padding-inline: 16px;
+  }
+
+  .inventory-action-row {
+    flex-wrap: wrap;
+  }
+
+  .inventory-action-btn {
+    width: 100%;
   }
 
   .payments-grid {
@@ -4108,8 +5264,10 @@ button:disabled {
   .consultation-section-grid,
   .consultation-vitals-grid,
   .prescription-filter-bar,
+  .prescription-summary-grid,
   .prescription-workflow-grid,
   .prescription-context-grid,
+  .prescription-context-summary,
   .prescription-patient-grid,
   .prescription-item-row,
   .prescription-details-grid,
@@ -4142,9 +5300,18 @@ button:disabled {
   .prescription-linked-banner,
   .prescription-consultation-card,
   .prescription-duplicate-notice,
-  .prescription-items-head {
+  .prescription-items-head,
+  .prescription-pagination {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .prescription-filter-card {
+    position: static;
+  }
+
+  .prescription-consultation-summary {
+    grid-template-columns: 1fr;
   }
 
   .prescription-address-cell,
@@ -4192,10 +5359,6 @@ button:disabled {
   .users-create-grid,
   .users-edit-grid,
   .users-password-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .audit-filters-grid {
     grid-template-columns: 1fr;
   }
 
@@ -4268,23 +5431,6 @@ button:disabled {
     right: 0;
   }
 
-  .login-wrap {
-    padding: 16px;
-  }
-
-  .login-card {
-    gap: 16px;
-    padding: 26px 18px 20px;
-    border-radius: 20px;
-  }
-
-  .login-logo {
-    max-width: 195px;
-  }
-
-  .login-head h1 {
-    font-size: 1.6rem;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

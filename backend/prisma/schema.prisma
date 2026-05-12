@@ -61,10 +61,35 @@ enum ConsultationStatus {
   COMPLETED
 }
 
+enum PrescriptionStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  DISPENSED
+  REJECTED
+}
+
 enum MedicineApprovalStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum InventoryCategory {
+  MEDICINE
+  SUPPLEMENT
+  VITAMIN
+  CONTROLLED_MEDICINE
+}
+
+enum InventoryStockAction {
+  STOCK_ADDED
+  STOCK_DEDUCTED
+  PRESCRIPTION_DISPENSED
+  INVENTORY_APPROVED
+  INVENTORY_REJECTED
+  ITEM_EDITED
+  ITEM_DELETED
+  ITEM_RESUBMITTED
 }
 
 enum MedicalCertificateStatus {
@@ -110,6 +135,12 @@ model Patient {
 model Medicine {
   medicineId          Int                    @id @default(autoincrement())
   name                String
+  category            InventoryCategory      @default(MEDICINE)
+  brand               String?
+  content             String?
+  packaging           String?
+  companyName         String?
+  availableForPrescription Boolean           @default(true)
   batchNumber         String
   quantity            Int
   expiryDate          DateTime
@@ -127,8 +158,29 @@ model Medicine {
   createdAt           DateTime               @default(now())
   prescriptionItems PrescriptionMedicine[]
   saleItems           PaymentMedicineItem[]
+  stockLogs           InventoryStockLog[]
 
   @@unique([name, batchNumber])
+  @@index([category])
+  @@index([availableForPrescription])
+}
+
+model InventoryStockLog {
+  logId                 Int                  @id @default(autoincrement())
+  medicine              Medicine             @relation(fields: [medicineId], references: [medicineId], onDelete: Cascade)
+  medicineId            Int
+  itemName              String
+  batchNumber           String
+  quantityChange        Int
+  actionType            InventoryStockAction
+  performedById         Int?
+  performedByUsername   String?
+  relatedPrescriptionId Int?
+  createdAt             DateTime             @default(now())
+
+  @@index([medicineId, createdAt])
+  @@index([actionType])
+  @@index([relatedPrescriptionId])
 }
 
 model Prescription {
@@ -142,6 +194,7 @@ model Prescription {
   appointment    Appointment? @relation(fields: [appointmentId], references: [appointmentId])
   appointmentId  Int?
   date           DateTime   @default(now())
+  status         PrescriptionStatus @default(PENDING_VERIFICATION)
   notes          String?
   items          PrescriptionMedicine[]
   followUps      Appointment[] @relation("AppointmentPreviousPrescription")
