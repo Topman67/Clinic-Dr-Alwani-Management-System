@@ -1,14 +1,17 @@
 import {
   AppointmentStatus,
   ConsultationStatus,
+  ConsultationType,
   PaymentStatus,
   PaymentType,
   PrescriptionStatus,
   Prisma,
 } from '@prisma/client';
 
-export const CONSULTATION_FEE = 50;
-export const APPOINTMENT_FEE = 50;
+export const ALLOWED_CONSULTATION_FEES = [10, 15, 20, 25, 30] as const;
+export const DEFAULT_CONSULTATION_FEE = 20;
+export const APPOINTMENT_FEE = 5;
+export const MEDICAL_CHECKUP_FEE = 40;
 
 export const clinicPaymentInclude = {
   patient: {
@@ -25,6 +28,7 @@ export const clinicPaymentInclude = {
     select: {
       consultationId: true,
       appointmentId: true,
+      consultationType: true,
       status: true,
       createdAt: true,
     },
@@ -111,13 +115,6 @@ export const createPendingPaymentForDispensedPrescription = async (
   if (prescription.status !== PrescriptionStatus.DISPENSED) return null;
   if (prescription.consultation?.status !== ConsultationStatus.COMPLETED) return null;
 
-  const existing = await findExistingClinicPayment(tx, {
-    consultationId: prescription.consultationId,
-    prescriptionId: prescription.prescriptionId,
-    appointmentId: prescription.appointmentId,
-  });
-  if (existing) return existing;
-
   const medicineItems = prescription.items.map((item) => {
     const unitPrice = Number(item.medicine.price);
     const subtotal = unitPrice * item.qty;
@@ -129,13 +126,49 @@ export const createPendingPaymentForDispensedPrescription = async (
     };
   });
   const medicineTotal = medicineItems.reduce((sum, item) => sum + item.subtotal, 0);
+  const appointmentFee = prescription.appointmentId ? APPOINTMENT_FEE : 0;
+  const totalAmount = DEFAULT_CONSULTATION_FEE + appointmentFee + medicineTotal;
+
+  const existing = await findExistingClinicPayment(tx, {
+    consultationId: prescription.consultationId,
+    prescriptionId: prescription.prescriptionId,
+    appointmentId: prescription.appointmentId,
+  });
+  if (existing) {
+    if (existing.status !== PaymentStatus.PENDING_PAYMENT) {
+      throw Object.assign(
+        new Error('This consultation already has a confirmed payment. Prescription must be dispensed before payment is confirmed.'),
+        { statusCode: 409 },
+      );
+    }
+
+    await tx.paymentMedicineItem.deleteMany({
+      where: { paymentId: existing.paymentId },
+    });
+
+    return tx.payment.update({
+      where: { paymentId: existing.paymentId },
+      data: {
+        type: PaymentType.CONSULTATION,
+        amount: totalAmount,
+        consultationId: prescription.consultationId,
+        prescriptionId: prescription.prescriptionId,
+        appointmentId: prescription.appointmentId,
+        remarks: 'Auto-updated after prescription dispense',
+        medicineItems: {
+          create: medicineItems,
+        },
+      },
+      include: clinicPaymentInclude,
+    });
+  }
 
   return tx.payment.create({
     data: {
       patientId: prescription.patientId,
       recordedById,
       type: PaymentType.CONSULTATION,
-      amount: CONSULTATION_FEE + medicineTotal,
+      amount: totalAmount,
       status: PaymentStatus.PENDING_PAYMENT,
       consultationId: prescription.consultationId,
       prescriptionId: prescription.prescriptionId,
@@ -165,6 +198,7 @@ export const createPendingPaymentForCompletedConsultationWithoutPrescription = a
   if (!consultation) return null;
   if (consultation.status !== ConsultationStatus.COMPLETED) return null;
   if (consultation.prescription) return null;
+  if (consultation.consultationType === ConsultationType.MEDICAL_CHECKUP) return null;
 
   const existing = await findExistingClinicPayment(tx, {
     consultationId: consultation.consultationId,
@@ -177,11 +211,54 @@ export const createPendingPaymentForCompletedConsultationWithoutPrescription = a
       patientId: consultation.patientId,
       recordedById,
       type: PaymentType.CONSULTATION,
-      amount: CONSULTATION_FEE,
+      amount: DEFAULT_CONSULTATION_FEE + (consultation.appointmentId ? APPOINTMENT_FEE : 0),
       status: PaymentStatus.PENDING_PAYMENT,
       consultationId: consultation.consultationId,
       appointmentId: consultation.appointmentId,
       remarks: 'Auto-created after consultation completion',
+    },
+    include: clinicPaymentInclude,
+  });
+};
+
+export const createPendingPaymentForMedicalCheckup = async (
+  tx: Prisma.TransactionClient,
+  consultationId: number,
+  recordedById: number,
+) => {
+  const consultation = await tx.consultation.findUnique({
+    where: { consultationId },
+    include: {
+      prescription: { select: { prescriptionId: true } },
+      payment: { select: { paymentId: true, status: true } },
+    },
+  });
+
+  if (!consultation) {
+    throw Object.assign(new Error('Consultation not found.'), { statusCode: 404 });
+  }
+  if (consultation.consultationType !== ConsultationType.MEDICAL_CHECKUP) {
+    throw Object.assign(new Error('Only medical checkup consultations can be sent to payment here.'), { statusCode: 400 });
+  }
+  if (consultation.status !== ConsultationStatus.COMPLETED) {
+    throw Object.assign(new Error('Complete medical checkup before sending to payment.'), { statusCode: 400 });
+  }
+  if (consultation.prescription) {
+    throw Object.assign(new Error('This medical checkup has a prescription. Dispense prescription before payment.'), { statusCode: 400 });
+  }
+  if (consultation.payment) {
+    throw Object.assign(new Error('Payment has already been created for this consultation.'), { statusCode: 409 });
+  }
+
+  return tx.payment.create({
+    data: {
+      patientId: consultation.patientId,
+      recordedById,
+      type: PaymentType.MEDICAL_CHECKUP,
+      amount: MEDICAL_CHECKUP_FEE,
+      status: PaymentStatus.PENDING_PAYMENT,
+      consultationId: consultation.consultationId,
+      remarks: 'Auto-created from medical checkup send to payment',
     },
     include: clinicPaymentInclude,
   });

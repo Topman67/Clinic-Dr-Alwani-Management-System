@@ -1,0 +1,13 @@
+{
+  "createdAt": "2026-05-14T12:28:25.995Z",
+  "doctors": [
+    {
+      "userId": 1,
+      "username": "doctor",
+      "passwordHash": "$2a$10$p0UxJNbdMilgCW4q9UaDmuL5ag4Y2PKBnY0ZsLcxDWtDoRoQOXtVi",
+      "role": "DOCTOR",
+      "status": "ACTIVE",
+      "createdAt": "2026-05-08T19:56:12.348Z"
+    }
+  ]
+}

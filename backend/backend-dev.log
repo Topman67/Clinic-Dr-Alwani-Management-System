@@ -2,5 +2,16 @@
 > clinic-dr-alwani-backend@0.1.0 dev
 > ts-node-dev --respawn --transpile-only --prefer-ts-exts src/index.ts
 
-[INFO] 19:59:53 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[INFO] 00:43:24 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
 Server running on port 4000
+[INFO] 00:55:02 Restarting: D:\Clinic DR Alwani\backend\src\controllers\prescription\prescriptionController.ts has been modified
+[ERROR] 00:55:04 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 00:55:10 Restarting: D:\Clinic DR Alwani\backend\src\services\clinicPayment.ts has been modified
+Server running on port 4000
+[INFO] 00:55:18 Restarting: D:\Clinic DR Alwani\backend\src\controllers\payment\paymentController.ts has been modified
+[ERROR] 00:55:20 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:05:06 Restarting: D:\Clinic DR Alwani\backend\src\services\clinicPayment.ts has been modified
+[ERROR] 01:05:09 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:05:22 Restarting: D:\Clinic DR Alwani\backend\src\controllers\consultation\consultationController.ts has been modified
+[ERROR] 01:05:24 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:05:28 Restarting: D:\Clinic DR Alwani\backend\src\routes\consultations.ts ha

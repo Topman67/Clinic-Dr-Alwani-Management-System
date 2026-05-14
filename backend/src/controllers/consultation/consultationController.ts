@@ -3,6 +3,7 @@ import {
   AppointmentStatus,
   AppointmentType,
   ConsultationStatus,
+  ConsultationType,
   MedicalCertificateStatus,
   Prisma,
   Role,
@@ -10,7 +11,10 @@ import {
 } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
-import { createPendingPaymentForCompletedConsultationWithoutPrescription } from '../../services/clinicPayment';
+import {
+  createPendingPaymentForCompletedConsultationWithoutPrescription,
+  createPendingPaymentForMedicalCheckup,
+} from '../../services/clinicPayment';
 
 const cleanOptionalText = (value: unknown) => {
   if (typeof value !== 'string') return undefined;
@@ -74,6 +78,12 @@ const ACTIVE_FOLLOW_UP_MESSAGE = 'This consultation already has an active follow
 
 const createHttpError = (statusCode: number, message: string) => Object.assign(new Error(message), { statusCode });
 
+const normalizeConsultationType = (value: unknown) => {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.toUpperCase() as ConsultationType;
+  return Object.values(ConsultationType).includes(normalized) ? normalized : null;
+};
+
 const consultationInclude = {
   patient: {
     select: {
@@ -103,6 +113,14 @@ const consultationInclude = {
     select: {
       prescriptionId: true,
       date: true,
+    },
+  },
+  payment: {
+    select: {
+      paymentId: true,
+      status: true,
+      type: true,
+      amount: true,
     },
   },
   followUpAppointments: {
@@ -361,14 +379,23 @@ export const updateConsultation = async (req: Request, res: Response) => {
   }
 
   const data = {
+    consultationType: normalizeConsultationType(req.body.consultationType) ?? existing.consultationType,
     symptoms: cleanOptionalText(req.body.symptoms),
     diagnosis: cleanOptionalText(req.body.diagnosis),
     consultationNotes: cleanOptionalText(req.body.consultationNotes),
     temperature: cleanOptionalText(req.body.temperature),
     bloodPressure: cleanOptionalText(req.body.bloodPressure),
     weight: cleanOptionalText(req.body.weight),
+    height: cleanOptionalText(req.body.height),
+    bmi: cleanOptionalText(req.body.bmi),
+    heartRate: cleanOptionalText(req.body.heartRate),
+    checkupNotes: cleanOptionalText(req.body.checkupNotes),
     status: requestedStatus ?? existing.status,
   };
+
+  if (normalizeConsultationType(req.body.consultationType) === null) {
+    return res.status(400).json({ message: 'Invalid consultation type.' });
+  }
 
   const updated = await prisma.$transaction(async (tx) => {
     const consultation = await tx.consultation.update({
@@ -399,6 +426,49 @@ export const updateConsultation = async (req: Request, res: Response) => {
   try {
     await logActivity(req.user?.userId, `update_consultation:${consultationId}:${updated.status}`);
   } catch (_) {}
+};
+
+export const sendMedicalCheckupToPayment = async (req: Request, res: Response) => {
+  const consultationId = parsePositiveInt(req.params.id);
+  if (!consultationId) {
+    return res.status(400).json({ message: 'Invalid consultation ID.' });
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const payment = await createPendingPaymentForMedicalCheckup(
+        tx,
+        consultationId,
+        req.user?.userId ?? 1,
+      );
+      const consultation = await tx.consultation.findUnique({
+        where: { consultationId },
+        include: consultationInclude,
+      });
+
+      return { payment, consultation };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+
+    try {
+      await logActivity(req.user?.userId, `send_medical_checkup_to_payment:${consultationId}`);
+    } catch (_) {}
+
+    return res.status(201).json(result);
+  } catch (error: unknown) {
+    const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
+    if (error instanceof Error && typeof httpStatus === 'number') {
+      return res.status(httpStatus).json({ message: error.message });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return res.status(409).json({ message: 'Payment has already been created for this consultation.' });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({ message: 'Payment creation conflicted. Please retry.' });
+    }
+    throw error;
+  }
 };
 
 export const createConsultationFollowUp = async (req: Request, res: Response) => {

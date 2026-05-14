@@ -1,0 +1,6 @@
+
+> clinic-dr-alwani-backend@0.1.0 dev
+> ts-node-dev --respawn --transpile-only --prefer-ts-exts src/index.ts
+
+[INFO] 01:21:16 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+Server running on port 4000

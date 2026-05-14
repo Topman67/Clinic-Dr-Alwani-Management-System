@@ -4,7 +4,13 @@ import { InventoryStockAction, MedicineApprovalStatus, PaymentMethod, PaymentSta
 import { generateReceiptNo } from '../../utils/receipt';
 import { logActivity } from '../../utils/audit';
 import { createInventoryLog, isExpiredMedicine } from '../medicine/medicineController';
-import { clinicPaymentInclude } from '../../services/clinicPayment';
+import {
+  ALLOWED_CONSULTATION_FEES,
+  APPOINTMENT_FEE,
+  DEFAULT_CONSULTATION_FEE,
+  MEDICAL_CHECKUP_FEE,
+  clinicPaymentInclude,
+} from '../../services/clinicPayment';
 
 type WalkInMedicineInput = {
   medicineId?: number | string;
@@ -21,6 +27,9 @@ const normalizeSalesPaymentType = (value: unknown): PaymentType | undefined => {
   }
   if (value === PaymentType.APPOINTMENT || value === 'APPOINTMENT_FEE' || value === 'Appointment Fee') {
     return PaymentType.APPOINTMENT;
+  }
+  if (value === PaymentType.MEDICAL_CHECKUP || value === 'Medical Checkup') {
+    return PaymentType.MEDICAL_CHECKUP;
   }
   if (value === PaymentType.MEDICINE || value === 'WALK_IN_MEDICINE' || value === 'Walk-in Medicine') {
     return PaymentType.MEDICINE;
@@ -523,9 +532,10 @@ export const listPendingPayments = async (_req: Request, res: Response) => {
 
 export const confirmPendingPayment = async (req: Request, res: Response) => {
   const paymentId = Number(req.params.id);
-  const { paymentMethod, remarks } = req.body as {
+  const { paymentMethod, remarks, consultationFee } = req.body as {
     paymentMethod?: PaymentMethod;
     remarks?: string;
+    consultationFee?: number | string;
   };
   const recordedById = req.user?.userId;
 
@@ -552,20 +562,36 @@ export const confirmPendingPayment = async (req: Request, res: Response) => {
         where: { paymentId },
         include: {
           receipt: true,
-          consultation: { select: { consultationId: true, status: true } },
+          consultation: {
+            select: {
+              consultationId: true,
+              appointmentId: true,
+              consultationType: true,
+              status: true,
+              prescription: { select: { prescriptionId: true, status: true } },
+            },
+          },
           prescription: { select: { prescriptionId: true, status: true } },
           appointment: { select: { appointmentId: true, status: true } },
+          medicineItems: { select: { subtotal: true } },
         },
       });
 
       if (!existing) throw Object.assign(new Error('Payment not found.'), { statusCode: 404 });
       if (existing.status === PaymentStatus.PAID) throw Object.assign(new Error('This payment has already been paid.'), { statusCode: 409 });
       if (existing.status !== PaymentStatus.PENDING_PAYMENT) throw Object.assign(new Error('Only pending clinic payments can be confirmed.'), { statusCode: 400 });
-      if (existing.type !== PaymentType.CONSULTATION && existing.type !== PaymentType.APPOINTMENT) {
+      if (
+        existing.type !== PaymentType.CONSULTATION &&
+        existing.type !== PaymentType.APPOINTMENT &&
+        existing.type !== PaymentType.MEDICAL_CHECKUP
+      ) {
         throw Object.assign(new Error('Only linked clinic payments can be confirmed here.'), { statusCode: 400 });
       }
       if (existing.consultation && existing.consultation.status !== 'COMPLETED') {
         throw Object.assign(new Error('Consultation must be completed before payment.'), { statusCode: 400 });
+      }
+      if (!existing.prescription && existing.consultation?.prescription) {
+        throw Object.assign(new Error('Prescription must be dispensed before payment.'), { statusCode: 400 });
       }
       if (existing.prescription && existing.prescription.status !== 'DISPENSED') {
         throw Object.assign(new Error('Prescription must be dispensed before payment.'), { statusCode: 400 });
@@ -577,10 +603,28 @@ export const confirmPendingPayment = async (req: Request, res: Response) => {
         throw Object.assign(new Error('This payment already has a receipt.'), { statusCode: 409 });
       }
 
+      const medicineTotal = existing.medicineItems.reduce((sum, item) => sum + Number(item.subtotal), 0);
+      const hasConsultation = Boolean(existing.consultation);
+      const hasAppointmentConsultation = Boolean(existing.consultation?.appointmentId);
+      const selectedConsultationFee = Number(consultationFee ?? DEFAULT_CONSULTATION_FEE);
+      let amount = Number(existing.amount);
+
+      if (existing.type === PaymentType.MEDICAL_CHECKUP) {
+        amount = MEDICAL_CHECKUP_FEE;
+      } else if (existing.type === PaymentType.CONSULTATION && hasConsultation) {
+        if (!ALLOWED_CONSULTATION_FEES.some((fee) => fee === selectedConsultationFee)) {
+          throw Object.assign(new Error('Please select a valid consultation fee.'), { statusCode: 400 });
+        }
+        amount = selectedConsultationFee + (hasAppointmentConsultation ? APPOINTMENT_FEE : 0) + medicineTotal;
+      } else if (existing.type === PaymentType.APPOINTMENT) {
+        amount = APPOINTMENT_FEE + medicineTotal;
+      }
+
       const payment = await tx.payment.update({
         where: { paymentId },
         data: {
           status: PaymentStatus.PAID,
+          amount,
           paymentMethod,
           remarks: normalizedRemarks ?? existing.remarks,
           recordedById,
@@ -588,7 +632,7 @@ export const confirmPendingPayment = async (req: Request, res: Response) => {
         },
       });
 
-      const receipt = await createReceiptWithRetry(tx, payment.paymentId, Number(payment.amount));
+      const receipt = await createReceiptWithRetry(tx, payment.paymentId, amount);
       const paidPayment = await tx.payment.findUnique({
         where: { paymentId },
         include: clinicPaymentInclude,

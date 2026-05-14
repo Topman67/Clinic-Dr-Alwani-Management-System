@@ -24,7 +24,7 @@ type Receipt = {
   totalAmount: number | string;
 };
 
-type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE' | 'CUSTOM';
+type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICINE' | 'CUSTOM';
 type PaymentMethod = 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET';
 
 type PaymentStatus = 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
@@ -44,7 +44,7 @@ type Payment = {
   dispensedByUsername?: string | null;
   patient?: { name: string; icOrPassport?: string; phone?: string; address?: string | null };
   receipt?: Receipt | null;
-  consultation?: { consultationId: number; appointmentId?: number | null; status: string; createdAt: string } | null;
+  consultation?: { consultationId: number; appointmentId?: number | null; consultationType?: string; status: string; createdAt: string } | null;
   prescription?: { prescriptionId: number; status: string; date: string } | null;
   appointment?: { appointmentId: number; status: string; type?: string; dateTime: string } | null;
   medicineItems?: Array<{
@@ -86,6 +86,11 @@ const formatMoney = (value: number | string) => {
   return Number.isFinite(n) ? n.toFixed(2) : '0.00';
 };
 
+const CONSULTATION_FEE_OPTIONS = [10, 15, 20, 25, 30];
+const DEFAULT_CONSULTATION_FEE = 20;
+const APPOINTMENT_FEE = 5;
+const MEDICAL_CHECKUP_FEE = 40;
+
 const toDateInput = (value: string | null | undefined) => {
   if (!value) return '-';
   const date = new Date(value);
@@ -94,8 +99,9 @@ const toDateInput = (value: string | null | undefined) => {
 };
 
 const prettifyType = (t: PaymentType) => {
-  if (t === 'CONSULTATION') return 'Consultation Fee';
-  if (t === 'APPOINTMENT') return 'Appointment Fee';
+  if (t === 'CONSULTATION') return 'Consultation';
+  if (t === 'APPOINTMENT') return 'Appointment';
+  if (t === 'MEDICAL_CHECKUP') return 'Medical Checkup';
   if (t === 'CUSTOM') return 'Payment';
   return 'Medicine Sale';
 };
@@ -140,6 +146,7 @@ export const PaymentsPage = () => {
   const [walkInItems, setWalkInItems] = useState<WalkInFormItem[]>([]);
   const [walkInMethod, setWalkInMethod] = useState<PaymentMethod>('CASH');
   const [confirmMethod, setConfirmMethod] = useState<PaymentMethod>('CASH');
+  const [confirmConsultationFee, setConfirmConsultationFee] = useState(DEFAULT_CONSULTATION_FEE);
   const [confirmRemarks, setConfirmRemarks] = useState('');
   const [walkInRemarks, setWalkInRemarks] = useState('');
   const [walkInCustomerName, setWalkInCustomerName] = useState('');
@@ -329,15 +336,51 @@ export const PaymentsPage = () => {
     return payment.medicineItems?.reduce((sum, item) => sum + Number(item.subtotal), 0) ?? 0;
   };
 
+  const hasAppointmentConsultation = (payment: Payment) => {
+    return Boolean(payment.consultation?.appointmentId);
+  };
+
+  const isAdjustableConsultationPayment = (payment: Payment) => {
+    return payment.type === 'CONSULTATION' && Boolean(payment.consultation?.consultationId);
+  };
+
   const getConsultationFee = (payment: Payment) => {
+    if (payment.type === 'MEDICAL_CHECKUP') return 0;
     if (payment.type !== 'CONSULTATION') return 0;
-    if (payment.consultation?.consultationId) return 50;
-    return Math.max(0, Number(payment.amount) - getMedicineTotal(payment));
+    const fee = Number(payment.amount) - getMedicineTotal(payment) - (hasAppointmentConsultation(payment) ? APPOINTMENT_FEE : 0);
+    return CONSULTATION_FEE_OPTIONS.includes(fee) ? fee : DEFAULT_CONSULTATION_FEE;
   };
 
   const getAppointmentFee = (payment: Payment) => {
-    if (payment.type !== 'APPOINTMENT') return 0;
-    return Math.max(0, Number(payment.amount) - getMedicineTotal(payment));
+    if (payment.type === 'MEDICAL_CHECKUP') return 0;
+    if (hasAppointmentConsultation(payment) || payment.type === 'APPOINTMENT') return APPOINTMENT_FEE;
+    return 0;
+  };
+
+  const getMedicalCheckupFee = (payment: Payment) => {
+    return payment.type === 'MEDICAL_CHECKUP' ? MEDICAL_CHECKUP_FEE : 0;
+  };
+
+  const getDisplayedConsultationFee = (payment: Payment) => {
+    if (payment.status === 'PENDING_PAYMENT' && isAdjustableConsultationPayment(payment)) {
+      return confirmConsultationFee;
+    }
+    return getConsultationFee(payment);
+  };
+
+  const getPaymentTypeLabel = (payment: Payment) => {
+    if (payment.type === 'MEDICAL_CHECKUP') return 'Medical Checkup';
+    if (payment.type === 'CONSULTATION' && hasAppointmentConsultation(payment)) return 'Appointment + Consultation';
+    return prettifyType(payment.type);
+  };
+
+  const getDisplayTotal = (payment: Payment) => {
+    if (payment.receipt) return Number(payment.receipt.totalAmount);
+    if (payment.status === 'PENDING_PAYMENT' && isAdjustableConsultationPayment(payment)) {
+      return confirmConsultationFee + getAppointmentFee(payment) + getMedicineTotal(payment);
+    }
+    if (payment.type === 'MEDICAL_CHECKUP') return MEDICAL_CHECKUP_FEE;
+    return Number(payment.amount);
   };
 
   const getReferenceLabel = (payment: Payment) => {
@@ -347,6 +390,11 @@ export const PaymentsPage = () => {
     return `Payment #${payment.paymentId}`;
   };
 
+  useEffect(() => {
+    if (!selectedPayment) return;
+    setConfirmConsultationFee(getConsultationFee(selectedPayment));
+  }, [selectedPayment]);
+
   const onConfirmPendingPayment = async () => {
     if (!selectedPayment || selectedPayment.status !== 'PENDING_PAYMENT') return;
     setSaving(true);
@@ -355,6 +403,7 @@ export const PaymentsPage = () => {
     try {
       const response = await api.post(`/payments/${selectedPayment.paymentId}/confirm`, {
         paymentMethod: confirmMethod,
+        consultationFee: isAdjustableConsultationPayment(selectedPayment) ? confirmConsultationFee : undefined,
         remarks: confirmRemarks.trim() || undefined,
       });
       const data = response.data as { message?: string; payment: Payment; receipt: Receipt };
@@ -362,6 +411,7 @@ export const PaymentsPage = () => {
       setSelectedPayment(paidPayment);
       setSuccess(data.message || 'Payment Successful');
       setConfirmMethod('CASH');
+      setConfirmConsultationFee(DEFAULT_CONSULTATION_FEE);
       setConfirmRemarks('');
       await loadPendingPayments();
     } catch (err: unknown) {
@@ -472,8 +522,9 @@ export const PaymentsPage = () => {
 
           <select value={queryType} onChange={(e) => setQueryType((e.target.value as PaymentType | '') || '')}>
             <option value="">All types</option>
-            <option value="CONSULTATION">Consultation Fee</option>
-            <option value="APPOINTMENT">Appointment Fee</option>
+            <option value="CONSULTATION">Consultation</option>
+            <option value="APPOINTMENT">Appointment</option>
+            <option value="MEDICAL_CHECKUP">Medical Checkup</option>
           </select>
 
           <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
@@ -526,7 +577,7 @@ export const PaymentsPage = () => {
             <section className="pending-payment-workflow" style={{ marginTop: 14 }}>
               <div className="section-head">
                 <h3>Pending Payment List</h3>
-                <p className="muted">Payments appear here after consultation completion without medicines, prescription dispense, or appointment completion.</p>
+                <p className="muted">Payments appear here after consultation completion, prescription dispense, medical checkup send-to-payment, or appointment completion.</p>
               </div>
 
               <div className="table-wrap">
@@ -548,9 +599,9 @@ export const PaymentsPage = () => {
                         <td>{p.patient?.name ?? `Patient #${p.patientId}`}</td>
                         <td>{p.patient?.icOrPassport || p.patientId}</td>
                         <td>{getReferenceLabel(p)}</td>
-                        <td><span className={`status-badge ${p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{prettifyType(p.type)}</span></td>
+                        <td><span className={`status-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
                         <td><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
-                        <td>RM {formatMoney(p.amount)}</td>
+                        <td>RM {formatMoney(p.type === 'MEDICAL_CHECKUP' ? MEDICAL_CHECKUP_FEE : p.amount)}</td>
                         <td>
                           <div className="action-row">
                             <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>View Details</button>
@@ -570,9 +621,9 @@ export const PaymentsPage = () => {
                     <dl className="kv">
                       <div><dt>Patient ID</dt><dd>{p.patient?.icOrPassport || p.patientId}</dd></div>
                       <div><dt>Reference</dt><dd>{getReferenceLabel(p)}</dd></div>
-                      <div><dt>Type</dt><dd>{prettifyType(p.type)}</dd></div>
+                      <div><dt>Type</dt><dd>{getPaymentTypeLabel(p)}</dd></div>
                       <div><dt>Status</dt><dd><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></dd></div>
-                      <div><dt>Total</dt><dd>RM {formatMoney(p.amount)}</dd></div>
+                      <div><dt>Total</dt><dd>RM {formatMoney(p.type === 'MEDICAL_CHECKUP' ? MEDICAL_CHECKUP_FEE : p.amount)}</dd></div>
                     </dl>
                     <div className="action-row" style={{ marginTop: 10 }}>
                       <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>View Details</button>
@@ -744,7 +795,7 @@ export const PaymentsPage = () => {
                   <tr key={p.paymentId}>
                     <td>{new Date(p.date).toLocaleString()}</td>
                     <td>{p.patient?.name ?? `Patient #${p.patientId}`}</td>
-                    <td><span className={`status-badge ${p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{prettifyType(p.type)}</span></td>
+                    <td><span className={`status-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
                     <td>{formatMoney(p.amount)}</td>
                     <td>{prettifyMethod(p.paymentMethod)}</td>
                     <td><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
@@ -771,7 +822,7 @@ export const PaymentsPage = () => {
                   </div>
                   <div>
                     <dt>Type</dt>
-                    <dd><span className={`status-badge ${p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{prettifyType(p.type)}</span></dd>
+                    <dd><span className={`status-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></dd>
                   </div>
                   <div>
                     <dt>Amount</dt>
@@ -821,10 +872,23 @@ export const PaymentsPage = () => {
               <div className="sales-summary-strip">
                 <div><span>Receipt Number</span><strong>{selectedPayment.receipt?.receiptNo ?? '-'}</strong></div>
                 <div><span>Payment Date</span><strong>{new Date(selectedPayment.date).toLocaleString()}</strong></div>
-                <div><span>Total</span><strong>RM {selectedPayment.receipt ? formatMoney(selectedPayment.receipt.totalAmount) : formatMoney(selectedPayment.amount)}</strong></div>
+                <div><span>Total</span><strong>RM {formatMoney(getDisplayTotal(selectedPayment))}</strong></div>
               </div>
               {selectedPayment.status === 'PENDING_PAYMENT' && isReceptionist && (
                 <div className="pending-confirm-box">
+                  {isAdjustableConsultationPayment(selectedPayment) && (
+                    <label className="field-inline">
+                      <span>Consultation Fee</span>
+                      <select value={confirmConsultationFee} onChange={(e) => setConfirmConsultationFee(Number(e.target.value))}>
+                        {CONSULTATION_FEE_OPTIONS.map((fee) => (
+                          <option key={fee} value={fee}>RM {fee}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {selectedPayment.type === 'MEDICAL_CHECKUP' && (
+                    <div className="readonly-fee-pill">Medical Checkup Fee: RM {formatMoney(MEDICAL_CHECKUP_FEE)}</div>
+                  )}
                   <select value={confirmMethod} onChange={(e) => setConfirmMethod(e.target.value as PaymentMethod)}>
                     <option value="CASH">Cash</option>
                     <option value="CARD">Card</option>
@@ -858,9 +922,15 @@ export const PaymentsPage = () => {
                 <div><dt>Consultation ID</dt><dd>{selectedPayment.consultation?.consultationId ? `#${selectedPayment.consultation.consultationId}` : '-'}</dd></div>
                 <div><dt>Appointment ID</dt><dd>{selectedPayment.appointment?.appointmentId ? `#${selectedPayment.appointment.appointmentId}` : '-'}</dd></div>
                 <div><dt>Prescription ID</dt><dd>{selectedPayment.prescription?.prescriptionId ? `#${selectedPayment.prescription.prescriptionId}` : '-'}</dd></div>
-                <div><dt>Payment Type</dt><dd>{prettifyType(selectedPayment.type)}</dd></div>
-                <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getConsultationFee(selectedPayment))}</dd></div>
-                <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                <div><dt>Payment Type</dt><dd>{getPaymentTypeLabel(selectedPayment)}</dd></div>
+                {selectedPayment.type === 'MEDICAL_CHECKUP' ? (
+                  <div><dt>Medical Checkup Fee</dt><dd>RM {formatMoney(getMedicalCheckupFee(selectedPayment))}</dd></div>
+                ) : (
+                  <>
+                    <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getDisplayedConsultationFee(selectedPayment))}</dd></div>
+                    <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                  </>
+                )}
               </dl>
             </section>
 
@@ -905,10 +975,16 @@ export const PaymentsPage = () => {
             <section className="sales-detail-card sales-detail-wide">
               <h4>Payment Breakdown</h4>
               <dl className="receipt-breakdown">
-                <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getConsultationFee(selectedPayment))}</dd></div>
-                <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                {selectedPayment.type === 'MEDICAL_CHECKUP' ? (
+                  <div><dt>Medical Checkup Fee</dt><dd>RM {formatMoney(getMedicalCheckupFee(selectedPayment))}</dd></div>
+                ) : (
+                  <>
+                    <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getDisplayedConsultationFee(selectedPayment))}</dd></div>
+                    <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                  </>
+                )}
                 <div><dt>Medicine Total</dt><dd>RM {formatMoney(getMedicineTotal(selectedPayment))}</dd></div>
-                <div className="receipt-breakdown-total"><dt>Grand Total</dt><dd>RM {selectedPayment.receipt ? formatMoney(selectedPayment.receipt.totalAmount) : formatMoney(selectedPayment.amount)}</dd></div>
+                <div className="receipt-breakdown-total"><dt>Grand Total</dt><dd>RM {formatMoney(getDisplayTotal(selectedPayment))}</dd></div>
               </dl>
             </section>
           </div>

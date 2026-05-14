@@ -9,6 +9,7 @@ import {
   deleteConsultationMedicalCertificate,
   getConsultation,
   listConsultations,
+  sendMedicalCheckupToPayment,
   startConsultation,
   updateConsultation,
   updateConsultationMedicalCertificate,
@@ -23,6 +24,7 @@ router.get('/', listConsultations);
 router.get('/:id', getConsultation);
 router.post('/', rbac([Role.RECEPTIONIST, Role.DOCTOR]), createConsultation);
 router.post('/:id/follow-up', rbac([Role.DOCTOR]), createConsultationFollowUp);
+router.post('/:id/send-to-payment', rbac([Role.DOCTOR]), sendMedicalCheckupToPayment);
 router.post('/:id/medical-certificates', rbac([Role.DOCTOR]), createConsultationMedicalCertificate);
 router.patch('/:id/medical-certificates/:mcId', rbac([Role.DOCTOR]), updateConsultationMedicalCertificate);
 router.patch('/:id/medical-certificates/:mcId/status', rbac([Role.DOCTOR]), updateConsultationMedicalCertificateStatus);

@@ -1,0 +1,8 @@
+CREATE TYPE "ConsultationType" AS ENUM ('GENERAL_CONSULTATION', 'MEDICAL_CHECKUP', 'FOLLOW_UP', 'MINOR_INJURY');
+
+ALTER TABLE "Consultation"
+  ADD COLUMN "consultationType" "ConsultationType" NOT NULL DEFAULT 'GENERAL_CONSULTATION',
+  ADD COLUMN "height" TEXT,
+  ADD COLUMN "bmi" TEXT,
+  ADD COLUMN "heartRate" TEXT,
+  ADD COLUMN "checkupNotes" TEXT;

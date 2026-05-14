@@ -1742,6 +1742,26 @@ body {
   gap: 10px;
 }
 
+.consultation-type-summary {
+  margin-top: 10px;
+}
+
+.medical-checkup-card {
+  display: grid;
+  gap: 12px;
+}
+
+.medical-checkup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.medical-checkup-wide {
+  grid-column: 1 / -1;
+}
+
 .consultation-form-shell {
   display: grid;
   gap: 14px;
@@ -3923,13 +3943,35 @@ body {
 
 .pending-confirm-box {
   display: grid;
-  grid-template-columns: 180px minmax(220px, 1fr) auto;
+  grid-template-columns: repeat(4, minmax(0, auto));
   gap: 10px;
   align-items: center;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+
+.pending-confirm-box .field-inline {
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.pending-confirm-box .field-inline span,
+.readonly-fee-pill {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.readonly-fee-pill {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-strong) 82%, transparent);
+  color: var(--text);
+  white-space: nowrap;
 }
 
 .sales-detail-kv {
@@ -4196,6 +4238,12 @@ body {
   color: #475569;
 }
 
+.type-medical {
+  background: #ecfdf5;
+  border-color: rgba(5, 150, 105, 0.2);
+  color: #047857;
+}
+
 :root[data-theme='dark'] .status-good {
   background: rgba(52, 211, 153, 0.1);
   border-color: rgba(52, 211, 153, 0.22);
@@ -4236,6 +4284,12 @@ body {
   background: rgba(148, 163, 184, 0.1);
   border-color: rgba(148, 163, 184, 0.2);
   color: #cbd5e1;
+}
+
+:root[data-theme='dark'] .type-medical {
+  background: rgba(45, 212, 191, 0.1);
+  border-color: rgba(45, 212, 191, 0.24);
+  color: #5eead4;
 }
 
 .receipt-panel .kv {
@@ -6954,6 +7008,7 @@ button:disabled {
   .consultation-toolbar,
   .consultation-section-grid,
   .consultation-vitals-grid,
+  .medical-checkup-grid,
   .prescription-filter-bar,
   .prescription-summary-grid,
   .prescription-create-form,

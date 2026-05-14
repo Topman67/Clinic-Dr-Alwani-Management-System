@@ -21,6 +21,7 @@ enum UserStatus {
 enum PaymentType {
   CONSULTATION
   APPOINTMENT
+  MEDICAL_CHECKUP
   MEDICINE
   CUSTOM
 }
@@ -63,6 +64,13 @@ enum ConsultationStatus {
   WAITING
   IN_PROGRESS
   COMPLETED
+}
+
+enum ConsultationType {
+  GENERAL_CONSULTATION
+  MEDICAL_CHECKUP
+  FOLLOW_UP
+  MINOR_INJURY
 }
 
 enum PrescriptionStatus {
@@ -213,12 +221,17 @@ model Consultation {
   appointmentId     Int?
   doctor            User                @relation("ConsultationDoctor", fields: [doctorId], references: [userId])
   doctorId          Int                 @default(1)
+  consultationType  ConsultationType    @default(GENERAL_CONSULTATION)
   symptoms          String?
   diagnosis         String?
   consultationNotes String?
   temperature       String?
   bloodPressure     String?
   weight            String?
+  height            String?
+  bmi               String?
+  heartRate         String?
+  checkupNotes      String?
   status            ConsultationStatus  @default(WAITING)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt

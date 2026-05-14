@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AppointmentStatus, ConsultationStatus, InventoryStockAction, MedicineApprovalStatus, PrescriptionStatus, Prisma } from '@prisma/client';
+import { AppointmentStatus, ConsultationStatus, InventoryStockAction, MedicineApprovalStatus, PaymentStatus, PrescriptionStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
 import { createInventoryLog } from '../medicine/medicineController';
@@ -148,6 +148,22 @@ export const createPrescription = async (req: Request, res: Response) => {
         throw createHttpError(409, 'This consultation already has a prescription.');
       }
 
+      const existingPayment = await tx.payment.findFirst({
+        where: {
+          consultationId: targetConsultationId,
+          status: { not: PaymentStatus.CANCELLED },
+        },
+        select: {
+          paymentId: true,
+          status: true,
+          prescriptionId: true,
+        },
+      });
+
+      if (existingPayment?.status === PaymentStatus.PAID) {
+        throw createHttpError(409, 'This consultation has already been paid. Create prescription before confirming payment.');
+      }
+
       const targetAppointmentId = appointmentId ?? consultation.appointmentId ?? undefined;
 
       if (targetAppointmentId !== undefined) {
@@ -220,6 +236,15 @@ export const createPrescription = async (req: Request, res: Response) => {
         await tx.appointment.update({
           where: { appointmentId: targetAppointmentId },
           data: { status: AppointmentStatus.COMPLETED },
+        });
+      }
+
+      if (existingPayment?.status === PaymentStatus.PENDING_PAYMENT && !existingPayment.prescriptionId) {
+        await tx.paymentMedicineItem.deleteMany({
+          where: { paymentId: existingPayment.paymentId },
+        });
+        await tx.payment.delete({
+          where: { paymentId: existingPayment.paymentId },
         });
       }
 

@@ -10,6 +10,9 @@ import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 type ConsultationStatus = 'WAITING' | 'IN_PROGRESS' | 'COMPLETED';
 type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 type MedicalCertificateStatus = 'DRAFT' | 'ISSUED' | 'CANCELLED';
+type ConsultationType = 'GENERAL_CONSULTATION' | 'MEDICAL_CHECKUP' | 'FOLLOW_UP' | 'MINOR_INJURY';
+type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICINE' | 'CUSTOM';
+type PaymentStatus = 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
 
 type ConsultationFollowUpAppointment = {
   appointmentId: number;
@@ -38,12 +41,17 @@ type Consultation = {
   patientId: number;
   appointmentId?: number | null;
   doctorId: number;
+  consultationType: ConsultationType;
   symptoms?: string | null;
   diagnosis?: string | null;
   consultationNotes?: string | null;
   temperature?: string | null;
   bloodPressure?: string | null;
   weight?: string | null;
+  height?: string | null;
+  bmi?: string | null;
+  heartRate?: string | null;
+  checkupNotes?: string | null;
   status: ConsultationStatus;
   createdAt: string;
   patient: {
@@ -64,6 +72,12 @@ type Consultation = {
     prescriptionId: number;
     date: string;
   } | null;
+  payment?: {
+    paymentId: number;
+    status: PaymentStatus;
+    type: PaymentType;
+    amount: number | string;
+  } | null;
   followUpAppointments?: ConsultationFollowUpAppointment[];
   medicalCertificates?: MedicalCertificate[];
   doctor?: {
@@ -72,12 +86,17 @@ type Consultation = {
 };
 
 type ConsultationForm = {
+  consultationType: ConsultationType;
   symptoms: string;
   diagnosis: string;
   consultationNotes: string;
   temperature: string;
   bloodPressure: string;
   weight: string;
+  height: string;
+  bmi: string;
+  heartRate: string;
+  checkupNotes: string;
 };
 
 type MedicalCertificateForm = {
@@ -163,13 +182,25 @@ type HistoryTimelineItem = {
 };
 
 const emptyForm: ConsultationForm = {
+  consultationType: 'GENERAL_CONSULTATION',
   symptoms: '',
   diagnosis: '',
   consultationNotes: '',
   temperature: '',
   bloodPressure: '',
   weight: '',
+  height: '',
+  bmi: '',
+  heartRate: '',
+  checkupNotes: '',
 };
+
+const consultationTypeOptions: Array<{ value: ConsultationType; label: string }> = [
+  { value: 'GENERAL_CONSULTATION', label: 'General Consultation' },
+  { value: 'MEDICAL_CHECKUP', label: 'Medical Checkup' },
+  { value: 'FOLLOW_UP', label: 'Follow-up' },
+  { value: 'MINOR_INJURY', label: 'Minor Injury' },
+];
 
 const CLINIC_NAME = 'Clinic Dr. Alwani';
 
@@ -183,6 +214,11 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
 };
 
 const formatStatus = (status: ConsultationStatus) => status.replace('_', ' ').toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
+
+const formatConsultationType = (type?: ConsultationType | null) => {
+  const option = consultationTypeOptions.find((item) => item.value === type);
+  return option?.label ?? 'General Consultation';
+};
 
 const statusClass = (status: ConsultationStatus) => {
   if (status === 'WAITING') return 'status-warning';
@@ -238,13 +274,32 @@ const formatLinkedRecords = (consultation: Consultation) => {
 };
 
 const toForm = (consultation: Consultation): ConsultationForm => ({
+  consultationType: consultation.consultationType ?? 'GENERAL_CONSULTATION',
   symptoms: consultation.symptoms ?? '',
   diagnosis: consultation.diagnosis ?? '',
   consultationNotes: consultation.consultationNotes ?? '',
   temperature: consultation.temperature ?? '',
   bloodPressure: consultation.bloodPressure ?? '',
   weight: consultation.weight ?? '',
+  height: consultation.height ?? '',
+  bmi: consultation.bmi ?? '',
+  heartRate: consultation.heartRate ?? '',
+  checkupNotes: consultation.checkupNotes ?? '',
 });
+
+const parseMeasurement = (value: string) => {
+  const match = value.replace(',', '.').match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : Number.NaN;
+};
+
+const calculateBmi = (weight: string, height: string) => {
+  const weightKg = parseMeasurement(weight);
+  const heightValue = parseMeasurement(height);
+  if (!Number.isFinite(weightKg) || !Number.isFinite(heightValue) || weightKg <= 0 || heightValue <= 0) return '';
+  const heightM = heightValue > 3 ? heightValue / 100 : heightValue;
+  if (heightM <= 0) return '';
+  return (weightKg / (heightM * heightM)).toFixed(1);
+};
 
 const formatMoney = (value: number | string) => {
   const amount = typeof value === 'string' ? Number(value) : value;
@@ -469,6 +524,17 @@ export const ConsultationsPage = () => {
 
   const activeFollowUp = active?.followUpAppointments?.[0] ?? null;
   const latestMedicalCertificate = active?.medicalCertificates?.[0] ?? null;
+  const activePayment = active?.payment ?? null;
+  const calculatedBmi = useMemo(() => calculateBmi(form.weight, form.height), [form.height, form.weight]);
+  const displayedBmi = calculatedBmi || form.bmi;
+  const isMedicalCheckup = form.consultationType === 'MEDICAL_CHECKUP';
+  const canSendMedicalCheckupToPayment = Boolean(
+    active &&
+    active.status === 'COMPLETED' &&
+    active.consultationType === 'MEDICAL_CHECKUP' &&
+    !active.prescription &&
+    !activePayment,
+  );
   const mcReturnToWorkDate = useMemo(() => addDaysToDateInput(mcForm.startDate, Number(mcForm.days)), [mcForm.days, mcForm.startDate]);
   const historyTimeline = useMemo(() => {
     if (!historyPatient) return [];
@@ -574,7 +640,7 @@ export const ConsultationsPage = () => {
     e.preventDefault();
     if (!active) return;
 
-    if (complete && (!form.symptoms.trim() || !form.diagnosis.trim())) {
+    if (complete && !isMedicalCheckup && (!form.symptoms.trim() || !form.diagnosis.trim())) {
       setError('Symptoms and diagnosis are required before saving consultation.');
       return;
     }
@@ -585,6 +651,7 @@ export const ConsultationsPage = () => {
     try {
       const response = await api.patch(`/consultations/${active.consultationId}`, {
         ...form,
+        bmi: displayedBmi || undefined,
         status: complete ? 'COMPLETED' : 'IN_PROGRESS',
       });
       const consultation = response.data as Consultation;
@@ -610,6 +677,27 @@ export const ConsultationsPage = () => {
       params.set('appointmentId', String(active.appointmentId));
     }
     navigate(`/doctor/prescriptions?${params.toString()}`);
+  };
+
+  const sendMedicalCheckupToPayment = async () => {
+    if (!active || !canSendMedicalCheckupToPayment) return;
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await api.post(`/consultations/${active.consultationId}/send-to-payment`);
+      const data = response.data as { consultation: Consultation; payment: Consultation['payment'] };
+      const consultation = data.consultation ?? { ...active, payment: data.payment };
+      setActive(consultation);
+      setForm(toForm(consultation));
+      setSuccess('Medical checkup sent to pending payment.');
+      await loadConsultations();
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to send medical checkup to payment'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openMedicalCertificateDrawer = () => {
@@ -1001,8 +1089,105 @@ export const ConsultationsPage = () => {
             <article className="consultation-card">
               <div className="patient-card-head">
                 <div>
+                  <h3>Consultation Type</h3>
+                  <p className="muted">Choose the visit category for this consultation.</p>
+                </div>
+              </div>
+              <label className="field-block">
+                <span>Consultation Type</span>
+                <select
+                  value={form.consultationType}
+                  onChange={(e) => setForm((prev) => ({ ...prev, consultationType: e.target.value as ConsultationType }))}
+                  disabled={active.status === 'WAITING' || active.status === 'COMPLETED'}
+                >
+                  {consultationTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <dl className="kv consultation-kv consultation-type-summary">
+                <div><dt>Current Type</dt><dd>{formatConsultationType(form.consultationType)}</dd></div>
+                <div><dt>Prescription</dt><dd>{active.prescription ? `Prescription #${active.prescription.prescriptionId}` : 'Optional if medicine is needed'}</dd></div>
+              </dl>
+            </article>
+          </div>
+
+          {isMedicalCheckup ? (
+            <article className="consultation-card medical-checkup-card">
+              <div className="patient-card-head">
+                <div>
+                  <h3>Medical Checkup</h3>
+                  <p className="muted">Structured checkup measurements. BMI is calculated from weight and height.</p>
+                </div>
+              </div>
+              <div className="medical-checkup-grid">
+                <label className="field-block">
+                  <span>Blood Pressure</span>
+                  <input
+                    value={form.bloodPressure}
+                    onChange={(e) => setForm((prev) => ({ ...prev, bloodPressure: e.target.value }))}
+                    placeholder="e.g. 120/80"
+                    disabled={active.status === 'WAITING' || active.status === 'COMPLETED'}
+                  />
+                </label>
+                <label className="field-block">
+                  <span>Weight</span>
+                  <input
+                    value={form.weight}
+                    onChange={(e) => setForm((prev) => ({ ...prev, weight: e.target.value }))}
+                    placeholder="e.g. 60 kg"
+                    disabled={active.status === 'WAITING' || active.status === 'COMPLETED'}
+                  />
+                </label>
+                <label className="field-block">
+                  <span>Height</span>
+                  <input
+                    value={form.height}
+                    onChange={(e) => setForm((prev) => ({ ...prev, height: e.target.value }))}
+                    placeholder="e.g. 165 cm"
+                    disabled={active.status === 'WAITING' || active.status === 'COMPLETED'}
+                  />
+                </label>
+                <label className="field-block">
+                  <span>BMI</span>
+                  <output className="age-output">{displayedBmi || '-'}</output>
+                </label>
+                <label className="field-block">
+                  <span>Temperature</span>
+                  <input
+                    value={form.temperature}
+                    onChange={(e) => setForm((prev) => ({ ...prev, temperature: e.target.value }))}
+                    placeholder="e.g. 37.0 C"
+                    disabled={active.status === 'WAITING' || active.status === 'COMPLETED'}
+                  />
+                </label>
+                <label className="field-block">
+                  <span>Heart Rate</span>
+                  <input
+                    value={form.heartRate}
+                    onChange={(e) => setForm((prev) => ({ ...prev, heartRate: e.target.value }))}
+                    placeholder="e.g. 78 bpm"
+                    disabled={active.status === 'WAITING' || active.status === 'COMPLETED'}
+                  />
+                </label>
+                <label className="field-block medical-checkup-wide">
+                  <span>Notes</span>
+                  <textarea
+                    value={form.checkupNotes}
+                    onChange={(e) => setForm((prev) => ({ ...prev, checkupNotes: e.target.value }))}
+                    placeholder="Checkup observations, advice, or follow-up notes"
+                    rows={3}
+                    disabled={active.status === 'WAITING' || active.status === 'COMPLETED'}
+                  />
+                </label>
+              </div>
+            </article>
+          ) : (
+            <article className="consultation-card">
+              <div className="patient-card-head">
+                <div>
                   <h3>Vital Signs</h3>
-                  <p className="muted">Temperature, blood pressure, and weight.</p>
+                  <p className="muted">Optional baseline measurements.</p>
                 </div>
               </div>
               <div className="consultation-vitals-grid">
@@ -1035,7 +1220,7 @@ export const ConsultationsPage = () => {
                 </label>
               </div>
             </article>
-          </div>
+          )}
 
           {active.status === 'WAITING' ? (
             <article className="consultation-card">
@@ -1123,6 +1308,16 @@ export const ConsultationsPage = () => {
                 >
                   {active.prescription ? 'Prescription Created' : 'Create Prescription'}
                 </button>
+                {active.consultationType === 'MEDICAL_CHECKUP' && !active.prescription && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => void sendMedicalCheckupToPayment()}
+                    disabled={!canSendMedicalCheckupToPayment || saving}
+                  >
+                    {activePayment ? 'Payment Created' : 'Send to Payment'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn-secondary"
@@ -1181,12 +1376,17 @@ export const ConsultationsPage = () => {
           <section className="consultation-print-summary">
             <h3>Clinical Details</h3>
             <dl className="kv consultation-kv">
+              <div><dt>Consultation Type</dt><dd>{formatConsultationType(form.consultationType)}</dd></div>
               <div><dt>Symptoms</dt><dd>{form.symptoms || '-'}</dd></div>
               <div><dt>Diagnosis</dt><dd>{form.diagnosis || '-'}</dd></div>
               <div><dt>Notes</dt><dd>{form.consultationNotes || '-'}</dd></div>
               <div><dt>Temperature</dt><dd>{form.temperature || '-'}</dd></div>
               <div><dt>Blood Pressure</dt><dd>{form.bloodPressure || '-'}</dd></div>
               <div><dt>Weight</dt><dd>{form.weight || '-'}</dd></div>
+              <div><dt>Height</dt><dd>{form.height || '-'}</dd></div>
+              <div><dt>BMI</dt><dd>{displayedBmi || '-'}</dd></div>
+              <div><dt>Heart Rate</dt><dd>{form.heartRate || '-'}</dd></div>
+              <div><dt>Checkup Notes</dt><dd>{form.checkupNotes || '-'}</dd></div>
               <div><dt>Prescription</dt><dd>{active.prescription ? `Prescription #${active.prescription.prescriptionId}` : '-'}</dd></div>
               <div>
                 <dt>Medical Certificate</dt>
