@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { roleBasePath } from '../config/rbac';
+import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 type Patient = {
   patientId: number;
@@ -21,10 +24,10 @@ type Receipt = {
   totalAmount: number | string;
 };
 
-type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
+type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE' | 'CUSTOM';
 type PaymentMethod = 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET';
 
-type PaymentStatus = 'PAID' | 'CANCELLED';
+type PaymentStatus = 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
 
 type Payment = {
   paymentId: number;
@@ -36,8 +39,14 @@ type Payment = {
   remarks?: string | null;
   date: string;
   status: PaymentStatus;
+  dispensedAt?: string | null;
+  dispensedById?: number | null;
+  dispensedByUsername?: string | null;
   patient?: { name: string; icOrPassport?: string; phone?: string; address?: string | null };
   receipt?: Receipt | null;
+  consultation?: { consultationId: number; appointmentId?: number | null; status: string; createdAt: string } | null;
+  prescription?: { prescriptionId: number; status: string; date: string } | null;
+  appointment?: { appointmentId: number; status: string; type?: string; dateTime: string } | null;
   medicineItems?: Array<{
     itemId: number;
     qty: number;
@@ -68,23 +77,9 @@ type WalkInFormItem = {
   qty: number;
 };
 
-type ReceptionPaymentMode = 'STANDARD' | 'WALKIN';
+type WalkInCategoryFilter = 'ALL' | NonNullable<WalkInMedicine['category']>;
 
-type PaymentForm = {
-  patientId: number;
-  type: PaymentType;
-  amount: number;
-  paymentMethod: PaymentMethod;
-  remarks: string;
-};
-
-const initialForm: PaymentForm = {
-  patientId: 0,
-  type: 'CONSULTATION',
-  amount: 0,
-  paymentMethod: 'CASH',
-  remarks: '',
-};
+type ReceptionPaymentMode = 'PENDING' | 'WALKIN';
 
 const formatMoney = (value: number | string) => {
   const n = typeof value === 'string' ? Number(value) : value;
@@ -101,6 +96,7 @@ const toDateInput = (value: string | null | undefined) => {
 const prettifyType = (t: PaymentType) => {
   if (t === 'CONSULTATION') return 'Consultation Fee';
   if (t === 'APPOINTMENT') return 'Appointment Fee';
+  if (t === 'CUSTOM') return 'Payment';
   return 'Medicine Sale';
 };
 
@@ -110,19 +106,31 @@ const prettifyMethod = (method: PaymentMethod) => {
   return method.charAt(0) + method.slice(1).toLowerCase();
 };
 
+const statusLabel = (status: PaymentStatus) => {
+  if (status === 'PENDING_PAYMENT') return 'Pending Payment';
+  if (status === 'PENDING_DISPENSE') return 'Pending Dispense';
+  return status.charAt(0) + status.slice(1).toLowerCase();
+};
+
+const statusClass = (status: PaymentStatus) => {
+  if (status === 'DISPENSED' || status === 'PAID') return 'status-good';
+  if (status === 'PENDING_DISPENSE') return 'status-pending-dispense';
+  if (status === 'CANCELLED') return 'status-critical';
+  return 'status-warning';
+};
+
 export const PaymentsPage = () => {
   const { role } = useAuth();
   const isDoctor = role === 'DOCTOR';
   const isReceptionist = role === 'RECEPTIONIST';
+  const navigate = useNavigate();
 
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [form, setForm] = useState<PaymentForm>(initialForm);
+  const [pendingPayments, setPendingPayments] = useState<Payment[]>([]);
   const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
-  const [selectedFormPatient, setSelectedFormPatient] = useState<PatientAutocompleteOption | null>(null);
   const [queryType, setQueryType] = useState<PaymentType | ''>('');
   const [dateRange, setDateRange] = useState<DateRangeValue>(() => getDateRangeForPreset('today'));
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [walkInSaving, setWalkInSaving] = useState(false);
@@ -131,11 +139,16 @@ export const PaymentsPage = () => {
   const [walkInMedicines, setWalkInMedicines] = useState<WalkInMedicine[]>([]);
   const [walkInItems, setWalkInItems] = useState<WalkInFormItem[]>([]);
   const [walkInMethod, setWalkInMethod] = useState<PaymentMethod>('CASH');
+  const [confirmMethod, setConfirmMethod] = useState<PaymentMethod>('CASH');
+  const [confirmRemarks, setConfirmRemarks] = useState('');
   const [walkInRemarks, setWalkInRemarks] = useState('');
   const [walkInCustomerName, setWalkInCustomerName] = useState('');
   const [walkInCustomerPhone, setWalkInCustomerPhone] = useState('');
   const [walkInCustomerId, setWalkInCustomerId] = useState('');
-  const [receptionMode, setReceptionMode] = useState<ReceptionPaymentMode>('STANDARD');
+  const [medicinePickerOpen, setMedicinePickerOpen] = useState(false);
+  const [medicinePickerSearch, setMedicinePickerSearch] = useState('');
+  const [medicinePickerCategory, setMedicinePickerCategory] = useState<WalkInCategoryFilter>('ALL');
+  const [receptionMode, setReceptionMode] = useState<ReceptionPaymentMode>('PENDING');
 
   const getApiErrorMessage = (err: unknown, fallback: string) => {
     if (typeof err === 'object' && err !== null) {
@@ -157,6 +170,24 @@ export const PaymentsPage = () => {
       setWalkInMedicines(response.data as WalkInMedicine[]);
     } catch {
       setWalkInMedicines([]);
+    }
+  }, [isReceptionist]);
+
+  const loadPendingPayments = useCallback(async () => {
+    if (!isReceptionist) {
+      setPendingPayments([]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/payments/pending');
+      setPendingPayments(response.data as Payment[]);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to load pending payments'));
+    } finally {
+      setLoading(false);
     }
   }, [isReceptionist]);
 
@@ -201,13 +232,14 @@ export const PaymentsPage = () => {
           await loadPayments(buildCurrentFilters());
         }
         if (isReceptionist) {
+          await loadPendingPayments();
           await loadWalkInMedicines();
         }
       } catch {
         setError('Failed to load required data');
       }
     })();
-  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPayments, loadWalkInMedicines]);
+  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPayments, loadPendingPayments, loadWalkInMedicines]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
@@ -217,6 +249,7 @@ export const PaymentsPage = () => {
             await loadPayments(buildCurrentFilters());
           }
           if (isReceptionist) {
+            await loadPendingPayments();
             await loadWalkInMedicines();
           }
         } catch {
@@ -224,33 +257,56 @@ export const PaymentsPage = () => {
         }
       })();
     });
-  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPayments, loadWalkInMedicines]);
-
-  const validatePaymentForm = () => {
-    const nextErrors: Record<string, boolean> = {};
-
-    if (!form.patientId) nextErrors.patientId = true;
-    if (!Number.isFinite(form.amount) || form.amount <= 0) nextErrors.amount = true;
-
-    setFieldErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
-
-  const onCancelPayment = () => {
-    setForm(initialForm);
-    setSelectedFormPatient(null);
-    setFieldErrors({});
-    setError(null);
-    setSuccess(null);
-    setSelectedPayment(null);
-  };
+  }, [buildCurrentFilters, isDoctor, isReceptionist, loadPayments, loadPendingPayments, loadWalkInMedicines]);
 
   const getWalkInMedicineById = (medicineId: number) => {
     return walkInMedicines.find((m) => m.medicineId === medicineId) ?? null;
   };
 
-  const addWalkInItem = () => {
-    setWalkInItems((prev) => [...prev, { medicineId: 0, qty: 1 }]);
+  const goToSales = () => {
+    if (!role) return;
+    navigate(`${roleBasePath[role]}/sales`);
+  };
+
+  const categoryLabel = (category: WalkInMedicine['category']) => {
+    if (category === 'CONTROLLED_MEDICINE') return 'Controlled';
+    if (category === 'SUPPLEMENT') return 'Supplement';
+    if (category === 'VITAMIN') return 'Vitamin';
+    return 'Medicine';
+  };
+
+  const fefoMedicineOptions = useMemo(() => {
+    const byName = new Map<string, WalkInMedicine>();
+    [...walkInMedicines]
+      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())
+      .forEach((medicine) => {
+        const key = `${medicine.name.toLowerCase()}::${medicine.category ?? 'MEDICINE'}`;
+        if (!byName.has(key)) byName.set(key, medicine);
+      });
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [walkInMedicines]);
+
+  const filteredMedicineOptions = useMemo(() => {
+    const q = medicinePickerSearch.trim().toLowerCase();
+    return fefoMedicineOptions.filter((medicine) => {
+      const matchesCategory = medicinePickerCategory === 'ALL' || medicine.category === medicinePickerCategory;
+      if (!matchesCategory) return false;
+      if (!q) return true;
+      return [medicine.name, medicine.batchNumber, medicine.brand, categoryLabel(medicine.category)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q));
+    });
+  }, [fefoMedicineOptions, medicinePickerCategory, medicinePickerSearch]);
+
+  const addWalkInItem = (medicineId: number) => {
+    setWalkInItems((prev) => {
+      const existingIndex = prev.findIndex((item) => item.medicineId === medicineId);
+      if (existingIndex >= 0) {
+        return prev.map((item, index) => (index === existingIndex ? { ...item, qty: item.qty + 1 } : item));
+      }
+      return [...prev, { medicineId, qty: 1 }];
+    });
+    setMedicinePickerOpen(false);
   };
 
   const removeWalkInItem = (index: number) => {
@@ -268,6 +324,52 @@ export const PaymentsPage = () => {
       return sum + Number(medicine.price) * item.qty;
     }, 0);
   }, [walkInItems, walkInMedicines]);
+
+  const getMedicineTotal = (payment: Payment) => {
+    return payment.medicineItems?.reduce((sum, item) => sum + Number(item.subtotal), 0) ?? 0;
+  };
+
+  const getConsultationFee = (payment: Payment) => {
+    if (payment.type !== 'CONSULTATION') return 0;
+    if (payment.consultation?.consultationId) return 50;
+    return Math.max(0, Number(payment.amount) - getMedicineTotal(payment));
+  };
+
+  const getAppointmentFee = (payment: Payment) => {
+    if (payment.type !== 'APPOINTMENT') return 0;
+    return Math.max(0, Number(payment.amount) - getMedicineTotal(payment));
+  };
+
+  const getReferenceLabel = (payment: Payment) => {
+    if (payment.consultation?.consultationId) return `Consultation #${payment.consultation.consultationId}`;
+    if (payment.appointment?.appointmentId) return `Appointment #${payment.appointment.appointmentId}`;
+    if (payment.prescription?.prescriptionId) return `Prescription #${payment.prescription.prescriptionId}`;
+    return `Payment #${payment.paymentId}`;
+  };
+
+  const onConfirmPendingPayment = async () => {
+    if (!selectedPayment || selectedPayment.status !== 'PENDING_PAYMENT') return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await api.post(`/payments/${selectedPayment.paymentId}/confirm`, {
+        paymentMethod: confirmMethod,
+        remarks: confirmRemarks.trim() || undefined,
+      });
+      const data = response.data as { message?: string; payment: Payment; receipt: Receipt };
+      const paidPayment = { ...data.payment, receipt: data.receipt };
+      setSelectedPayment(paidPayment);
+      setSuccess(data.message || 'Payment Successful');
+      setConfirmMethod('CASH');
+      setConfirmRemarks('');
+      await loadPendingPayments();
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to confirm payment'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const onSubmitWalkInSale = async (e: FormEvent) => {
     e.preventDefault();
@@ -291,7 +393,6 @@ export const PaymentsPage = () => {
     setWalkInSaving(true);
     try {
       const response = await api.post('/payments/walkin-medicine', {
-        patientId: form.patientId > 0 ? form.patientId : undefined,
         customerName: walkInCustomerName.trim() || undefined,
         customerPhone: walkInCustomerPhone.trim() || undefined,
         customerId: walkInCustomerId.trim() || undefined,
@@ -340,58 +441,6 @@ export const PaymentsPage = () => {
     e.preventDefault();
     if (!isDoctor) return;
     await loadPayments(buildCurrentFilters());
-  };
-
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!isReceptionist) return;
-
-    setError(null);
-    setSuccess(null);
-
-    if (!validatePaymentForm()) {
-      setError('Missing or invalid fields.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const response = await api.post('/payments', {
-        patientId: form.patientId,
-        type: form.type,
-        amount: form.amount,
-        paymentMethod: form.paymentMethod,
-        remarks: form.remarks.trim() || undefined,
-      });
-
-      const data = response.data as {
-        message?: string;
-        payment: Payment;
-        receipt: Receipt;
-        patient: Patient;
-      };
-
-      const createdPayment: Payment = {
-        ...data.payment,
-        patient: {
-          name: data.patient.name,
-          icOrPassport: data.patient.icOrPassport,
-          phone: data.patient.phone,
-          address: data.patient.address,
-        },
-        receipt: data.receipt,
-      };
-
-      setSuccess(data.message || 'Payment Successful');
-      setSelectedPayment(createdPayment);
-      setForm(initialForm);
-      setSelectedFormPatient(null);
-      setFieldErrors({});
-    } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Failed to record payment'));
-    } finally {
-      setSaving(false);
-    }
   };
 
   return (
@@ -451,14 +500,14 @@ export const PaymentsPage = () => {
           <div className="action-row" style={{ marginTop: 14 }}>
             <button
               type="button"
-              className={receptionMode === 'STANDARD' ? '' : 'btn-secondary'}
+              className={receptionMode === 'PENDING' ? '' : 'btn-secondary'}
               onClick={() => {
-                setReceptionMode('STANDARD');
+                setReceptionMode('PENDING');
                 setError(null);
                 setSuccess(null);
               }}
             >
-              Standard Payment
+              Pending Payments
             </button>
             <button
               type="button"
@@ -473,226 +522,198 @@ export const PaymentsPage = () => {
             </button>
           </div>
 
-          {receptionMode === 'STANDARD' && (
-            <>
-              <form onSubmit={onSubmit} className="form-grid" style={{ marginTop: 14 }}>
-                <div className="section-head">
-                  <h3>Record Payment</h3>
-                </div>
+          {receptionMode === 'PENDING' && (
+            <section className="pending-payment-workflow" style={{ marginTop: 14 }}>
+              <div className="section-head">
+                <h3>Pending Payment List</h3>
+                <p className="muted">Payments appear here after consultation completion without medicines, prescription dispense, or appointment completion.</p>
+              </div>
 
-                <div className="payments-grid">
-                  <div className="field-block">
-                    <PatientAutocomplete
-                      selectedPatient={selectedFormPatient}
-                      onSelect={(patient) => {
-                        setSelectedFormPatient(patient);
-                        setForm((prev) => ({ ...prev, patientId: patient?.patientId ?? 0 }));
-                        setFieldErrors((prev) => {
-                          if (!prev.patientId) return prev;
-                          const next = { ...prev };
-                          delete next.patientId;
-                          return next;
-                        });
-                      }}
-                      placeholder="Search patient by name / IC / phone"
-                      invalid={Boolean(fieldErrors.patientId)}
-                      helperText="Patient selection is required."
-                      required
-                    />
-                  </div>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Patient Name</th>
+                      <th>Patient ID</th>
+                      <th>Reference</th>
+                      <th>Payment Type</th>
+                      <th>Status</th>
+                      <th>Total Amount</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingPayments.map((p) => (
+                      <tr key={p.paymentId}>
+                        <td>{p.patient?.name ?? `Patient #${p.patientId}`}</td>
+                        <td>{p.patient?.icOrPassport || p.patientId}</td>
+                        <td>{getReferenceLabel(p)}</td>
+                        <td><span className={`status-badge ${p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{prettifyType(p.type)}</span></td>
+                        <td><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
+                        <td>RM {formatMoney(p.amount)}</td>
+                        <td>
+                          <div className="action-row">
+                            <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>View Details</button>
+                            <button type="button" onClick={() => setSelectedPayment(p)}>Pay Now</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                  <select
-                    value={form.type}
-                    onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value as PaymentType }))}
-                  >
-                    <option value="CONSULTATION">Consultation Fee</option>
-                    <option value="APPOINTMENT">Appointment Fee</option>
-                  </select>
-
-                  <div className="field-block">
-                    <input
-                      type="number"
-                      min={0.01}
-                      step="0.01"
-                      value={form.amount}
-                      onChange={(e) => {
-                        const amount = Number(e.target.value) || 0;
-                        setForm((prev) => ({ ...prev, amount }));
-                        setFieldErrors((prev) => {
-                          if (!prev.amount) return prev;
-                          const next = { ...prev };
-                          delete next.amount;
-                          return next;
-                        });
-                      }}
-                      placeholder="Amount"
-                      className={fieldErrors.amount ? 'field-invalid' : undefined}
-                      required
-                    />
-                    {fieldErrors.amount && <small className="field-helper">Amount must be greater than 0.</small>}
-                  </div>
-
-                  <select
-                    value={form.paymentMethod}
-                    onChange={(e) => setForm((prev) => ({ ...prev, paymentMethod: e.target.value as PaymentMethod }))}
-                  >
-                    <option value="CASH">Cash</option>
-                    <option value="CARD">Card</option>
-                    <option value="ONLINE_TRANSFER">Online Transfer</option>
-                    <option value="E_WALLET">E-Wallet</option>
-                  </select>
-
-                  <button type="submit" disabled={saving}>{saving ? 'Processing...' : 'Confirm / Pay'}</button>
-                  <button type="button" className="btn-secondary" onClick={onCancelPayment} disabled={saving}>
-                    Cancel
-                  </button>
-                </div>
-
-                <textarea
-                  value={form.remarks}
-                  onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
-                  placeholder="Remarks (optional)"
-                  rows={3}
-                  maxLength={500}
-                />
-
-                {selectedFormPatient && (
-                  <div className="report-card">
-                    <h4 style={{ marginTop: 0 }}>Patient Details</h4>
+              <div className="mobile-cards">
+                {pendingPayments.map((p) => (
+                  <article key={`pending-card-${p.paymentId}`} className="mobile-card">
+                    <h4>{p.patient?.name ?? `Patient #${p.patientId}`}</h4>
                     <dl className="kv">
-                      <div>
-                        <dt>Name</dt>
-                        <dd>{selectedFormPatient.name}</dd>
-                      </div>
-                      <div>
-                        <dt>IC / Passport</dt>
-                        <dd>{selectedFormPatient.icOrPassport || '-'}</dd>
-                      </div>
-                      <div>
-                        <dt>Phone</dt>
-                        <dd>{selectedFormPatient.phone || '-'}</dd>
-                      </div>
-                      <div>
-                        <dt>Address</dt>
-                        <dd>{selectedFormPatient.address || '-'}</dd>
-                      </div>
+                      <div><dt>Patient ID</dt><dd>{p.patient?.icOrPassport || p.patientId}</dd></div>
+                      <div><dt>Reference</dt><dd>{getReferenceLabel(p)}</dd></div>
+                      <div><dt>Type</dt><dd>{prettifyType(p.type)}</dd></div>
+                      <div><dt>Status</dt><dd><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></dd></div>
+                      <div><dt>Total</dt><dd>RM {formatMoney(p.amount)}</dd></div>
                     </dl>
-                  </div>
-                )}
-              </form>
-            </>
+                    <div className="action-row" style={{ marginTop: 10 }}>
+                      <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>View Details</button>
+                      <button type="button" onClick={() => setSelectedPayment(p)}>Pay Now</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {!loading && pendingPayments.length === 0 && <p className="muted">No pending clinic payments right now.</p>}
+            </section>
           )}
 
           {receptionMode === 'WALKIN' && (
             <form onSubmit={onSubmitWalkInSale} className="form-grid" style={{ marginTop: 14 }}>
               <div className="section-head">
                 <h3>Walk-in Medicine Sale</h3>
-                <p className="muted">Select medicine items and quantity, then confirm sale for a walk-in customer.</p>
+                <p className="muted">Create paid sales for pharmacist dispensing. Stock is deducted when the pharmacist dispenses.</p>
               </div>
 
-              <div className="report-card">
-                <small className="muted">Enter customer info (optional). If customer ID is blank, system auto-generates one.</small>
-              </div>
-
-              <div className="payments-grid">
-                <input
-                  value={walkInCustomerName}
-                  onChange={(e) => setWalkInCustomerName(e.target.value)}
-                  placeholder="Customer name (optional)"
-                  maxLength={120}
-                />
-
-                <input
-                  value={walkInCustomerPhone}
-                  onChange={(e) => setWalkInCustomerPhone(e.target.value)}
-                  placeholder="Customer phone (optional)"
-                  maxLength={30}
-                />
-
-                <input
-                  value={walkInCustomerId}
-                  onChange={(e) => setWalkInCustomerId(e.target.value)}
-                  placeholder="Customer ID (optional)"
-                  maxLength={60}
-                />
-              </div>
-
-              <div className="action-row">
-                <button type="button" className="btn-secondary" onClick={addWalkInItem}>Add Medicine Item</button>
-              </div>
-
-              {walkInItems.map((item, index) => {
-                const selectedMedicine = getWalkInMedicineById(item.medicineId);
-                const itemSubtotal = selectedMedicine ? Number(selectedMedicine.price) * item.qty : 0;
-
-                return (
-                  <div key={`walkin-item-${index}`} className="payments-grid">
-                    <select
-                      value={item.medicineId || ''}
-                      onChange={(e) => updateWalkInItem(index, { medicineId: Number(e.target.value) || 0 })}
-                      required
-                    >
-                      <option value="">Select medicine</option>
-                      {walkInMedicines.map((medicine) => (
-                        <option key={`${medicine.medicineId}-${medicine.batchNumber}`} value={medicine.medicineId}>
-                          {medicine.brand ? `${medicine.brand} - ` : ''}{medicine.name}{medicine.packaging ? ` - ${medicine.packaging}` : ''} ({medicine.batchNumber}) - Stock: {medicine.quantity} - Exp: {toDateInput(medicine.expiryDate)}
-                        </option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="number"
-                      min={1}
-                      value={item.qty}
-                      onChange={(e) => updateWalkInItem(index, { qty: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })}
-                      placeholder="Qty"
-                      required
-                    />
-
-                    <input
-                      value={selectedMedicine ? `RM ${formatMoney(selectedMedicine.price)}` : '-'}
-                      readOnly
-                      placeholder="Unit Price"
-                    />
-
-                    <input
-                      value={`RM ${formatMoney(itemSubtotal)}`}
-                      readOnly
-                      placeholder="Subtotal"
-                    />
-
-                    <button type="button" className="btn-danger" onClick={() => removeWalkInItem(index)}>
-                      Remove
-                    </button>
+              <section className="walkin-sale-layout">
+                <div className="card walkin-sale-card">
+                  <div className="compact-section-head">
+                    <h3>Customer Information</h3>
+                    <p className="muted">Optional. The system auto-generates an ID if left blank.</p>
                   </div>
-                );
-              })}
+                  <div className="walkin-customer-grid">
+                    <input value={walkInCustomerName} onChange={(e) => setWalkInCustomerName(e.target.value)} placeholder="Customer name" maxLength={120} />
+                    <input value={walkInCustomerPhone} onChange={(e) => setWalkInCustomerPhone(e.target.value)} placeholder="Customer phone" maxLength={30} />
+                    <input value={walkInCustomerId} onChange={(e) => setWalkInCustomerId(e.target.value)} placeholder="Customer ID" maxLength={60} />
+                  </div>
+                </div>
 
-              <div className="payments-grid">
-                <select
-                  value={walkInMethod}
-                  onChange={(e) => setWalkInMethod(e.target.value as PaymentMethod)}
-                >
-                  <option value="CASH">Cash</option>
-                  <option value="CARD">Card</option>
-                  <option value="ONLINE_TRANSFER">Online Transfer</option>
-                  <option value="E_WALLET">E-Wallet</option>
-                </select>
+                <div className="card walkin-sale-card walkin-items-card">
+                  <div className="prescription-items-head">
+                    <div>
+                      <h4>Medicine Items</h4>
+                      <p className="muted">FEFO batch is selected automatically.</p>
+                    </div>
+                    <button type="button" className="btn-secondary" onClick={() => setMedicinePickerOpen(true)}>Add Medicine</button>
+                  </div>
 
-                <input value={`Total: RM ${formatMoney(walkInTotal)}`} readOnly />
-              </div>
+                  <div className="walkin-items-list">
+                    {walkInItems.map((item, index) => {
+                      const selectedMedicine = getWalkInMedicineById(item.medicineId);
+                      const itemSubtotal = selectedMedicine ? Number(selectedMedicine.price) * item.qty : 0;
 
-              <textarea
-                value={walkInRemarks}
-                onChange={(e) => setWalkInRemarks(e.target.value)}
-                placeholder="Remarks for walk-in medicine sale (optional)"
-                rows={3}
-                maxLength={500}
-              />
+                      return (
+                        <div key={`walkin-item-${item.medicineId}`} className="walkin-item-row">
+                          <div className="walkin-item-name">
+                            <strong>{selectedMedicine?.name ?? 'Medicine'}</strong>
+                            <small>{selectedMedicine ? `${categoryLabel(selectedMedicine.category)} - Batch ${selectedMedicine.batchNumber} - Exp ${toDateInput(selectedMedicine.expiryDate)}` : '-'}</small>
+                          </div>
+                          <label>
+                            <span>Qty</span>
+                            <input type="number" min={1} value={item.qty} onChange={(e) => updateWalkInItem(index, { qty: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })} required />
+                          </label>
+                          <label>
+                            <span>Unit Price</span>
+                            <input value={selectedMedicine ? `RM ${formatMoney(selectedMedicine.price)}` : '-'} readOnly />
+                          </label>
+                          <label>
+                            <span>Subtotal</span>
+                            <input value={`RM ${formatMoney(itemSubtotal)}`} readOnly />
+                          </label>
+                          <button type="button" className="prescription-remove-item" onClick={() => removeWalkInItem(index)}>Remove</button>
+                        </div>
+                      );
+                    })}
+                    {walkInItems.length === 0 && <p className="walkin-empty">No medicines selected yet.</p>}
+                  </div>
+                </div>
 
-              <div className="action-row">
-                <button type="submit" disabled={walkInSaving}>{walkInSaving ? 'Processing...' : 'Confirm Walk-in Sale'}</button>
-              </div>
+                <div className="card walkin-sale-card">
+                  <div className="compact-section-head">
+                    <h3>Payment Information</h3>
+                  </div>
+                  <select value={walkInMethod} onChange={(e) => setWalkInMethod(e.target.value as PaymentMethod)}>
+                    <option value="CASH">Cash</option>
+                    <option value="CARD">Card</option>
+                    <option value="ONLINE_TRANSFER">Online Transfer</option>
+                    <option value="E_WALLET">E-Wallet</option>
+                  </select>
+                  <textarea value={walkInRemarks} onChange={(e) => setWalkInRemarks(e.target.value)} placeholder="Remarks for walk-in medicine sale (optional)" rows={3} maxLength={500} />
+                </div>
+
+                <div className="card walkin-sale-card walkin-summary-card">
+                  <div className="compact-section-head">
+                    <h3>Receipt Summary</h3>
+                  </div>
+                  <dl className="kv">
+                    <div><dt>Items</dt><dd>{walkInItems.length}</dd></div>
+                    <div><dt>Total</dt><dd>RM {formatMoney(walkInTotal)}</dd></div>
+                    <div><dt>Status After Payment</dt><dd><span className="status-badge status-pending-dispense">Pending Dispense</span></dd></div>
+                  </dl>
+                  <button type="submit" disabled={walkInSaving}>{walkInSaving ? 'Processing...' : 'Confirm Payment'}</button>
+                </div>
+              </section>
+
+              {medicinePickerOpen && (
+                <div className="medicine-picker-modal-layer" role="presentation">
+                  <button type="button" className="medicine-picker-modal-backdrop" aria-label="Close medicine picker" onClick={() => setMedicinePickerOpen(false)} />
+                  <section className="medicine-picker-modal walkin-medicine-modal" role="dialog" aria-modal="true" aria-labelledby="walkin-picker-title">
+                    <div className="medicine-picker-modal-head">
+                      <div>
+                        <h3 id="walkin-picker-title">Select Medicine</h3>
+                        <p className="muted">Search by medicine name, category, or batch. FEFO picks the nearest valid expiry.</p>
+                      </div>
+                      <button type="button" className="patient-drawer-close" onClick={() => setMedicinePickerOpen(false)}>X</button>
+                    </div>
+                    <div className="walkin-picker-body">
+                      <aside className="walkin-picker-categories">
+                        {(['ALL', 'MEDICINE', 'VITAMIN', 'SUPPLEMENT', 'CONTROLLED_MEDICINE'] as WalkInCategoryFilter[]).map((category) => (
+                          <button key={category} type="button" className={medicinePickerCategory === category ? 'is-active' : undefined} onClick={() => setMedicinePickerCategory(category)}>
+                            {category === 'ALL' ? 'All' : categoryLabel(category)}
+                          </button>
+                        ))}
+                      </aside>
+                      <div className="walkin-picker-results">
+                        <input value={medicinePickerSearch} onChange={(e) => setMedicinePickerSearch(e.target.value)} placeholder="Search medicine, category, batch" autoFocus />
+                        <div className="walkin-medicine-list">
+                          {filteredMedicineOptions.map((medicine) => (
+                            <article key={`pick-${medicine.medicineId}`} className="walkin-medicine-card">
+                              <div>
+                                <strong>{medicine.name}</strong>
+                                <small>{categoryLabel(medicine.category)} - Batch {medicine.batchNumber}</small>
+                              </div>
+                              <span>Stock {medicine.quantity}</span>
+                              <span>Exp {toDateInput(medicine.expiryDate)}</span>
+                              <span>RM {formatMoney(medicine.price)}</span>
+                              <span className="status-badge status-good">Available</span>
+                              <button type="button" onClick={() => addWalkInItem(medicine.medicineId)}>Add</button>
+                            </article>
+                          ))}
+                          {filteredMedicineOptions.length === 0 && <p className="walkin-empty">No medicine found.</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              )}
             </form>
           )}
         </>
@@ -726,7 +747,7 @@ export const PaymentsPage = () => {
                     <td><span className={`status-badge ${p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{prettifyType(p.type)}</span></td>
                     <td>{formatMoney(p.amount)}</td>
                     <td>{prettifyMethod(p.paymentMethod)}</td>
-                    <td><span className={`status-badge ${p.status === 'PAID' ? 'status-good' : 'status-warning'}`}>{p.status}</span></td>
+                    <td><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
                     <td>{p.receipt?.receiptNo ?? '-'}</td>
                     <td>
                       <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>
@@ -779,80 +800,117 @@ export const PaymentsPage = () => {
       )}
 
       {selectedPayment && (
-        <section className="card receipt-panel" style={{ marginTop: 16 }}>
-          <div className="section-head">
-            <h3>Receipt Details</h3>
-            <p className="muted">Generated receipt from payment transaction.</p>
+        <section className="card sales-detail-panel receipt-panel receipt-print-area">
+          <div className="receipt-print-header">
+            <img src={clinicLogo} alt="Clinic Dr Alwani" />
+            <div>
+              <h2>Clinic Dr Alwani</h2>
+              <p>Official Payment Receipt</p>
+            </div>
+          </div>
+          <div className="sales-detail-head">
+            <div>
+              <h3>{selectedPayment.status === 'PAID' ? 'Payment Successful' : 'Payment Summary'}</h3>
+              <p className="muted">{getReferenceLabel(selectedPayment)} · Payment #{selectedPayment.paymentId}</p>
+            </div>
+            <span className={`status-badge ${statusClass(selectedPayment.status)}`}>{statusLabel(selectedPayment.status)}</span>
           </div>
 
-          <dl className="kv">
-            <div>
-              <dt>Payment ID</dt>
-              <dd>#{selectedPayment.paymentId}</dd>
-            </div>
-            <div>
-              <dt>Patient</dt>
-              <dd>{selectedPayment.patient?.name ?? `Patient #${selectedPayment.patientId}`}</dd>
-            </div>
-            <div>
-              <dt>Customer ID</dt>
-              <dd>{selectedPayment.patient?.icOrPassport || '-'}</dd>
-            </div>
-            <div>
-              <dt>Date</dt>
-              <dd>{new Date(selectedPayment.date).toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>Payment Type</dt>
-              <dd>{prettifyType(selectedPayment.type)}</dd>
-            </div>
-            <div>
-              <dt>Payment Method</dt>
-              <dd>{prettifyMethod(selectedPayment.paymentMethod)}</dd>
-            </div>
-            <div>
-              <dt>Amount</dt>
-              <dd>RM {formatMoney(selectedPayment.amount)}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{selectedPayment.status}</dd>
-            </div>
-            <div>
-              <dt>Receipt No</dt>
-              <dd>{selectedPayment.receipt?.receiptNo ?? '-'}</dd>
-            </div>
-            <div>
-              <dt>Receipt Date</dt>
-              <dd>{selectedPayment.receipt?.date ? new Date(selectedPayment.receipt.date).toLocaleString() : '-'}</dd>
-            </div>
-            <div>
-              <dt>Remarks</dt>
-              <dd>{selectedPayment.remarks || '-'}</dd>
-            </div>
-            <div>
-              <dt>Total</dt>
-              <dd>RM {selectedPayment.receipt ? formatMoney(selectedPayment.receipt.totalAmount) : formatMoney(selectedPayment.amount)}</dd>
-            </div>
-            {selectedPayment.medicineItems && selectedPayment.medicineItems.length > 0 && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <dt>Medicine Items</dt>
-                <dd>
-                  {selectedPayment.medicineItems
-                    .map(
-                      (item) =>
-                        `${item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`} (${item.medicine?.batchNumber ?? '-'}) x${item.qty} = RM ${formatMoney(item.subtotal)}`,
-                    )
-                    .join(' | ')}
-                </dd>
+          <div className="sales-detail-grid">
+            <section className="sales-detail-card sales-detail-wide">
+              <div className="sales-summary-strip">
+                <div><span>Receipt Number</span><strong>{selectedPayment.receipt?.receiptNo ?? '-'}</strong></div>
+                <div><span>Payment Date</span><strong>{new Date(selectedPayment.date).toLocaleString()}</strong></div>
+                <div><span>Total</span><strong>RM {selectedPayment.receipt ? formatMoney(selectedPayment.receipt.totalAmount) : formatMoney(selectedPayment.amount)}</strong></div>
               </div>
-            )}
-          </dl>
+              {selectedPayment.status === 'PENDING_PAYMENT' && isReceptionist && (
+                <div className="pending-confirm-box">
+                  <select value={confirmMethod} onChange={(e) => setConfirmMethod(e.target.value as PaymentMethod)}>
+                    <option value="CASH">Cash</option>
+                    <option value="CARD">Card</option>
+                    <option value="ONLINE_TRANSFER">Online Transfer</option>
+                    <option value="E_WALLET">E-Wallet</option>
+                  </select>
+                  <input value={confirmRemarks} onChange={(e) => setConfirmRemarks(e.target.value)} placeholder="Payment remarks (optional)" maxLength={500} />
+                  <button type="button" onClick={onConfirmPendingPayment} disabled={saving}>{saving ? 'Processing...' : 'Confirm Payment'}</button>
+                </div>
+              )}
+              <div className="sales-detail-actions">
+                <button type="button" className="btn-secondary" onClick={() => window.print()}>Print Receipt</button>
+                {selectedPayment.type === 'MEDICINE' && <button type="button" className="btn-secondary" onClick={goToSales}>Go To Sales</button>}
+                <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(null)}>Close</button>
+              </div>
+            </section>
 
-          <div className="action-row" style={{ marginTop: 10 }}>
-            <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(null)}>
-              Close Receipt
-            </button>
+            <section className="sales-detail-card">
+              <h4>Patient Information</h4>
+              <dl className="sales-detail-kv">
+                <div><dt>Patient Name</dt><dd>{selectedPayment.patient?.name ?? `Patient #${selectedPayment.patientId}`}</dd></div>
+                <div><dt>Patient ID</dt><dd>{selectedPayment.patient?.icOrPassport || '-'}</dd></div>
+                <div><dt>Phone Number</dt><dd>{selectedPayment.patient?.phone || 'Not provided'}</dd></div>
+                <div><dt>Payment Method</dt><dd>{prettifyMethod(selectedPayment.paymentMethod)}</dd></div>
+              </dl>
+            </section>
+
+            <section className="sales-detail-card">
+              <h4>Consultation / Appointment</h4>
+              <dl className="sales-detail-kv">
+                <div><dt>Consultation ID</dt><dd>{selectedPayment.consultation?.consultationId ? `#${selectedPayment.consultation.consultationId}` : '-'}</dd></div>
+                <div><dt>Appointment ID</dt><dd>{selectedPayment.appointment?.appointmentId ? `#${selectedPayment.appointment.appointmentId}` : '-'}</dd></div>
+                <div><dt>Prescription ID</dt><dd>{selectedPayment.prescription?.prescriptionId ? `#${selectedPayment.prescription.prescriptionId}` : '-'}</dd></div>
+                <div><dt>Payment Type</dt><dd>{prettifyType(selectedPayment.type)}</dd></div>
+                <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getConsultationFee(selectedPayment))}</dd></div>
+                <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+              </dl>
+            </section>
+
+            <section className="sales-detail-card sales-detail-wide">
+              <h4>Medicine Items</h4>
+              {selectedPayment.medicineItems && selectedPayment.medicineItems.length > 0 ? (
+                <>
+                  <div className="table-wrap sales-detail-table-wrap">
+                    <table className="data-table sales-detail-table">
+                      <thead>
+                        <tr>
+                          <th>Medicine Name</th>
+                          <th>Batch</th>
+                          <th>Quantity</th>
+                          <th>Unit Price</th>
+                          <th>Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedPayment.medicineItems.map((item) => (
+                          <tr key={`receipt-item-${item.itemId}`}>
+                            <td>{item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`}</td>
+                            <td>{item.medicine?.batchNumber ?? '-'}</td>
+                            <td>{item.qty}</td>
+                            <td>RM {formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))}</td>
+                            <td>RM {formatMoney(item.subtotal)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="sales-grand-total">
+                    <span>Medicine Total</span>
+                    <strong>RM {formatMoney(getMedicineTotal(selectedPayment))}</strong>
+                  </div>
+                </>
+              ) : (
+                <p className="muted">No medicine items for this payment.</p>
+              )}
+            </section>
+
+            <section className="sales-detail-card sales-detail-wide">
+              <h4>Payment Breakdown</h4>
+              <dl className="receipt-breakdown">
+                <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getConsultationFee(selectedPayment))}</dd></div>
+                <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                <div><dt>Medicine Total</dt><dd>RM {formatMoney(getMedicineTotal(selectedPayment))}</dd></div>
+                <div className="receipt-breakdown-total"><dt>Grand Total</dt><dd>RM {selectedPayment.receipt ? formatMoney(selectedPayment.receipt.totalAmount) : formatMoney(selectedPayment.amount)}</dd></div>
+              </dl>
+            </section>
           </div>
         </section>
       )}

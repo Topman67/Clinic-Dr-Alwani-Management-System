@@ -28,10 +28,12 @@ type Medicine = {
   name: string;
   category?: 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
   brand?: string | null;
+  content?: string | null;
   packaging?: string | null;
   batchNumber?: string;
   quantity: number;
   expiryDate: string;
+  price?: number | string;
   approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   availableForPrescription?: boolean;
 };
@@ -46,9 +48,12 @@ type PrescriptionItem = {
   medicine?: { medicineId?: number; name: string; batchNumber?: string; expiryDate?: string; quantity?: number; approvalStatus?: Medicine['approvalStatus'] };
 };
 
-type PrescriptionStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'DISPENSED' | 'REJECTED';
+type PrescriptionStatus = 'PENDING' | 'PENDING_VERIFICATION' | 'VERIFIED' | 'DISPENSED' | 'REJECTED';
 type PrescriptionDetailsTab = 'details' | 'medicines' | 'print' | 'audit';
 type DoctorPrescriptionTab = 'create' | 'history';
+type MedicinePickerCategory = 'DEFAULT' | 'ALL' | NonNullable<Medicine['category']>;
+type MedicinePickerStockFilter = 'IN_STOCK';
+type MedicinePickerExpiryFilter = 'VALID';
 
 type Prescription = {
   prescriptionId: number;
@@ -75,6 +80,7 @@ type ConsultationOption = {
 };
 
 type ItemForm = {
+  rowKey: string;
   medicineId: number;
   dosage: string;
   frequency: string;
@@ -91,7 +97,10 @@ type PrescriptionForm = {
 const WALKIN_CUSTOMER_IC = 'WALKIN-CUSTOMER';
 const CLINIC_NAME = 'Clinic Dr. Alwani';
 
+const createItemRowKey = () => `item-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 const emptyItem = (): ItemForm => ({
+  rowKey: createItemRowKey(),
   medicineId: 0,
   dosage: '',
   frequency: '',
@@ -119,6 +128,11 @@ const toDateInput = (value: string | null | undefined) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
   return date.toISOString().slice(0, 10);
+};
+
+const formatMoney = (value: number | string | null | undefined) => {
+  const n = typeof value === 'string' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(2) : '-';
 };
 
 const toLocalDateKey = (value: string | Date) => {
@@ -156,13 +170,20 @@ const getMedicineExpiryStatus = (medicine: Medicine | undefined) => {
   return 'OK' as const;
 };
 
-const getMedicineOptionLabel = (medicine: Medicine) => {
-  const status = getMedicineExpiryStatus(medicine);
-  const statusLabel = status === 'EXPIRED' ? ' - Expired' : status === 'NEAR_EXPIRY' ? ' - Near Expiry' : '';
-  const brandLabel = medicine.brand ? `${medicine.brand} - ` : '';
-  const packagingLabel = medicine.packaging ? ` - ${medicine.packaging}` : '';
-  const batchLabel = medicine.batchNumber ? `Batch: ${medicine.batchNumber} - ` : '';
-  return `${brandLabel}${medicine.name}${packagingLabel} - ${batchLabel}Stock: ${medicine.quantity} - Exp: ${toDateInput(medicine.expiryDate)}${statusLabel}`;
+const getMedicineCategoryLabel = (category: Medicine['category']) => {
+  if (category === 'CONTROLLED_MEDICINE') return 'Controlled';
+  if (category === 'SUPPLEMENT') return 'Supplement';
+  if (category === 'VITAMIN') return 'Vitamin';
+  return 'Medicine';
+};
+
+const isPrescriptionReadyMedicine = (medicine: Medicine) => {
+  return (
+    medicine.availableForPrescription !== false
+    && medicine.quantity > 0
+    && getMedicineExpiryStatus(medicine) !== 'EXPIRED'
+    && (medicine.approvalStatus === undefined || medicine.approvalStatus === 'APPROVED')
+  );
 };
 
 const getPrescriptionItemsSummary = (items: PrescriptionItem[]) => {
@@ -176,10 +197,19 @@ const truncateText = (value: string | null | undefined, maxLength = 52) => {
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
 };
 
+const reindexRecordAfterRemoval = <T,>(record: Record<number, T>, removedIndex: number) => {
+  return Object.entries(record).reduce<Record<number, T>>((next, [key, value]) => {
+    const index = Number(key);
+    if (index < removedIndex) next[index] = value;
+    if (index > removedIndex) next[index - 1] = value;
+    return next;
+  }, {});
+};
+
 const getConsultationOptionLabel = (consultation: ConsultationOption) => {
-  const summary = truncateText(consultation.diagnosis || consultation.symptoms || 'No diagnosis recorded', 34);
+  const summary = truncateText(consultation.diagnosis || consultation.symptoms || 'No diagnosis recorded', 42);
   const suffix = consultation.prescription ? ' - Prescription Created' : '';
-  return `Consultation #${consultation.consultationId} - ${summary}${suffix}`;
+  return `#${consultation.consultationId} - Completed - ${summary}${suffix}`;
 };
 
 const getPrescriptionStatusLabel = (status: PrescriptionStatus | undefined) => {
@@ -187,6 +217,11 @@ const getPrescriptionStatusLabel = (status: PrescriptionStatus | undefined) => {
   if (status === 'DISPENSED') return 'Dispensed';
   if (status === 'REJECTED') return 'Rejected';
   return 'Pending Verification';
+};
+
+const normalizePrescriptionStatus = (status: PrescriptionStatus | undefined) => {
+  if (status === 'PENDING' || status === 'PENDING_VERIFICATION' || !status) return 'PENDING' as const;
+  return status;
 };
 
 const getPrescriptionStatusClass = (status: PrescriptionStatus | undefined) => {
@@ -224,7 +259,6 @@ export const PrescriptionsPage = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [summaryPrescriptions, setSummaryPrescriptions] = useState<Prescription[]>([]);
   const [selectedFilterPatient, setSelectedFilterPatient] = useState<PatientAutocompleteOption | null>(null);
   const [selectedFormPatient, setSelectedFormPatient] = useState<PatientAutocompleteOption | null>(null);
   const [selectedPatientDetails, setSelectedPatientDetails] = useState<PatientDetails | null>(null);
@@ -239,6 +273,12 @@ export const PrescriptionsPage = () => {
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [detailsTab, setDetailsTab] = useState<PrescriptionDetailsTab>('details');
   const [doctorTab, setDoctorTab] = useState<DoctorPrescriptionTab>('create');
+  const [medicinePickerIndex, setMedicinePickerIndex] = useState<number | null>(null);
+  const [medicinePickerSearch, setMedicinePickerSearch] = useState<Record<number, string>>({});
+  const [medicinePickerCategory, setMedicinePickerCategory] = useState<Record<number, MedicinePickerCategory>>({});
+  const [, setMedicinePickerStockFilter] = useState<Record<number, MedicinePickerStockFilter>>({});
+  const [, setMedicinePickerExpiryFilter] = useState<Record<number, MedicinePickerExpiryFilter>>({});
+  const [, setMedicinePickerPage] = useState<Record<number, number>>({});
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -253,23 +293,35 @@ export const PrescriptionsPage = () => {
   const initialConsultationIdFromQuery = Number(searchParams.get('consultationId') || 0);
   const selectedFilterPatientId = selectedFilterPatient?.patientId ?? 0;
   const medicineById = useMemo(() => new Map(medicines.map((medicine) => [medicine.medicineId, medicine])), [medicines]);
+  const prescriptionReadyMedicines = useMemo(
+    () => medicines
+      .filter(isPrescriptionReadyMedicine)
+      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()),
+    [medicines],
+  );
   const selectedConsultation = useMemo(
     () => availableConsultations.find((consultation) => consultation.consultationId === linkedConsultationId) ?? null,
     [availableConsultations, linkedConsultationId],
   );
   const selectedConsultationPrescriptionId = selectedConsultation?.prescription?.prescriptionId ?? null;
   const hasSelectedCompletedConsultation = Boolean(selectedConsultation && selectedConsultation.status === 'COMPLETED');
+  const selectedMedicineCount = useMemo(() => form.items.filter((item) => item.medicineId > 0).length, [form.items]);
   const rowsPerPage = 12;
 
   const prescriptionSummary = useMemo(() => {
     const today = toLocalDateKey(new Date());
+    const filtered = prescriptions.map((item) => ({
+      ...item,
+      normalizedStatus: normalizePrescriptionStatus(item.status),
+    }));
+
     return {
-      pending: summaryPrescriptions.filter((item) => (item.status ?? 'PENDING_VERIFICATION') === 'PENDING_VERIFICATION').length,
-      verified: summaryPrescriptions.filter((item) => item.status === 'VERIFIED').length,
-      dispensedToday: summaryPrescriptions.filter((item) => item.status === 'DISPENSED' && toLocalDateKey(item.date) === today).length,
-      rejected: summaryPrescriptions.filter((item) => item.status === 'REJECTED').length,
+      pending: filtered.filter((item) => item.normalizedStatus === 'PENDING').length,
+      verified: filtered.filter((item) => item.normalizedStatus === 'VERIFIED').length,
+      dispensedToday: filtered.filter((item) => item.normalizedStatus === 'DISPENSED' && toLocalDateKey(item.date) === today).length,
+      rejected: filtered.filter((item) => item.normalizedStatus === 'REJECTED').length,
     };
-  }, [summaryPrescriptions]);
+  }, [prescriptions]);
 
   const totalPages = Math.max(1, Math.ceil(prescriptions.length / rowsPerPage));
   const paginatedPrescriptions = useMemo(() => {
@@ -344,21 +396,6 @@ export const PrescriptionsPage = () => {
     }
   }, []);
 
-  const loadPrescriptionSummary = useCallback(async (filters?: { patientId?: number; dateFrom?: string; dateTo?: string }) => {
-    try {
-      const response = await api.get('/prescriptions', {
-        params: {
-          patientId: filters?.patientId,
-          dateFrom: filters?.dateFrom || undefined,
-          dateTo: filters?.dateTo || undefined,
-        },
-      });
-      setSummaryPrescriptions(response.data as Prescription[]);
-    } catch {
-      setSummaryPrescriptions([]);
-    }
-  }, []);
-
   const loadAvailableConsultations = useCallback(async (patientId: number, preferredConsultationId?: number | null) => {
     try {
       const response = await api.get('/consultations', {
@@ -406,12 +443,7 @@ export const PrescriptionsPage = () => {
       dateTo: dateRange.dateTo || undefined,
       status: statusFilter,
     });
-    void loadPrescriptionSummary({
-      patientId: selectedFilterPatientId || undefined,
-      dateFrom: dateRange.dateFrom || undefined,
-      dateTo: dateRange.dateTo || undefined,
-    });
-  }, [dateRange.dateFrom, dateRange.dateTo, loadPrescriptionSummary, loadPrescriptions, selectedFilterPatientId, statusFilter]);
+  }, [dateRange.dateFrom, dateRange.dateTo, loadPrescriptions, selectedFilterPatientId, statusFilter]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
@@ -426,14 +458,20 @@ export const PrescriptionsPage = () => {
           dateTo: dateRange.dateTo || undefined,
           status: statusFilter,
         });
-        await loadPrescriptionSummary({
-          patientId: selectedFilterPatientId || undefined,
-          dateFrom: dateRange.dateFrom || undefined,
-          dateTo: dateRange.dateTo || undefined,
-        });
       })();
     });
-  }, [dateRange.dateFrom, dateRange.dateTo, loadLookups, loadPatientDetails, loadPrescriptionSummary, loadPrescriptions, selectedFilterPatientId, statusFilter]);
+  }, [dateRange.dateFrom, dateRange.dateTo, loadLookups, loadPatientDetails, loadPrescriptions, selectedFilterPatientId, statusFilter]);
+
+  useEffect(() => {
+    if (medicinePickerIndex === null) return undefined;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMedicinePickerIndex(null);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [medicinePickerIndex]);
 
   useEffect(() => {
     if (initialPatientIdFromQuery <= 0) return;
@@ -496,11 +534,6 @@ export const PrescriptionsPage = () => {
       dateTo: dateRange.dateTo || undefined,
       status: statusFilter,
     });
-    await loadPrescriptionSummary({
-      patientId: selectedFilterPatientId || undefined,
-      dateFrom: dateRange.dateFrom || undefined,
-      dateTo: dateRange.dateTo || undefined,
-    });
   };
 
   const onViewDetails = async (prescriptionId: number) => {
@@ -523,10 +556,21 @@ export const PrescriptionsPage = () => {
   };
 
   const onRemoveItem = (idx: number) => {
-    setForm((prev) => ({
-      ...prev,
-      items: prev.items.length === 1 ? prev.items : prev.items.filter((_, i) => i !== idx),
-    }));
+    setForm((prev) => {
+      const items = prev.items.length === 1 ? [emptyItem()] : prev.items.filter((_, i) => i !== idx);
+      return { ...prev, items };
+    });
+    setFieldErrors({});
+    setMedicinePickerSearch((prev) => reindexRecordAfterRemoval(prev, idx));
+    setMedicinePickerCategory((prev) => reindexRecordAfterRemoval(prev, idx));
+    setMedicinePickerStockFilter((prev) => reindexRecordAfterRemoval(prev, idx));
+    setMedicinePickerExpiryFilter((prev) => reindexRecordAfterRemoval(prev, idx));
+    setMedicinePickerPage((prev) => reindexRecordAfterRemoval(prev, idx));
+    setMedicinePickerIndex((current) => {
+      if (current === null) return null;
+      if (current === idx) return null;
+      return current > idx ? current - 1 : current;
+    });
   };
 
   const onUpdateItem = <K extends keyof ItemForm>(idx: number, key: K, value: ItemForm[K]) => {
@@ -553,11 +597,6 @@ export const PrescriptionsPage = () => {
       dateFrom: dateRange.dateFrom || undefined,
       dateTo: dateRange.dateTo || undefined,
       status: statusFilter,
-    });
-    await loadPrescriptionSummary({
-      patientId: selectedFilterPatientId || undefined,
-      dateFrom: dateRange.dateFrom || undefined,
-      dateTo: dateRange.dateTo || undefined,
     });
     if (selectedFilterPatientId) {
       await loadPatientDetails(selectedFilterPatientId);
@@ -611,6 +650,9 @@ export const PrescriptionsPage = () => {
         if (expiryStatus === 'EXPIRED') {
           nextErrors[getFieldKey(idx, 'medicineId')] = true;
           validationMessage = `${medicine.name} is expired and cannot be prescribed.`;
+        } else if (!isPrescriptionReadyMedicine(medicine)) {
+          nextErrors[getFieldKey(idx, 'medicineId')] = true;
+          validationMessage = `${medicine.name} is not available for prescription.`;
         } else if (expiryStatus === 'NEAR_EXPIRY') {
           nearExpiryMedicines.add(medicine.name);
         }
@@ -656,15 +698,24 @@ export const PrescriptionsPage = () => {
       return;
     }
 
+    const controlledSelections = form.items
+      .map((item) => medicineById.get(item.medicineId))
+      .filter((medicine): medicine is Medicine => medicine?.category === 'CONTROLLED_MEDICINE');
+    if (controlledSelections.length > 0) {
+      const confirmed = window.confirm(`Controlled medicine selected: ${controlledSelections.map((medicine) => medicine.name).join(', ')}. Confirm this prescription?`);
+      if (!confirmed) return;
+    }
+
     setSaving(true);
     try {
+      const prescriptionItems = form.items.map(({ rowKey: _rowKey, ...item }) => item);
       const response = await api.post('/prescriptions', {
         patientId: form.patientId,
         doctorId,
         consultationId: linkedConsultationId,
         appointmentId: linkedAppointmentId ?? undefined,
         notes: form.notes || undefined,
-        items: form.items,
+        items: prescriptionItems,
       });
       const createdPrescription = response.data as Prescription;
       resetForm(selectedFilterPatientId);
@@ -681,11 +732,6 @@ export const PrescriptionsPage = () => {
         dateTo: dateRange.dateTo || undefined,
         status: statusFilter,
       });
-      await loadPrescriptionSummary({
-        patientId: selectedFilterPatientId || undefined,
-        dateFrom: dateRange.dateFrom || undefined,
-        dateTo: dateRange.dateTo || undefined,
-      });
       if (selectedFilterPatientId) {
         await loadPatientDetails(selectedFilterPatientId);
       }
@@ -695,6 +741,65 @@ export const PrescriptionsPage = () => {
       setSaving(false);
     }
   };
+
+  const getFilteredPickerOptions = (idx: number) => {
+    const search = medicinePickerSearch[idx] ?? '';
+    const category = medicinePickerCategory[idx] ?? 'DEFAULT';
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return prescriptionReadyMedicines.filter((medicine) => {
+      const matchesCategory =
+        category === 'ALL'
+          || (category === 'DEFAULT' && (medicine.category === undefined || medicine.category === 'MEDICINE' || medicine.category === 'CONTROLLED_MEDICINE'))
+          || medicine.category === category;
+      if (!matchesCategory) return false;
+      if (!normalizedSearch) return true;
+      return [medicine.name, medicine.brand, medicine.batchNumber, medicine.content]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+    });
+  };
+
+  const openMedicinePicker = (idx: number) => {
+    setMedicinePickerIndex(idx);
+    setMedicinePickerStockFilter((prev) => ({ ...prev, [idx]: prev[idx] ?? 'IN_STOCK' }));
+    setMedicinePickerExpiryFilter((prev) => ({ ...prev, [idx]: prev[idx] ?? 'VALID' }));
+    setMedicinePickerPage((prev) => ({ ...prev, [idx]: 1 }));
+  };
+
+  const renderMedicinePickerField = (item: ItemForm, idx: number) => {
+    const selectedMedicine = medicineById.get(item.medicineId);
+    const selectedExpiryStatus = getMedicineExpiryStatus(selectedMedicine);
+    const medicineMeta = selectedMedicine
+      ? `${getMedicineCategoryLabel(selectedMedicine.category)} • Batch ${selectedMedicine.batchNumber || '-'} • Stock ${selectedMedicine.quantity}`
+      : 'Search by name, brand, batch, or content';
+
+    return (
+      <div className={`medicine-picker ${fieldErrors[getFieldKey(idx, 'medicineId')] ? 'field-invalid' : ''}`}>
+        <button type="button" className="medicine-picker-control" onClick={() => openMedicinePicker(idx)}>
+          {selectedMedicine ? (
+            <span>
+              <span className="medicine-picker-name-line">
+                <strong title={selectedMedicine.name}>{selectedMedicine.name}</strong>
+                {selectedMedicine.category === 'CONTROLLED_MEDICINE' && <em className="medicine-inline-badge danger">Controlled</em>}
+                {selectedExpiryStatus === 'NEAR_EXPIRY' && <em className="medicine-inline-badge warning">Near Expiry</em>}
+                {selectedExpiryStatus === 'EXPIRED' && <em className="medicine-inline-badge danger">Expired</em>}
+              </span>
+              <small title={medicineMeta}>{medicineMeta}</small>
+            </span>
+          ) : (
+            <span>
+              <strong>Select medicine</strong>
+              <small>{medicineMeta}</small>
+            </span>
+          )}
+          <b>{selectedMedicine ? 'Change' : 'Select'}</b>
+        </button>
+      </div>
+    );
+  };
+
+  const activePickerOptions = medicinePickerIndex !== null ? getFilteredPickerOptions(medicinePickerIndex) : [];
 
   return (
     <section className="prescription-page">
@@ -821,7 +926,7 @@ export const PrescriptionsPage = () => {
       )}
 
       {canCreate && doctorTab === 'create' && (
-        <div className="prescription-workflow-grid">
+        <form onSubmit={onSubmit} className="prescription-create-form">
           <section className="card prescription-patient-card prescription-compact-context-card">
             {selectedPatientDetails ? (
               <>
@@ -842,12 +947,12 @@ export const PrescriptionsPage = () => {
             ) : (
               <div className="prescription-empty-panel">
                 <strong>No patient selected</strong>
-                <span>Use the search filter above to start.</span>
+                <span>Search and select a patient to view consultation history.</span>
               </div>
             )}
           </section>
 
-          <form onSubmit={onSubmit} className="card prescription-create-card">
+          <section className="card prescription-create-card">
             <div className="section-head compact-section-head">
               <h3>Create Prescription</h3>
               <p className="muted">Completed consultations only. Duplicate prescriptions are blocked.</p>
@@ -933,7 +1038,9 @@ export const PrescriptionsPage = () => {
                 rows={2}
               />
             </label>
+          </section>
 
+          <section className="card prescription-medicine-card">
             <div className="prescription-items-head">
               <div>
                 <h4>Medicine Items</h4>
@@ -946,35 +1053,11 @@ export const PrescriptionsPage = () => {
 
             <div className="prescription-items-list">
               {form.items.map((item, idx) => {
-                const selectedMedicine = medicineById.get(item.medicineId);
-                const expiryStatus = getMedicineExpiryStatus(selectedMedicine);
                 return (
-                  <div key={idx} className="prescription-item-row">
+                  <div key={item.rowKey} className="prescription-item-row">
                     <label>
                       <span>Medicine</span>
-                      <select
-                        value={item.medicineId || ''}
-                        onChange={(e) => onUpdateItem(idx, 'medicineId', Number(e.target.value) || 0)}
-                        className={fieldErrors[getFieldKey(idx, 'medicineId')] ? 'field-invalid' : undefined}
-                        required
-                      >
-                        <option value="">Select medicine</option>
-                        {medicines.map((medicine) => {
-                          const status = getMedicineExpiryStatus(medicine);
-                          const disabled =
-                            status === 'EXPIRED' ||
-                            medicine.quantity <= 0 ||
-                            medicine.availableForPrescription === false ||
-                            (medicine.approvalStatus !== undefined && medicine.approvalStatus !== 'APPROVED');
-                          return (
-                            <option key={medicine.medicineId} value={medicine.medicineId} disabled={disabled}>
-                              {getMedicineOptionLabel(medicine)}{medicine.quantity <= 0 ? ' - Out of Stock' : ''}{medicine.availableForPrescription === false ? ' - Not for prescription' : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                      {expiryStatus === 'NEAR_EXPIRY' && <small className="medicine-warning">Near Expiry</small>}
-                      {expiryStatus === 'EXPIRED' && <small className="medicine-danger">Expired</small>}
+                      {renderMedicinePickerField(item, idx)}
                     </label>
                     <label>
                       <span>Dosage</span>
@@ -1018,7 +1101,7 @@ export const PrescriptionsPage = () => {
                         required
                       />
                     </label>
-                    <button type="button" className="btn-danger prescription-remove-item" onClick={() => onRemoveItem(idx)}>
+                    <button type="button" className="prescription-remove-item" onClick={() => onRemoveItem(idx)}>
                       Remove
                     </button>
                   </div>
@@ -1027,12 +1110,15 @@ export const PrescriptionsPage = () => {
             </div>
 
             <div className="action-row prescription-create-actions">
+              <span className="prescription-items-summary">
+                {selectedMedicineCount} {selectedMedicineCount === 1 ? 'medicine' : 'medicines'} selected
+              </span>
               <button type="submit" disabled={saving || !hasSelectedCompletedConsultation || Boolean(selectedConsultationPrescriptionId)}>
                 {saving ? 'Saving Prescription...' : 'Save Prescription'}
               </button>
             </div>
-          </form>
-        </div>
+          </section>
+        </form>
       )}
 
       {(!canCreate || doctorTab === 'history') && (
@@ -1236,7 +1322,7 @@ export const PrescriptionsPage = () => {
                     <section className="prescription-print-area prescription-print-sheet prescription-tab-panel">
                       <div className="prescription-print-header-block">
                         <img src={clinicLogo} alt={CLINIC_NAME} />
-                        <div>
+                        <div className="prescription-picker-medicine-main">
                           <h3>{CLINIC_NAME}</h3>
                           <p>Prescription #{selectedPrescription.prescriptionId}</p>
                         </div>
@@ -1305,6 +1391,97 @@ export const PrescriptionsPage = () => {
               )}
             </div>
           </aside>
+        </div>
+      )}
+
+      {medicinePickerIndex !== null && form.items[medicinePickerIndex] && (
+        <div className="medicine-picker-modal-layer" role="presentation">
+          <button type="button" className="medicine-picker-modal-backdrop" aria-label="Close medicine picker" onClick={() => setMedicinePickerIndex(null)} />
+          <section className="medicine-picker-modal prescription-select-modal" role="dialog" aria-modal="true" aria-labelledby="medicine-picker-title">
+            <div className="medicine-picker-modal-head">
+              <div>
+                <h3 id="medicine-picker-title">Select Medicine</h3>
+                <p className="muted">Choose approved, in-stock, non-expired inventory for this prescription item.</p>
+              </div>
+              <button type="button" className="patient-drawer-close" onClick={() => setMedicinePickerIndex(null)}>X</button>
+            </div>
+
+            <div className="walkin-picker-body prescription-picker-body">
+              <aside className="walkin-picker-categories">
+                {([
+                  ['DEFAULT', 'Common'],
+                  ['ALL', 'All'],
+                  ['MEDICINE', 'Medicine'],
+                  ['CONTROLLED_MEDICINE', 'Controlled'],
+                  ['VITAMIN', 'Vitamin'],
+                  ['SUPPLEMENT', 'Supplement'],
+                ] as Array<[MedicinePickerCategory, string]>).map(([category, label]) => (
+                  <button
+                    key={category}
+                    type="button"
+                    className={(medicinePickerCategory[medicinePickerIndex] ?? 'DEFAULT') === category ? 'is-active' : undefined}
+                    onClick={() => {
+                      setMedicinePickerCategory((prev) => ({ ...prev, [medicinePickerIndex]: category }));
+                      setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex]: 1 }));
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </aside>
+
+              <div className="walkin-picker-results">
+                <input
+                  value={medicinePickerSearch[medicinePickerIndex] ?? ''}
+                  onChange={(e) => {
+                    setMedicinePickerSearch((prev) => ({ ...prev, [medicinePickerIndex]: e.target.value }));
+                    setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex]: 1 }));
+                  }}
+                  placeholder="Search medicine, category, batch"
+                  autoFocus
+                />
+                <p className="medicine-picker-helper">Showing approved, in-stock, non-expired items only.</p>
+
+                <div className="walkin-medicine-list prescription-medicine-list">
+                  {activePickerOptions.map((medicine) => {
+                    const expiryStatus = getMedicineExpiryStatus(medicine);
+                    const selected = medicine.medicineId === form.items[medicinePickerIndex].medicineId;
+                    return (
+                      <article key={medicine.medicineId} className={`prescription-picker-medicine-card ${selected ? 'is-selected' : ''}`}>
+                        <div className="prescription-picker-medicine-main">
+                          <div className="prescription-picker-medicine-title">
+                            <strong title={medicine.name}>{medicine.name}</strong>
+                            <span className="prescription-picker-category">{getMedicineCategoryLabel(medicine.category)}</span>
+                          </div>
+                          <small title={`Stock ${medicine.quantity} - Exp ${toDateInput(medicine.expiryDate)} - ${medicine.price !== undefined ? `RM ${formatMoney(medicine.price)}` : 'Rx item'}`}>
+                            Stock {medicine.quantity} - Exp {toDateInput(medicine.expiryDate)} - {medicine.price !== undefined ? `RM ${formatMoney(medicine.price)}` : 'Rx item'}
+                          </small>
+                          <small title={`${getMedicineCategoryLabel(medicine.category)} • Batch ${medicine.batchNumber || '-'}`}>
+                            {getMedicineCategoryLabel(medicine.category)} • Batch {medicine.batchNumber || '-'}
+                          </small>
+                        </div>
+                        <span className={`status-badge ${expiryStatus === 'NEAR_EXPIRY' ? 'status-warning' : 'status-good'}`}>
+                          {expiryStatus === 'NEAR_EXPIRY' ? 'Near Expiry' : 'Available'}
+                        </span>
+                        <button
+                          type="button"
+                          className={selected ? 'btn-secondary' : undefined}
+                          onClick={() => {
+                            if (!isPrescriptionReadyMedicine(medicine)) return;
+                            onUpdateItem(medicinePickerIndex, 'medicineId', medicine.medicineId);
+                            setMedicinePickerIndex(null);
+                          }}
+                        >
+                          {selected ? 'Selected' : 'Add'}
+                        </button>
+                      </article>
+                    );
+                  })}
+                  {activePickerOptions.length === 0 && <p className="walkin-empty">No medicine found.</p>}
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       )}
     </section>

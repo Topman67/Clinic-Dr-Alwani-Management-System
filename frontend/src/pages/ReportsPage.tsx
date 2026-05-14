@@ -7,7 +7,7 @@ import { DateRangeFilter, getDateRangeForPreset } from '../components/DateRangeF
 import { Button, Input, Select } from '../components/ui';
 
 type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'INVENTORY' | 'PAYMENT' | 'RECEIPT';
-type PaymentType = 'CONSULTATION' | 'APPOINTMENT';
+type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'CUSTOM';
 
 type PatientOption = {
   patientId: number;
@@ -122,7 +122,11 @@ const daysUntil = (isoDate: string) => {
   return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
 };
 
-const prettifyPaymentType = (value: PaymentType) => (value === 'CONSULTATION' ? 'Consultation Fee' : 'Appointment Fee');
+const prettifyPaymentType = (value: PaymentType) => {
+  if (value === 'CONSULTATION') return 'Consultation Fee';
+  if (value === 'APPOINTMENT') return 'Appointment Fee';
+  return 'Payment';
+};
 
 const getApiErrorMessage = (err: unknown, fallback: string) => {
   if (typeof err === 'object' && err !== null) {

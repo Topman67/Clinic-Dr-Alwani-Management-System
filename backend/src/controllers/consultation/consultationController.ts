@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
+import { createPendingPaymentForCompletedConsultationWithoutPrescription } from '../../services/clinicPayment';
 
 const cleanOptionalText = (value: unknown) => {
   if (typeof value !== 'string') return undefined;
@@ -381,6 +382,14 @@ export const updateConsultation = async (req: Request, res: Response) => {
         where: { appointmentId: consultation.appointmentId },
         data: { status: AppointmentStatus.COMPLETED },
       });
+    }
+
+    if (consultation.status === ConsultationStatus.COMPLETED) {
+      await createPendingPaymentForCompletedConsultationWithoutPrescription(
+        tx,
+        consultation.consultationId,
+        req.user?.userId ?? consultation.doctorId,
+      );
     }
 
     return consultation;

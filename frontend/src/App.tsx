@@ -30,7 +30,8 @@ function App() {
           <Route path="consultations" element={<ConsultationsPage />} />
           <Route path="prescriptions" element={<PrescriptionsPage />} />
           <Route path="inventory" element={<InventoryPage />} />
-          <Route path="payments" element={<PaymentsPage />} />
+          <Route path="sales" element={<SalesPage />} />
+          <Route path="payments" element={<Navigate to="../sales" replace />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="audit-logs" element={<AuditLogsPage />} />
         </Route>

@@ -3,6 +3,7 @@ import { AppointmentStatus, ConsultationStatus, InventoryStockAction, MedicineAp
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
 import { createInventoryLog } from '../medicine/medicineController';
+import { createPendingPaymentForDispensedPrescription } from '../../services/clinicPayment';
 
 const isNonEmptyText = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
 const WALKIN_CUSTOMER_PREFIX = 'WALKIN-';
@@ -12,6 +13,25 @@ const createHttpError = (statusCode: number, message: string) => Object.assign(n
 const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
 
 const isExpiredMedicine = (expiryDate: Date) => toDateKey(expiryDate) < toDateKey(new Date());
+
+const toDateStart = (value: string | undefined) => {
+  if (!value) return undefined;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const toDateEnd = (value: string | undefined) => {
+  if (!value) return undefined;
+  const date = new Date(`${value}T23:59:59.999`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const normalizePrescriptionStatusFilter = (status: string | undefined) => {
+  if (status === 'PENDING') return PrescriptionStatus.PENDING_VERIFICATION;
+  return status && Object.values(PrescriptionStatus).includes(status as PrescriptionStatus)
+    ? status as PrescriptionStatus
+    : undefined;
+};
 
 const prescriptionInclude = {
   patient: true,
@@ -229,9 +249,7 @@ export const createPrescription = async (req: Request, res: Response) => {
 
 export const listPrescriptions = async (req: Request, res: Response) => {
   const { patientId, dateFrom, dateTo, status } = req.query as { patientId?: string; dateFrom?: string; dateTo?: string; status?: string };
-  const normalizedStatus = status && Object.values(PrescriptionStatus).includes(status as PrescriptionStatus)
-    ? status as PrescriptionStatus
-    : undefined;
+  const normalizedStatus = normalizePrescriptionStatusFilter(status);
 
   const prescriptions = await prisma.prescription.findMany({
     where: {
@@ -247,8 +265,8 @@ export const listPrescriptions = async (req: Request, res: Response) => {
         },
       },
       date: {
-        gte: dateFrom ? new Date(dateFrom) : undefined,
-        lte: dateTo ? new Date(dateTo) : undefined,
+        gte: toDateStart(dateFrom),
+        lte: toDateEnd(dateTo),
       },
     },
     include: prescriptionInclude,
@@ -420,11 +438,17 @@ export const dispensePrescription = async (req: Request, res: Response) => {
         });
       }
 
-      return tx.prescription.update({
+      const dispensed = await tx.prescription.update({
         where: { prescriptionId: id },
         data: { status: PrescriptionStatus.DISPENSED },
         include: prescriptionInclude,
       });
+
+      if (req.user?.userId) {
+        await createPendingPaymentForDispensedPrescription(tx, dispensed.prescriptionId, req.user.userId);
+      }
+
+      return dispensed;
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });

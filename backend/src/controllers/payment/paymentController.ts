@@ -4,6 +4,7 @@ import { InventoryStockAction, MedicineApprovalStatus, PaymentMethod, PaymentSta
 import { generateReceiptNo } from '../../utils/receipt';
 import { logActivity } from '../../utils/audit';
 import { createInventoryLog, isExpiredMedicine } from '../medicine/medicineController';
+import { clinicPaymentInclude } from '../../services/clinicPayment';
 
 type WalkInMedicineInput = {
   medicineId?: number | string;
@@ -14,8 +15,17 @@ const WALKIN_CUSTOMER_NAME = 'Walk-in Customer';
 const WALKIN_CUSTOMER_PHONE = 'N/A';
 const WALKIN_CUSTOMER_ID_PREFIX = 'WALKIN';
 
-const isPaymentType = (value: unknown): value is PaymentType => {
-  return value === PaymentType.CONSULTATION || value === PaymentType.APPOINTMENT;
+const normalizeSalesPaymentType = (value: unknown): PaymentType | undefined => {
+  if (value === PaymentType.CONSULTATION || value === 'CONSULTATION_FEE' || value === 'Consultation Fee') {
+    return PaymentType.CONSULTATION;
+  }
+  if (value === PaymentType.APPOINTMENT || value === 'APPOINTMENT_FEE' || value === 'Appointment Fee') {
+    return PaymentType.APPOINTMENT;
+  }
+  if (value === PaymentType.MEDICINE || value === 'WALK_IN_MEDICINE' || value === 'Walk-in Medicine') {
+    return PaymentType.MEDICINE;
+  }
+  return undefined;
 };
 
 const isPaymentMethod = (value: unknown): value is PaymentMethod => {
@@ -303,7 +313,7 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
         amount,
         paymentMethod,
         remarks: normalizedRemarks,
-        status: PaymentStatus.PAID,
+        status: PaymentStatus.PENDING_DISPENSE,
       },
     });
 
@@ -330,29 +340,6 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
       ),
     );
 
-    await Promise.all(
-      pricedItems.map(async (item) => {
-        await tx.medicine.update({
-          where: { medicineId: item.medicineId },
-          data: {
-            quantity: {
-              decrement: item.qty,
-            },
-          },
-        });
-
-        await createInventoryLog(tx, {
-          medicineId: item.medicineId,
-          itemName: item.medicineName,
-          batchNumber: item.batchNumber,
-          quantityChange: -item.qty,
-          actionType: InventoryStockAction.STOCK_DEDUCTED,
-          performedById: recordedById,
-          performedByUsername: req.user?.username,
-        });
-      }),
-    );
-
     const receipt = await createReceiptWithRetry(tx, payment.paymentId, amount);
 
     return { payment, receipt, paymentItems };
@@ -363,7 +350,7 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
   } catch (_) {}
 
   return res.status(201).json({
-    message: 'Walk-in Medicine Sale Successful',
+    message: 'Walk-in Medicine Sale Paid - Pending Dispense',
     payment: result.payment,
     receipt: result.receipt,
     patient,
@@ -371,37 +358,187 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
   });
 };
 
+const toDateStart = (value: string | undefined) => {
+  if (!value) return undefined;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const toDateEnd = (value: string | undefined) => {
+  if (!value) return undefined;
+  const date = new Date(`${value}T23:59:59.999`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+export const dispenseWalkInSale = async (req: Request, res: Response) => {
+  const paymentId = Number(req.params.id);
+  const performedById = req.user?.userId;
+
+  if (!Number.isInteger(paymentId) || paymentId <= 0) {
+    return res.status(400).json({ message: 'Invalid sale reference.' });
+  }
+  if (!performedById) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const sale = await tx.payment.findUnique({
+        where: { paymentId },
+        include: {
+          medicineItems: {
+            include: {
+              medicine: {
+                select: {
+                  medicineId: true,
+                  name: true,
+                  batchNumber: true,
+                  quantity: true,
+                  approvalStatus: true,
+                  expiryDate: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!sale) throw Object.assign(new Error('Sale not found.'), { statusCode: 404 });
+      if (sale.type !== PaymentType.MEDICINE) throw Object.assign(new Error('Only medicine sales can be dispensed.'), { statusCode: 400 });
+      if (sale.status === PaymentStatus.DISPENSED) throw Object.assign(new Error('This sale has already been dispensed.'), { statusCode: 409 });
+      if (sale.status !== PaymentStatus.PENDING_DISPENSE) throw Object.assign(new Error('Sale is not pending dispense.'), { statusCode: 400 });
+
+      for (const item of sale.medicineItems) {
+        if (!item.medicine) throw Object.assign(new Error('Medicine item is no longer available.'), { statusCode: 409 });
+        if (isExpiredMedicine(item.medicine.expiryDate)) throw Object.assign(new Error(`${item.medicine.name} is expired and cannot be dispensed.`), { statusCode: 400 });
+
+        const updateResult = await tx.medicine.updateMany({
+          where: {
+            medicineId: item.medicineId,
+            approvalStatus: MedicineApprovalStatus.APPROVED,
+            quantity: { gte: item.qty },
+          },
+          data: {
+            quantity: {
+              decrement: item.qty,
+            },
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          throw Object.assign(new Error(`Insufficient stock for ${item.medicine.name}.`), { statusCode: 409 });
+        }
+
+        await createInventoryLog(tx, {
+          medicineId: item.medicineId,
+          itemName: item.medicine.name,
+          batchNumber: item.medicine.batchNumber,
+          quantityChange: -item.qty,
+          actionType: InventoryStockAction.STOCK_DEDUCTED,
+          performedById,
+          performedByUsername: req.user?.username,
+        });
+      }
+
+      return tx.payment.update({
+        where: { paymentId },
+        data: {
+          status: PaymentStatus.DISPENSED,
+          dispensedAt: new Date(),
+          dispensedById: performedById,
+          dispensedByUsername: req.user?.username,
+        },
+        include: {
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+              icOrPassport: true,
+              phone: true,
+            },
+          },
+          receipt: true,
+          medicineItems: {
+            include: {
+              medicine: {
+                select: {
+                  medicineId: true,
+                  name: true,
+                  batchNumber: true,
+                  quantity: true,
+                  expiryDate: true,
+                },
+              },
+            },
+          },
+          recordedBy: {
+            select: {
+              userId: true,
+              username: true,
+            },
+          },
+        },
+      });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+
+    try {
+      await logActivity(performedById, `dispense_walkin_sale:${paymentId}`);
+    } catch (_) {}
+
+    return res.json(result);
+  } catch (error: unknown) {
+    const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
+    if (error instanceof Error && typeof httpStatus === 'number') {
+      return res.status(httpStatus).json({ message: error.message });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({ message: 'Dispensing conflicted. Please retry.' });
+    }
+    throw error;
+  }
+};
+
 export const recordPayment = async (req: Request, res: Response) => {
-  const { patientId: patientIdRaw, type, amount: amountRaw, paymentMethod, remarks } = req.body as {
-    patientId?: number | string;
-    type?: PaymentType;
-    amount?: number | string;
+  return res.status(410).json({
+    message: 'Direct payments have been removed. Use pending clinic payments or walk-in medicine sale.',
+  });
+};
+
+export const listPendingPayments = async (_req: Request, res: Response) => {
+  const payments = await prisma.payment.findMany({
+    where: {
+      status: PaymentStatus.PENDING_PAYMENT,
+      type: {
+        in: [PaymentType.CONSULTATION, PaymentType.APPOINTMENT],
+      },
+    },
+    include: clinicPaymentInclude,
+    orderBy: [{ date: 'asc' }, { paymentId: 'asc' }],
+  });
+
+  res.json(payments);
+};
+
+export const confirmPendingPayment = async (req: Request, res: Response) => {
+  const paymentId = Number(req.params.id);
+  const { paymentMethod, remarks } = req.body as {
     paymentMethod?: PaymentMethod;
     remarks?: string;
   };
-
-  const patientId = Number(patientIdRaw);
-  const amount = parseAmount(amountRaw);
   const recordedById = req.user?.userId;
+
+  if (!Number.isInteger(paymentId) || paymentId <= 0) {
+    return res.status(400).json({ message: 'Invalid payment reference.' });
+  }
 
   if (!recordedById) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  if (!Number.isInteger(patientId) || patientId <= 0) {
-    return res.status(400).json({ message: 'Please select a valid patient.' });
-  }
-
-  if (!isPaymentType(type)) {
-    return res.status(400).json({ message: 'Please select a valid payment type.' });
-  }
-
   if (!isPaymentMethod(paymentMethod)) {
     return res.status(400).json({ message: 'Please select a valid payment method.' });
-  }
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return res.status(400).json({ message: 'Amount must be greater than 0.' });
   }
 
   const normalizedRemarks = normalizeRemarks(remarks);
@@ -409,45 +546,78 @@ export const recordPayment = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Remarks must be 500 characters or less.' });
   }
 
-  const patient = await prisma.patient.findUnique({
-    where: { patientId },
-    select: { patientId: true, name: true, icOrPassport: true, phone: true, address: true, isActive: true },
-  });
-
-  if (!patient) {
-    return res.status(404).json({ message: 'Patient record not found.' });
-  }
-
-  if (!patient.isActive) {
-    return res.status(400).json({ message: 'Archived patients cannot be used for new payments.' });
-  }
-
-  const result = await prisma.$transaction(async (tx: any) => {
-    const payment = await tx.payment.create({
-      data: {
-        patientId,
-        recordedById,
-        type,
-        amount,
-        paymentMethod,
-        remarks: normalizedRemarks,
-        status: PaymentStatus.PAID,
-      },
-    });
-    const receipt = await createReceiptWithRetry(tx, payment.paymentId, Number(payment.amount));
-    return { payment, receipt };
-  });
-
   try {
-    await logActivity(req.user?.userId, `record_payment:${result.payment.paymentId}`);
-  } catch (_) {}
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.payment.findUnique({
+        where: { paymentId },
+        include: {
+          receipt: true,
+          consultation: { select: { consultationId: true, status: true } },
+          prescription: { select: { prescriptionId: true, status: true } },
+          appointment: { select: { appointmentId: true, status: true } },
+        },
+      });
 
-  res.status(201).json({
-    message: 'Payment Successful',
-    payment: result.payment,
-    receipt: result.receipt,
-    patient,
-  });
+      if (!existing) throw Object.assign(new Error('Payment not found.'), { statusCode: 404 });
+      if (existing.status === PaymentStatus.PAID) throw Object.assign(new Error('This payment has already been paid.'), { statusCode: 409 });
+      if (existing.status !== PaymentStatus.PENDING_PAYMENT) throw Object.assign(new Error('Only pending clinic payments can be confirmed.'), { statusCode: 400 });
+      if (existing.type !== PaymentType.CONSULTATION && existing.type !== PaymentType.APPOINTMENT) {
+        throw Object.assign(new Error('Only linked clinic payments can be confirmed here.'), { statusCode: 400 });
+      }
+      if (existing.consultation && existing.consultation.status !== 'COMPLETED') {
+        throw Object.assign(new Error('Consultation must be completed before payment.'), { statusCode: 400 });
+      }
+      if (existing.prescription && existing.prescription.status !== 'DISPENSED') {
+        throw Object.assign(new Error('Prescription must be dispensed before payment.'), { statusCode: 400 });
+      }
+      if (existing.appointment && !existing.consultation && existing.appointment.status !== 'COMPLETED') {
+        throw Object.assign(new Error('Appointment must be completed before payment.'), { statusCode: 400 });
+      }
+      if (existing.receipt) {
+        throw Object.assign(new Error('This payment already has a receipt.'), { statusCode: 409 });
+      }
+
+      const payment = await tx.payment.update({
+        where: { paymentId },
+        data: {
+          status: PaymentStatus.PAID,
+          paymentMethod,
+          remarks: normalizedRemarks ?? existing.remarks,
+          recordedById,
+          date: new Date(),
+        },
+      });
+
+      const receipt = await createReceiptWithRetry(tx, payment.paymentId, Number(payment.amount));
+      const paidPayment = await tx.payment.findUnique({
+        where: { paymentId },
+        include: clinicPaymentInclude,
+      });
+
+      return { payment: paidPayment, receipt };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+
+    try {
+      await logActivity(recordedById, `confirm_pending_payment:${paymentId}`);
+    } catch (_) {}
+
+    return res.json({
+      message: 'Payment Successful',
+      payment: result.payment,
+      receipt: result.receipt,
+    });
+  } catch (error: unknown) {
+    const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
+    if (error instanceof Error && typeof httpStatus === 'number') {
+      return res.status(httpStatus).json({ message: error.message });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({ message: 'Payment confirmation conflicted. Please retry.' });
+    }
+    throw error;
+  }
 };
 
 export const listPayments = async (req: Request, res: Response) => {
@@ -463,33 +633,11 @@ export const listPayments = async (req: Request, res: Response) => {
       patientId: patientId ? Number(patientId) : undefined,
       type: type as PaymentType,
       date: {
-        gte: dateFrom ? new Date(dateFrom) : undefined,
-        lte: dateTo ? new Date(dateTo) : undefined,
+        gte: toDateStart(dateFrom),
+        lte: toDateEnd(dateTo),
       },
     },
-    include: {
-      patient: true,
-      receipt: true,
-      medicineItems: {
-        include: {
-          medicine: {
-            select: {
-              medicineId: true,
-              name: true,
-              batchNumber: true,
-              quantity: true,
-            },
-          },
-        },
-      },
-      recordedBy: {
-        select: {
-          userId: true,
-          username: true,
-          role: true,
-        },
-      },
-    },
+    include: clinicPaymentInclude,
     orderBy: { date: 'desc' },
   });
   res.json(payments);
@@ -504,13 +652,10 @@ export const listWalkInSales = async (req: Request, res: Response) => {
     status?: string;
   };
 
-  const customerIdQuery = typeof customerId === 'string' ? customerId.trim() : '';
-  const paymentTypeFilter =
-    type === PaymentType.CONSULTATION || type === PaymentType.APPOINTMENT || type === PaymentType.MEDICINE
-      ? (type as PaymentType)
-      : undefined;
+  const searchQuery = typeof customerId === 'string' ? customerId.trim() : '';
+  const paymentTypeFilter = normalizeSalesPaymentType(type);
   const paymentStatusFilter =
-    status === PaymentStatus.PAID || status === PaymentStatus.CANCELLED
+    Object.values(PaymentStatus).includes(status as PaymentStatus)
       ? (status as PaymentStatus)
       : undefined;
 
@@ -519,18 +664,17 @@ export const listWalkInSales = async (req: Request, res: Response) => {
       type: paymentTypeFilter,
       status: paymentStatusFilter,
       date: {
-        gte: dateFrom ? new Date(dateFrom) : undefined,
-        lte: dateTo ? new Date(dateTo) : undefined,
+        gte: toDateStart(dateFrom),
+        lte: toDateEnd(dateTo),
       },
-      patient: customerIdQuery
-        ? {
-            is: {
-              icOrPassport: {
-                contains: customerIdQuery,
-                mode: 'insensitive',
-              },
-            },
-          }
+      OR: searchQuery
+        ? [
+            { patient: { is: { name: { contains: searchQuery, mode: 'insensitive' } } } },
+            { patient: { is: { icOrPassport: { contains: searchQuery, mode: 'insensitive' } } } },
+            { patient: { is: { phone: { contains: searchQuery, mode: 'insensitive' } } } },
+            { receipt: { is: { receiptNo: { contains: searchQuery, mode: 'insensitive' } } } },
+            { medicineItems: { some: { medicine: { name: { contains: searchQuery, mode: 'insensitive' } } } } },
+          ]
         : undefined,
     },
     include: {
@@ -550,6 +694,8 @@ export const listWalkInSales = async (req: Request, res: Response) => {
               medicineId: true,
               name: true,
               batchNumber: true,
+              quantity: true,
+              expiryDate: true,
             },
           },
         },

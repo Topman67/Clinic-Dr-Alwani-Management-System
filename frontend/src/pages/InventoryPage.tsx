@@ -7,6 +7,8 @@ import { useAuth } from '../context/AuthContext';
 type MedicineApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 type InventoryCategory = 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
 type ExpiryFilter = 'ALL' | 'VALID' | 'NEAR_EXPIRY' | 'EXPIRED';
+type InventoryTab = 'ITEMS' | 'MOVEMENT';
+type MovementDateFilter = 'ALL' | 'TODAY' | '7_DAYS';
 
 type Medicine = {
   medicineId: number;
@@ -71,6 +73,8 @@ const initialForm: MedicineForm = {
 };
 
 const categoryOptions: InventoryCategory[] = ['MEDICINE', 'SUPPLEMENT', 'VITAMIN', 'CONTROLLED_MEDICINE'];
+const inventoryPageSize = 10;
+const pendingRequestPreviewSize = 5;
 
 const toDateInput = (isoDate: string | null | undefined) => {
   if (!isoDate) return '';
@@ -136,6 +140,11 @@ export const InventoryPage = () => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | MedicineApprovalStatus>('ALL');
   const [expiryFilter, setExpiryFilter] = useState<ExpiryFilter>('ALL');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [showExpired, setShowExpired] = useState(false);
+  const [activeTab, setActiveTab] = useState<InventoryTab>('ITEMS');
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [movementTypeFilter, setMovementTypeFilter] = useState('ALL');
+  const [movementDateFilter, setMovementDateFilter] = useState<MovementDateFilter>('ALL');
   const [form, setForm] = useState<MedicineForm>(initialForm);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -145,6 +154,11 @@ export const InventoryPage = () => {
   const [approvingId, setApprovingId] = useState<number | null>(null);
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [resubmittingId, setResubmittingId] = useState<number | null>(null);
+  const [detailMedicine, setDetailMedicine] = useState<Medicine | null>(null);
+  const [rejectMedicine, setRejectMedicine] = useState<Medicine | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
+  const [showAllPendingRequests, setShowAllPendingRequests] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -199,6 +213,37 @@ export const InventoryPage = () => {
       void loadHistory();
     });
   }, [loadHistory, loadMedicines]);
+
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [categoryFilter, expiryFilter, lowStockOnly, medicines, query, showExpired, statusFilter]);
+
+  useEffect(() => {
+    if (!openActionMenuId) return undefined;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest('.inventory-action-menu')) return;
+      setOpenActionMenuId(null);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [openActionMenuId]);
+
+  useEffect(() => {
+    if (!detailMedicine && !rejectMedicine && !openActionMenuId) return undefined;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpenActionMenuId(null);
+      setDetailMedicine(null);
+      if (!rejectingId) closeRejectModal();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [detailMedicine, openActionMenuId, rejectMedicine, rejectingId]);
 
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
@@ -312,18 +357,33 @@ export const InventoryPage = () => {
     }
   };
 
-  const onReject = async (medicineId: number) => {
+  const openRejectModal = (medicine: Medicine) => {
     if (!canApprove) return;
-    setRejectingId(medicineId);
+    setRejectMedicine(medicine);
+    setRejectionReason('');
     setError(null);
     setSuccess(null);
-    const rejectionReason = window.prompt('Rejection reason (optional):', '') ?? '';
+  };
+
+  const closeRejectModal = () => {
+    if (rejectingId) return;
+    setRejectMedicine(null);
+    setRejectionReason('');
+  };
+
+  const onReject = async () => {
+    if (!canApprove || !rejectMedicine) return;
+    setRejectingId(rejectMedicine.medicineId);
+    setError(null);
+    setSuccess(null);
     try {
-      const response = await api.patch(`/medicine/${medicineId}/reject`, {
+      const response = await api.patch(`/medicine/${rejectMedicine.medicineId}/reject`, {
         rejectionReason: rejectionReason.trim() || undefined,
       });
       const data = response.data as { message?: string };
       setSuccess(data.message || 'Inventory item rejected.');
+      setRejectMedicine(null);
+      setRejectionReason('');
       await loadMedicines();
       await loadHistory();
     } catch (err: unknown) {
@@ -368,12 +428,40 @@ export const InventoryPage = () => {
   };
 
   const pendingMedicines = useMemo(() => medicines.filter((m) => m.approvalStatus === 'PENDING'), [medicines]);
+  const visiblePendingMedicines = useMemo(
+    () => (showAllPendingRequests ? pendingMedicines : pendingMedicines.slice(0, pendingRequestPreviewSize)),
+    [pendingMedicines, showAllPendingRequests],
+  );
   const approvedMedicines = useMemo(() => medicines.filter((m) => m.approvalStatus === 'APPROVED'), [medicines]);
   const rejectedMedicines = useMemo(() => medicines.filter((m) => m.approvalStatus === 'REJECTED'), [medicines]);
-  const visibleInventoryMedicines = useMemo(
-    () => (canApprove ? medicines.filter((m) => m.approvalStatus !== 'PENDING') : medicines),
-    [canApprove, medicines],
-  );
+  const visibleInventoryMedicines = useMemo(() => {
+    const base = canApprove ? medicines.filter((m) => m.approvalStatus !== 'PENDING') : medicines;
+    if (showExpired || expiryFilter === 'EXPIRED') return base;
+    return base.filter((m) => expiryInfo(m.expiryDate).status !== 'EXPIRED');
+  }, [canApprove, expiryFilter, medicines, showExpired]);
+  const inventoryPageCount = Math.max(1, Math.ceil(visibleInventoryMedicines.length / inventoryPageSize));
+  const currentInventoryPage = Math.min(inventoryPage, inventoryPageCount);
+  const paginatedInventoryMedicines = useMemo(() => {
+    const start = (currentInventoryPage - 1) * inventoryPageSize;
+    return visibleInventoryMedicines.slice(start, start + inventoryPageSize);
+  }, [currentInventoryPage, visibleInventoryMedicines]);
+  const movementTypeOptions = useMemo(() => Array.from(new Set(history.map((log) => log.actionType))).sort(), [history]);
+  const filteredHistory = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    return history.filter((log) => {
+      const matchesType = movementTypeFilter === 'ALL' || log.actionType === movementTypeFilter;
+      const createdAt = new Date(log.createdAt);
+      const matchesDate =
+        movementDateFilter === 'ALL'
+          || (movementDateFilter === 'TODAY' && createdAt >= today)
+          || (movementDateFilter === '7_DAYS' && createdAt >= sevenDaysAgo);
+      return matchesType && matchesDate;
+    });
+  }, [history, movementDateFilter, movementTypeFilter]);
   const lowStockCount = useMemo(() => approvedMedicines.filter((m) => m.quantity <= 10).length, [approvedMedicines]);
   const expiringSoonCount = useMemo(() => approvedMedicines.filter((m) => expiryInfo(m.expiryDate).status === 'NEAR_EXPIRY').length, [approvedMedicines]);
 
@@ -384,7 +472,7 @@ export const InventoryPage = () => {
           <button type="button" className="inventory-action-btn" disabled={approvingId === medicine.medicineId} onClick={() => void onApprove(medicine.medicineId)}>
             {approvingId === medicine.medicineId ? 'Approving...' : compact ? 'Confirm' : 'Confirm Medicine'}
           </button>
-          <button type="button" className="btn-danger inventory-action-btn" disabled={rejectingId === medicine.medicineId} onClick={() => void onReject(medicine.medicineId)}>
+          <button type="button" className="btn-danger inventory-action-btn" disabled={rejectingId === medicine.medicineId} onClick={() => openRejectModal(medicine)}>
             {rejectingId === medicine.medicineId ? 'Rejecting...' : compact ? 'Reject' : 'Reject Medicine'}
           </button>
         </div>
@@ -416,6 +504,72 @@ export const InventoryPage = () => {
     return <span className="muted">View only</span>;
   };
 
+  const renderActionMenu = (medicine: Medicine) => {
+    const isRejected = medicine.approvalStatus === 'REJECTED';
+    const closeMenu = () => setOpenActionMenuId(null);
+    return (
+      <details
+        className="inventory-action-menu"
+        open={openActionMenuId === medicine.medicineId}
+        onToggle={(event) => {
+          if (event.currentTarget.open) {
+            setOpenActionMenuId(medicine.medicineId);
+          } else if (openActionMenuId === medicine.medicineId) {
+            setOpenActionMenuId(null);
+          }
+        }}
+      >
+        <summary aria-label={`Open actions for ${medicine.name}`}>...</summary>
+        <div>
+          <button type="button" onClick={() => { closeMenu(); setDetailMedicine(medicine); }}>View Details</button>
+          {canManage && (
+            <button type="button" onClick={() => { closeMenu(); onEdit(medicine); }}>Edit</button>
+          )}
+          {canManage && isRejected && (
+            <button type="button" disabled={resubmittingId === medicine.medicineId} onClick={() => { closeMenu(); void onResubmit(medicine.medicineId); }}>
+              {resubmittingId === medicine.medicineId ? 'Resubmitting...' : 'Resubmit'}
+            </button>
+          )}
+          {canManage && !isRejected && (
+            <button type="button" className="danger" onClick={() => { closeMenu(); onDelete(medicine.medicineId); }}>Delete</button>
+          )}
+        </div>
+      </details>
+    );
+  };
+
+  const logTone = (log: InventoryLog) => {
+    const action = log.actionType.toUpperCase();
+    if (action.includes('REJECT') || action.includes('DELETE') || log.quantityChange < 0) return 'critical';
+    if (action.includes('EDIT') || action.includes('UPDATE')) return 'info';
+    if (action.includes('PENDING') || action.includes('SUBMIT')) return 'warning';
+    if (action.includes('APPROVE') || action.includes('ADD') || log.quantityChange > 0) return 'good';
+    return 'neutral';
+  };
+
+  const logIcon = (log: InventoryLog) => {
+    const tone = logTone(log);
+    if (tone === 'critical') return '-';
+    if (tone === 'warning') return '!';
+    if (tone === 'info') return 'i';
+    if (tone === 'good') return '+';
+    return '0';
+  };
+
+  const relativeTime = (isoDate: string) => {
+    const diffMs = Date.now() - new Date(isoDate).getTime();
+    if (!Number.isFinite(diffMs)) return new Date(isoDate).toLocaleString();
+    const minutes = Math.round(diffMs / 60_000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes} mins ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} hours ago`;
+    const days = Math.round(hours / 24);
+    if (days === 1) return 'yesterday';
+    if (days < 7) return `${days} days ago`;
+    return new Date(isoDate).toLocaleString();
+  };
+
   return (
     <section className="inventory-page">
       <div className="section-head inventory-page-head">
@@ -438,203 +592,299 @@ export const InventoryPage = () => {
         <div className="stat-chip warning">Expiring: {expiringSoonCount}</div>
       </section>
 
-      <section className="card inventory-filter-card">
-        <form onSubmit={onSearch} className="inventory-filter-grid">
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search medicine / batch / brand / supplier" />
-          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value as 'ALL' | InventoryCategory)}>
-            <option value="ALL">All categories</option>
-            {categoryOptions.map((category) => <option key={category} value={category}>{categoryLabel(category)}</option>)}
-          </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | MedicineApprovalStatus)}>
-            <option value="ALL">All approval</option>
-            <option value="PENDING">Pending</option>
-            <option value="APPROVED">Approved</option>
-            <option value="REJECTED">Rejected</option>
-          </select>
-          <select value={expiryFilter} onChange={(e) => setExpiryFilter(e.target.value as ExpiryFilter)}>
-            <option value="ALL">All expiry</option>
-            <option value="VALID">Valid</option>
-            <option value="NEAR_EXPIRY">Near expiry</option>
-            <option value="EXPIRED">Expired</option>
-          </select>
-          <label className="inventory-check-filter">
-            <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
-            Low stock
-          </label>
-          <button type="submit" className="btn-secondary">Search</button>
-        </form>
-      </section>
+      <nav className="inventory-tabs" aria-label="Inventory sections">
+        <button type="button" className={activeTab === 'ITEMS' ? 'is-active' : undefined} onClick={() => setActiveTab('ITEMS')}>
+          Inventory Items
+        </button>
+        <button type="button" className={activeTab === 'MOVEMENT' ? 'is-active' : undefined} onClick={() => setActiveTab('MOVEMENT')}>
+          Stock Movement
+        </button>
+      </nav>
 
       {error && <p className="error">{error}</p>}
       {success && <p className="success-text">{success}</p>}
       {loading && <p className="muted">Loading inventory...</p>}
 
-      {canApprove && (
-        <section className="card inventory-approval-section">
-          <div className="section-head compact-section-head">
-            <div>
-              <h3>Pending Inventory Requests</h3>
-              <p className="muted">Review pharmacist submissions before they enter active stock.</p>
-            </div>
-          </div>
-          <div className="inventory-approval-grid">
-            {pendingMedicines.map((medicine) => {
-              const expiry = expiryInfo(medicine.expiryDate);
-              return (
-                <article key={`pending-${medicine.medicineId}`} className="inventory-approval-card">
-                  <div className="inventory-card-head">
-                    <div>
-                      <h4 title={medicine.name}>{medicine.name}</h4>
-                      <p>
-                        {categoryLabel(medicine.category)} &bull; Batch {medicine.batchNumber} &bull; {medicine.quantity} stock &bull; {expiry.label} &bull; RM {formatMoney(medicine.price)}
-                      </p>
-                    </div>
-                    <span className="status-badge status-warning">Pending</span>
+      {activeTab === 'ITEMS' && (
+        <>
+          <section className="card inventory-filter-card">
+            <form onSubmit={onSearch} className="inventory-filter-grid">
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search medicine / batch / brand / supplier" />
+              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value as 'ALL' | InventoryCategory)}>
+                <option value="ALL">All categories</option>
+                {categoryOptions.map((category) => <option key={category} value={category}>{categoryLabel(category)}</option>)}
+              </select>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | MedicineApprovalStatus)}>
+                <option value="ALL">All approval</option>
+                <option value="PENDING">Pending</option>
+                <option value="APPROVED">Approved</option>
+                <option value="REJECTED">Rejected</option>
+              </select>
+              <select value={expiryFilter} onChange={(e) => setExpiryFilter(e.target.value as ExpiryFilter)}>
+                <option value="ALL">All expiry</option>
+                <option value="VALID">Valid</option>
+                <option value="NEAR_EXPIRY">Near expiry</option>
+                <option value="EXPIRED">Expired</option>
+              </select>
+              <label className="inventory-check-filter">
+                <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
+                Low stock
+              </label>
+              <label className="inventory-check-filter">
+                <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
+                Show expired
+              </label>
+              <button type="submit" className="btn-secondary">Search</button>
+            </form>
+          </section>
+
+          {canApprove && (
+            <section className="card inventory-approval-section">
+              <div className="section-head compact-section-head">
+                <div>
+                  <h3>Pending Inventory Requests</h3>
+                  <p className="muted">Review pharmacist submissions before they enter active stock.</p>
+                </div>
+              </div>
+              {pendingMedicines.length > 0 ? (
+                <>
+                  <div className="table-wrap inventory-pending-table-wrap">
+                    <table className="data-table inventory-pending-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Category</th>
+                          <th>Batch</th>
+                          <th>Stock</th>
+                          <th>Expiry</th>
+                          <th>Price</th>
+                          <th>Requested By</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visiblePendingMedicines.map((medicine) => {
+                          const expiry = expiryInfo(medicine.expiryDate);
+                          const requester = medicine.requestedByUsername || '-';
+                          return (
+                            <tr key={`pending-row-${medicine.medicineId}`}>
+                              <td title={medicine.name}>
+                                <div className="inventory-name-cell">
+                                  <strong>{medicine.name}</strong>
+                                  <small title={medicine.companyName || medicine.brand || ''}>{medicine.companyName || medicine.brand || 'Pending pharmacist request'}</small>
+                                </div>
+                              </td>
+                              <td title={categoryLabel(medicine.category)}>{categoryLabel(medicine.category)}</td>
+                              <td title={medicine.batchNumber}>{medicine.batchNumber}</td>
+                              <td title={`${medicine.quantity}`}>{medicine.quantity}</td>
+                              <td title={expiry.helper || expiry.label}>{expiry.label}</td>
+                              <td title={`RM ${formatMoney(medicine.price)}`}>RM {formatMoney(medicine.price)}</td>
+                              <td title={requester}>{requester}</td>
+                              <td>
+                                <div className="inventory-pending-actions">
+                                  <button type="button" className="inventory-details-link" onClick={() => setDetailMedicine(medicine)}>View Details</button>
+                                  {renderActions(medicine, true)}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  <p className="inventory-request-user">Requested by {medicine.requestedByUsername || '-'}</p>
-                  <details className="inventory-more-details">
-                    <summary>View more</summary>
-                    <dl className="inventory-detail-grid">
-                      <div><dt>Brand</dt><dd>{medicine.brand || '-'}</dd></div>
-                      <div><dt>Content</dt><dd>{medicine.content || '-'}</dd></div>
-                      <div><dt>Packaging</dt><dd>{medicine.packaging || '-'}</dd></div>
-                      <div><dt>Supplier</dt><dd>{medicine.companyName || '-'}</dd></div>
-                    </dl>
-                  </details>
-                  <div className="inventory-card-actions">{renderActions(medicine, true)}</div>
-                </article>
-              );
-            })}
-            {pendingMedicines.length === 0 && <p className="muted">No pending requests.</p>}
-          </div>
-        </section>
-      )}
 
-      <section className="card inventory-table-card">
-        <div className="section-head compact-section-head">
-          <div>
-            <h3>Inventory Table</h3>
-            <p className="muted">Compare stock, expiry, price, and approval status in one compact view.</p>
-          </div>
-        </div>
+                  <div className="mobile-cards inventory-pending-mobile-list">
+                    {visiblePendingMedicines.map((medicine) => {
+                      const expiry = expiryInfo(medicine.expiryDate);
+                      const requester = medicine.requestedByUsername || '-';
+                      return (
+                        <article key={`pending-mobile-${medicine.medicineId}`} className="mobile-card inventory-approval-card">
+                          <div className="inventory-card-head">
+                            <div>
+                              <h4 title={medicine.name}>{medicine.name}</h4>
+                              <p title={medicine.companyName || medicine.brand || ''}>{medicine.companyName || medicine.brand || 'Pending pharmacist request'}</p>
+                            </div>
+                            <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
+                          </div>
+                          <div className="inventory-request-meta-grid">
+                            <span title={categoryLabel(medicine.category)}><b>Category</b>{categoryLabel(medicine.category)}</span>
+                            <span title={medicine.batchNumber}><b>Batch</b>{medicine.batchNumber}</span>
+                            <span title={`${medicine.quantity}`}><b>Stock</b>{medicine.quantity}</span>
+                            <span title={expiry.helper || expiry.label}><b>Expiry</b>{expiry.label}</span>
+                            <span title={`RM ${formatMoney(medicine.price)}`}><b>Price</b>RM {formatMoney(medicine.price)}</span>
+                            <span title={requester}><b>Requested By</b>{requester}</span>
+                          </div>
+                          <div className="inventory-pending-actions">
+                            <button type="button" className="inventory-details-link" onClick={() => setDetailMedicine(medicine)}>View Details</button>
+                            {renderActions(medicine, true)}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
 
-        <div className="table-wrap inventory-table-wrap">
-          <table className="data-table inventory-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Batch</th>
-                <th>Stock</th>
-                <th>Expiry</th>
-                <th>Price</th>
-                <th>Approval</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleInventoryMedicines.map((medicine) => {
+                  {pendingMedicines.length > pendingRequestPreviewSize && (
+                    <div className="inventory-pending-footer">
+                      <button type="button" className="btn-secondary" onClick={() => setShowAllPendingRequests((value) => !value)}>
+                        {showAllPendingRequests ? 'Show Fewer Pending Requests' : `View All Pending Requests (${pendingMedicines.length})`}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="muted">No pending requests.</p>
+              )}
+            </section>
+          )}
+
+          <section className="card inventory-table-card">
+            <div className="section-head compact-section-head">
+              <div>
+                <h3>Inventory Table</h3>
+                <p className="muted">Showing {paginatedInventoryMedicines.length} of {visibleInventoryMedicines.length} records.</p>
+              </div>
+            </div>
+
+            <div className="table-wrap inventory-table-wrap">
+              <table className="data-table inventory-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Batch</th>
+                    <th>Stock</th>
+                    <th>Expiry</th>
+                    <th>Price</th>
+                    <th>Approval</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedInventoryMedicines.map((medicine) => {
+                    const stock = stockInfo(medicine.quantity);
+                    const expiry = expiryInfo(medicine.expiryDate);
+                    return (
+                      <tr key={medicine.medicineId}>
+                        <td>
+                          <div className="inventory-name-cell">
+                            <strong title={medicine.name}>{medicine.name}</strong>
+                            <small title={medicine.companyName || medicine.brand || ''}>
+                              {[medicine.brand, medicine.companyName].filter(Boolean).join(' / ') || 'Inventory item'}
+                            </small>
+                          </div>
+                        </td>
+                        <td><span className="inventory-cell-text" title={categoryLabel(medicine.category)}>{categoryLabel(medicine.category)}</span></td>
+                        <td><span className="inventory-cell-text" title={medicine.batchNumber}>{medicine.batchNumber}</span></td>
+                        <td><span className={stock.className}>{stock.label}</span></td>
+                        <td>
+                          <div className="inventory-expiry-cell">
+                            <span className={expiry.className}>{expiry.label}</span>
+                            {expiry.helper && <small>{expiry.helper}</small>}
+                          </div>
+                        </td>
+                        <td className="inventory-price-cell">RM {formatMoney(medicine.price)}</td>
+                        <td>
+                          <div className="inventory-approval-cell">
+                            <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
+                            {medicine.approvalStatus === 'REJECTED' && medicine.rejectionReason && (
+                              <small className="inventory-approval-note" title={`Rejected: ${medicine.rejectionReason}`}>Rejected: {medicine.rejectionReason}</small>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="inventory-table-actions">{renderActionMenu(medicine)}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mobile-cards inventory-mobile-list">
+              {paginatedInventoryMedicines.map((medicine) => {
                 const stock = stockInfo(medicine.quantity);
                 const expiry = expiryInfo(medicine.expiryDate);
                 return (
-                  <tr key={medicine.medicineId}>
-                    <td>
-                      <div className="inventory-name-cell">
-                        <strong title={medicine.name}>{medicine.name}</strong>
-                        <small title={medicine.companyName || medicine.brand || ''}>
-                          {[medicine.brand, medicine.companyName].filter(Boolean).join(' / ') || 'Inventory item'}
-                        </small>
+                  <article key={`mobile-${medicine.medicineId}`} className="mobile-card inventory-mobile-card">
+                    <div className="inventory-card-head">
+                      <div>
+                        <h4 title={medicine.name}>{medicine.name}</h4>
+                        <p>{categoryLabel(medicine.category)} &bull; Batch {medicine.batchNumber}</p>
                       </div>
-                    </td>
-                    <td><span className="inventory-cell-text" title={categoryLabel(medicine.category)}>{categoryLabel(medicine.category)}</span></td>
-                    <td><span className="inventory-cell-text" title={medicine.batchNumber}>{medicine.batchNumber}</span></td>
-                    <td><span className={stock.className}>{stock.label}</span></td>
-                    <td>
-                      <div className="inventory-expiry-cell">
-                        <span className={expiry.className}>{expiry.label}</span>
-                        {expiry.helper && <small>{expiry.helper}</small>}
-                      </div>
-                    </td>
-                    <td className="inventory-price-cell">RM {formatMoney(medicine.price)}</td>
-                    <td>
-                      <div className="inventory-approval-cell">
-                        <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="inventory-table-actions">{renderActions(medicine, true)}</div>
-                    </td>
-                  </tr>
+                      <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
+                    </div>
+                    <div className="inventory-mobile-meta">
+                      <span className={stock.className}>{stock.label}</span>
+                      <span className={expiry.className}>{expiry.label}</span>
+                      <strong>RM {formatMoney(medicine.price)}</strong>
+                    </div>
+                    <details className="inventory-more-details">
+                      <summary>Quick details</summary>
+                      <dl className="inventory-detail-grid">
+                        <div><dt>Brand</dt><dd>{medicine.brand || '-'}</dd></div>
+                        <div><dt>Content</dt><dd>{medicine.content || '-'}</dd></div>
+                        <div><dt>Packaging</dt><dd>{medicine.packaging || '-'}</dd></div>
+                        <div><dt>Supplier</dt><dd>{medicine.companyName || '-'}</dd></div>
+                        <div><dt>Requested By</dt><dd>{medicine.requestedByUsername || '-'}</dd></div>
+                        <div><dt>Created</dt><dd>{medicine.createdAt ? new Date(medicine.createdAt).toLocaleString() : '-'}</dd></div>
+                      </dl>
+                    </details>
+                    <button type="button" className="inventory-details-link" onClick={() => setDetailMedicine(medicine)}>View Details</button>
+                    <div className="inventory-card-actions">{renderActions(medicine, true)}</div>
+                  </article>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </div>
 
-        <div className="mobile-cards inventory-mobile-list">
-          {visibleInventoryMedicines.map((medicine) => {
-            const stock = stockInfo(medicine.quantity);
-            const expiry = expiryInfo(medicine.expiryDate);
-            return (
-              <article key={`mobile-${medicine.medicineId}`} className="mobile-card inventory-mobile-card">
-                <div className="inventory-card-head">
-                  <div>
-                    <h4 title={medicine.name}>{medicine.name}</h4>
-                    <p>{categoryLabel(medicine.category)} &bull; Batch {medicine.batchNumber}</p>
-                  </div>
-                  <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
-                </div>
-                <div className="inventory-mobile-meta">
-                  <span className={stock.className}>{stock.label}</span>
-                  <span className={expiry.className}>{expiry.label}</span>
-                  <strong>RM {formatMoney(medicine.price)}</strong>
-                </div>
-                <details className="inventory-more-details">
-                  <summary>View details</summary>
-                  <dl className="inventory-detail-grid">
-                    <div><dt>Brand</dt><dd>{medicine.brand || '-'}</dd></div>
-                    <div><dt>Content</dt><dd>{medicine.content || '-'}</dd></div>
-                    <div><dt>Packaging</dt><dd>{medicine.packaging || '-'}</dd></div>
-                    <div><dt>Supplier</dt><dd>{medicine.companyName || '-'}</dd></div>
-                    <div><dt>Requested By</dt><dd>{medicine.requestedByUsername || '-'}</dd></div>
-                    <div><dt>Created</dt><dd>{medicine.createdAt ? new Date(medicine.createdAt).toLocaleString() : '-'}</dd></div>
-                  </dl>
-                </details>
-                <div className="inventory-card-actions">{renderActions(medicine, true)}</div>
-              </article>
-            );
-          })}
-        </div>
+            <div className="inventory-pagination">
+              <button type="button" className="btn-secondary" disabled={currentInventoryPage <= 1} onClick={() => setInventoryPage((page) => Math.max(1, page - 1))}>Previous</button>
+              <span>Page {currentInventoryPage} of {inventoryPageCount}</span>
+              <button type="button" className="btn-secondary" disabled={currentInventoryPage >= inventoryPageCount} onClick={() => setInventoryPage((page) => Math.min(inventoryPageCount, page + 1))}>Next</button>
+            </div>
 
-        {!loading && visibleInventoryMedicines.length === 0 && <p className="muted">No inventory records found.</p>}
-      </section>
+            {!loading && visibleInventoryMedicines.length === 0 && <p className="muted">No inventory records found.</p>}
+          </section>
+        </>
+      )}
 
-      <section className="card inventory-history-card">
-        <div className="section-head compact-section-head">
-          <div>
-            <h3>Recent Stock Movement</h3>
-            <p className="muted">Latest inventory activity.</p>
+      {activeTab === 'MOVEMENT' && (
+        <section className="card inventory-history-card">
+          <div className="section-head compact-section-head">
+            <div>
+              <h3>Stock Movement</h3>
+              <p className="muted">Audit stock changes, approvals, rejections, edits, deletions, and dispensing deductions.</p>
+            </div>
           </div>
-        </div>
-        <div className="inventory-history-list">
-          {history.slice(0, 8).map((log) => (
-            <article key={log.logId} className="inventory-history-item">
-              <span className={log.quantityChange < 0 ? 'status-badge status-critical' : log.quantityChange > 0 ? 'status-badge status-good' : 'status-badge status-neutral'}>
-                {log.quantityChange > 0 ? '+' : log.quantityChange < 0 ? '-' : '0'}
-              </span>
-              <div>
-                <strong>{logLabel(log.actionType)}</strong>
-                <span title={log.itemName}>
-                  {log.itemName} &bull; Qty {Math.abs(log.quantityChange)}
-                  {log.relatedPrescriptionId ? ` &bull; Rx #${log.relatedPrescriptionId}` : ''}
-                </span>
-              </div>
-              <small>By {log.performedByUsername || '-'} &bull; {new Date(log.createdAt).toLocaleString()}</small>
-            </article>
-          ))}
-          {history.length === 0 && <p className="muted">No stock movement recorded yet.</p>}
-        </div>
-      </section>
+          <div className="inventory-movement-filters">
+            <select value={movementTypeFilter} onChange={(e) => setMovementTypeFilter(e.target.value)}>
+              <option value="ALL">All movement types</option>
+              {movementTypeOptions.map((type) => <option key={type} value={type}>{logLabel(type)}</option>)}
+            </select>
+            <select value={movementDateFilter} onChange={(e) => setMovementDateFilter(e.target.value as MovementDateFilter)}>
+              <option value="ALL">All dates</option>
+              <option value="TODAY">Today</option>
+              <option value="7_DAYS">Last 7 days</option>
+            </select>
+          </div>
+          <div className="inventory-history-list">
+            {filteredHistory.map((log) => (
+              <article key={log.logId} className="inventory-history-item">
+                <span className={`inventory-activity-icon inventory-activity-${logTone(log)}`}>{logIcon(log)}</span>
+                <div>
+                  <strong>{logLabel(log.actionType)}</strong>
+                  <span title={log.itemName}>
+                    {log.itemName} &bull; Qty {Math.abs(log.quantityChange)}
+                    {log.relatedPrescriptionId ? ` &bull; Rx #${log.relatedPrescriptionId}` : ''}
+                  </span>
+                </div>
+                <small title={new Date(log.createdAt).toLocaleString()}>{log.performedByUsername || '-'} &bull; {relativeTime(log.createdAt)}</small>
+              </article>
+            ))}
+            {filteredHistory.length === 0 && <p className="muted">No stock movement found for this filter.</p>}
+          </div>
+        </section>
+      )}
 
       {canManage && drawerOpen && (
         <div className="inventory-drawer-layer" role="presentation">
@@ -691,6 +941,103 @@ export const InventoryPage = () => {
               </div>
             </form>
           </aside>
+        </div>
+      )}
+
+      {detailMedicine && (
+        <div className="inventory-modal-layer" role="presentation">
+          <button type="button" className="inventory-modal-backdrop" aria-label="Close inventory details" onClick={() => setDetailMedicine(null)} />
+          <section className="inventory-modal" role="dialog" aria-modal="true" aria-labelledby="inventory-detail-title">
+            <div className="inventory-modal-head">
+              <div>
+                <h3 id="inventory-detail-title" title={detailMedicine.name}>{detailMedicine.name}</h3>
+                <p className="muted">{categoryLabel(detailMedicine.category)} &bull; Batch {detailMedicine.batchNumber}</p>
+              </div>
+              <button type="button" className="patient-drawer-close" onClick={() => setDetailMedicine(null)}>X</button>
+            </div>
+            <div className="inventory-modal-body">
+              <section className="inventory-detail-section">
+                <h4>Product Info</h4>
+                <dl className="inventory-detail-modal-grid">
+                  <div><dt>Name</dt><dd title={detailMedicine.name}>{detailMedicine.name}</dd></div>
+                  <div><dt>Category</dt><dd>{categoryLabel(detailMedicine.category)}</dd></div>
+                  <div><dt>Brand</dt><dd title={detailMedicine.brand || '-'}>{detailMedicine.brand || '-'}</dd></div>
+                  <div><dt>Content</dt><dd title={detailMedicine.content || '-'}>{detailMedicine.content || '-'}</dd></div>
+                  <div><dt>Packaging</dt><dd title={detailMedicine.packaging || '-'}>{detailMedicine.packaging || '-'}</dd></div>
+                  <div><dt>Supplier</dt><dd title={detailMedicine.companyName || '-'}>{detailMedicine.companyName || '-'}</dd></div>
+                </dl>
+              </section>
+              <section className="inventory-detail-section">
+                <h4>Inventory Info</h4>
+                <dl className="inventory-detail-modal-grid">
+                  <div><dt>Batch</dt><dd title={detailMedicine.batchNumber}>{detailMedicine.batchNumber}</dd></div>
+                  <div><dt>Stock</dt><dd>{detailMedicine.quantity}</dd></div>
+                  <div><dt>Expiry</dt><dd>{toDateInput(detailMedicine.expiryDate) || '-'}</dd></div>
+                  <div><dt>Price</dt><dd>RM {formatMoney(detailMedicine.price)}</dd></div>
+                  <div><dt>Approval</dt><dd><span className={approvalClass(detailMedicine.approvalStatus)}>{approvalLabel(detailMedicine.approvalStatus)}</span></dd></div>
+                </dl>
+              </section>
+              <section className="inventory-detail-section">
+                <h4>Workflow</h4>
+                <dl className="inventory-detail-modal-grid">
+                  <div><dt>Requested By</dt><dd>{detailMedicine.requestedByUsername || '-'}</dd></div>
+                  <div><dt>Created</dt><dd>{detailMedicine.createdAt ? new Date(detailMedicine.createdAt).toLocaleString() : '-'}</dd></div>
+                  <div><dt>Approved By</dt><dd>{detailMedicine.approvedByUsername || '-'}</dd></div>
+                  <div><dt>Approved At</dt><dd>{detailMedicine.approvedAt ? new Date(detailMedicine.approvedAt).toLocaleString() : '-'}</dd></div>
+                  <div><dt>Rejected By</dt><dd>{detailMedicine.rejectedByUsername || '-'}</dd></div>
+                  <div><dt>Rejected At</dt><dd>{detailMedicine.rejectedAt ? new Date(detailMedicine.rejectedAt).toLocaleString() : '-'}</dd></div>
+                </dl>
+              </section>
+              {detailMedicine.rejectionReason && (
+                <div className="inventory-rejection-panel">
+                  <strong>Rejection notes</strong>
+                  <p>{detailMedicine.rejectionReason}</p>
+                </div>
+              )}
+            </div>
+            <div className="inventory-modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setDetailMedicine(null)}>Close</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {rejectMedicine && (
+        <div className="inventory-modal-layer" role="presentation">
+          <button type="button" className="inventory-modal-backdrop" aria-label="Cancel rejection" onClick={closeRejectModal} disabled={Boolean(rejectingId)} />
+          <section className="inventory-modal inventory-reject-modal" role="dialog" aria-modal="true" aria-labelledby="inventory-reject-title">
+            <div className="inventory-modal-head">
+              <div>
+                <h3 id="inventory-reject-title">Reject Inventory Request</h3>
+                <p className="muted" title={rejectMedicine.name}>{rejectMedicine.name}</p>
+              </div>
+              <button type="button" className="patient-drawer-close" onClick={closeRejectModal} disabled={Boolean(rejectingId)}>X</button>
+            </div>
+            <div className="inventory-modal-body">
+              <label className="field-block">
+                <span>Reason for rejection</span>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Example: Incorrect expiry information, missing supplier, duplicate medicine..."
+                  rows={5}
+                />
+              </label>
+              <div className="inventory-reason-chips">
+                {['Duplicate medicine', 'Expired stock', 'Invalid details', 'Missing supplier', 'Incorrect packaging'].map((reason) => (
+                  <button key={reason} type="button" className="btn-secondary" onClick={() => setRejectionReason(reason)}>
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="inventory-modal-footer">
+              <button type="button" className="btn-secondary" onClick={closeRejectModal} disabled={Boolean(rejectingId)}>Cancel</button>
+              <button type="button" className="btn-danger" onClick={() => void onReject()} disabled={Boolean(rejectingId)}>
+                {rejectingId ? 'Rejecting...' : 'Confirm Reject'}
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </section>

@@ -22,10 +22,14 @@ enum PaymentType {
   CONSULTATION
   APPOINTMENT
   MEDICINE
+  CUSTOM
 }
 
 enum PaymentStatus {
+  PENDING_PAYMENT
   PAID
+  PENDING_DISPENSE
+  DISPENSED
   CANCELLED
 }
 
@@ -167,8 +171,8 @@ model Medicine {
 
 model InventoryStockLog {
   logId                 Int                  @id @default(autoincrement())
-  medicine              Medicine             @relation(fields: [medicineId], references: [medicineId], onDelete: Cascade)
-  medicineId            Int
+  medicine              Medicine?            @relation(fields: [medicineId], references: [medicineId], onDelete: SetNull)
+  medicineId            Int?
   itemName              String
   batchNumber           String
   quantityChange        Int
@@ -198,6 +202,7 @@ model Prescription {
   notes          String?
   items          PrescriptionMedicine[]
   followUps      Appointment[] @relation("AppointmentPreviousPrescription")
+  payment        Payment?
 }
 
 model Consultation {
@@ -218,6 +223,7 @@ model Consultation {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   prescription      Prescription?
+  payment           Payment?
   followUpAppointments Appointment[]    @relation("ConsultationFollowUps")
   medicalCertificates MedicalCertificate[]
 
@@ -265,6 +271,7 @@ model Appointment {
   followUpFromConsultationId Int?
   prescriptions           Prescription[]
   consultations           Consultation[]
+  payment                 Payment?
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
 
@@ -293,12 +300,25 @@ model Payment {
   recordedById Int
   type       PaymentType
   amount     Decimal    @db.Decimal(10,2)
+  consultation Consultation? @relation(fields: [consultationId], references: [consultationId])
+  consultationId Int?       @unique
+  prescription Prescription? @relation(fields: [prescriptionId], references: [prescriptionId])
+  prescriptionId Int?       @unique
+  appointment Appointment?  @relation(fields: [appointmentId], references: [appointmentId])
+  appointmentId Int?        @unique
   paymentMethod PaymentMethod @default(CASH)
   remarks    String?
   date       DateTime   @default(now())
   status     PaymentStatus @default(PAID)
+  dispensedAt DateTime?
+  dispensedById Int?
+  dispensedByUsername String?
   receipt    Receipt?
   medicineItems PaymentMedicineItem[]
+
+  @@index([status])
+  @@index([type])
+  @@index([date])
 }
 
 model PaymentMedicineItem {

@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import { AppointmentStatus, AppointmentType, ConsultationStatus, Role, UserStatus } from '@prisma/client';
+import { AppointmentStatus, AppointmentType, ConsultationStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
+import { createPendingPaymentForCompletedAppointment } from '../../services/clinicPayment';
 
 const isNonEmptyText = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
 
@@ -287,9 +288,19 @@ export const updateAppointmentStatus = async (req: Request, res: Response) => {
     return res.status(400).json({ message: `Cannot change status from ${existing.status} to ${normalizedStatus}.` });
   }
 
-  const updated = await prisma.appointment.update({
-    where: { appointmentId },
-    data: { status: normalizedStatus },
+  const updated = await prisma.$transaction(async (tx) => {
+    const appointment = await tx.appointment.update({
+      where: { appointmentId },
+      data: { status: normalizedStatus },
+    });
+
+    if (appointment.status === AppointmentStatus.COMPLETED && req.user?.userId) {
+      await createPendingPaymentForCompletedAppointment(tx, appointment.appointmentId, req.user.userId);
+    }
+
+    return appointment;
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   });
 
   res.json(updated);

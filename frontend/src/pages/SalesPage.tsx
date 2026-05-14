@@ -7,13 +7,24 @@ import { subscribeInAppDataSync } from '../lib/sync';
 import { roleBasePath } from '../config/rbac';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
 
+type SaleType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
+
+const SALE_TYPE_OPTIONS: Array<{ value: SaleType; label: string }> = [
+  { value: 'CONSULTATION', label: 'Consultation Fee' },
+  { value: 'APPOINTMENT', label: 'Appointment Fee' },
+  { value: 'MEDICINE', label: 'Walk-in Medicine' },
+];
+
 type WalkInSale = {
   paymentId: number;
   date: string;
-  type: 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
-  status: 'PAID' | 'CANCELLED';
+  type: SaleType;
+  status: 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
   paymentMethod: 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET';
   amount: number | string;
+  dispensedAt?: string | null;
+  dispensedById?: number | null;
+  dispensedByUsername?: string | null;
   patient?: {
     patientId: number;
     name: string;
@@ -23,6 +34,7 @@ type WalkInSale = {
   medicineItems: Array<{
     itemId: number;
     qty: number;
+    unitPrice?: number | string;
     subtotal: number | string;
     medicine?: {
       medicineId: number;
@@ -48,10 +60,18 @@ const prettifyMethod = (method: WalkInSale['paymentMethod']) => {
   return method.charAt(0) + method.slice(1).toLowerCase();
 };
 
-const prettifyType = (type: WalkInSale['type']) => {
-  if (type === 'CONSULTATION') return 'Consultation Fee';
-  if (type === 'APPOINTMENT') return 'Appointment Fee';
-  return 'Walk-in Medicine';
+const statusLabel = (status: WalkInSale['status']) => {
+  if (status === 'PENDING_PAYMENT') return 'Pending Payment';
+  if (status === 'PENDING_DISPENSE') return 'Pending Dispense';
+  return status.charAt(0) + status.slice(1).toLowerCase();
+};
+
+const statusClass = (status: WalkInSale['status']) => {
+  if (status === 'DISPENSED') return 'status-good';
+  if (status === 'PAID') return 'status-paid';
+  if (status === 'PENDING_DISPENSE') return 'status-pending-dispense';
+  if (status === 'CANCELLED') return 'status-critical';
+  return 'status-warning';
 };
 
 const getApiErrorMessage = (error: unknown, fallback: string) => {
@@ -71,13 +91,15 @@ export const SalesPage = () => {
 
   const [sales, setSales] = useState<WalkInSale[]>([]);
   const [selectedSale, setSelectedSale] = useState<WalkInSale | null>(null);
+  const [dispenseSale, setDispenseSale] = useState<WalkInSale | null>(null);
+  const [dispensingId, setDispensingId] = useState<number | null>(null);
   const [dateRange, setDateRange] = useState<DateRangeValue>(() => getDateRangeForPreset('today'));
   const [queryCustomerId, setQueryCustomerId] = useState('');
-  const [queryType, setQueryType] = useState<WalkInSale['type'] | ''>('');
+  const [queryType, setQueryType] = useState<SaleType | ''>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSales = useCallback(async (filters?: { dateFrom?: string; dateTo?: string; customerId?: string; type?: WalkInSale['type'] }) => {
+  const loadSales = useCallback(async (filters?: { dateFrom?: string; dateTo?: string; customerId?: string; type?: SaleType }) => {
     setLoading(true);
     setError(null);
     try {
@@ -101,8 +123,10 @@ export const SalesPage = () => {
     void loadSales({
       dateFrom: dateRange.dateFrom || undefined,
       dateTo: dateRange.dateTo || undefined,
+      customerId: queryCustomerId.trim() || undefined,
+      type: queryType || undefined,
     });
-  }, [dateRange.dateFrom, dateRange.dateTo, loadSales]);
+  }, [dateRange.dateFrom, dateRange.dateTo, loadSales, queryCustomerId, queryType]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
@@ -132,6 +156,23 @@ export const SalesPage = () => {
 
   const basePath = role ? roleBasePath[role] : '/';
 
+  const onDispenseSale = async () => {
+    if (!dispenseSale || !isPharmacist) return;
+    setDispensingId(dispenseSale.paymentId);
+    setError(null);
+    try {
+      const response = await api.post(`/payments/${dispenseSale.paymentId}/dispense`);
+      const updated = response.data as WalkInSale;
+      setSales((current) => current.map((sale) => (sale.paymentId === updated.paymentId ? updated : sale)));
+      setSelectedSale((current) => (current?.paymentId === updated.paymentId ? updated : current));
+      setDispenseSale(null);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to dispense sale'));
+    } finally {
+      setDispensingId(null);
+    }
+  };
+
   return (
     <section className="card">
       <div className="section-head">
@@ -147,13 +188,13 @@ export const SalesPage = () => {
         <input
           value={queryCustomerId}
           onChange={(e) => setQueryCustomerId(e.target.value)}
-          placeholder="Customer ID"
+          placeholder="Search customer, receipt, medicine..."
         />
-        <select value={queryType} onChange={(e) => setQueryType((e.target.value as WalkInSale['type']) || '')}>
+        <select value={queryType} onChange={(e) => setQueryType((e.target.value as SaleType) || '')}>
           <option value="">All Types</option>
-          <option value="CONSULTATION">Consultation Fee</option>
-          <option value="APPOINTMENT">Appointment Fee</option>
-          <option value="MEDICINE">Walk-in Medicine</option>
+          {SALE_TYPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
         </select>
         <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
         <button
@@ -194,13 +235,13 @@ export const SalesPage = () => {
           <thead>
             <tr>
               <th>Date</th>
-              <th>Type</th>
-              <th>Walk-in Customer</th>
+              <th>Customer</th>
               <th>Receipt</th>
               <th>Items Sold</th>
               <th>Quantity</th>
               <th>Amount (RM)</th>
               <th>Status</th>
+              <th>Dispense Date</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -212,7 +253,6 @@ export const SalesPage = () => {
               return (
                 <tr key={`sale-${sale.paymentId}`}>
                   <td>{new Date(sale.date).toLocaleString()}</td>
-                  <td>{prettifyType(sale.type)}</td>
                   <td>
                     {sale.patient?.name || '-'}
                     <br />
@@ -222,11 +262,16 @@ export const SalesPage = () => {
                   <td>{sale.type === 'MEDICINE' ? itemSummary.join(', ') || '-' : '-'}</td>
                   <td>{sale.type === 'MEDICINE' ? qty : '-'}</td>
                   <td>{formatMoney(sale.receipt?.totalAmount ?? sale.amount)}</td>
-                  <td>{sale.status}</td>
+                  <td><span className={`status-badge ${statusClass(sale.status)}`}>{statusLabel(sale.status)}</span></td>
+                  <td>{sale.dispensedAt ? new Date(sale.dispensedAt).toLocaleString() : '-'}</td>
                   <td>
-                    <button type="button" className="btn-secondary sales-view-btn" onClick={() => setSelectedSale(sale)}>
-                      View Details
-                    </button>
+                    <div className="sales-actions">
+                      <button type="button" className="btn-secondary sales-view-btn" onClick={() => setSelectedSale(sale)}>View Details</button>
+                      {isPharmacist && sale.type === 'MEDICINE' && sale.status === 'PENDING_DISPENSE' && (
+                        <button type="button" onClick={() => setDispenseSale(sale)} disabled={dispensingId === sale.paymentId}>Dispense</button>
+                      )}
+                      <button type="button" className="btn-secondary" onClick={() => window.print()}>Print Receipt</button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -238,86 +283,113 @@ export const SalesPage = () => {
       {!loading && sales.length === 0 && <p className="muted">No sales found for current filters.</p>}
 
       {selectedSale && (
-        <section className="card" style={{ marginTop: 14 }}>
-          <div className="section-head">
-            <h3>Sale Details</h3>
-            <p className="muted">Walk-in purchases, receipt, quantity sold, date, and stock usage snapshot.</p>
+        <section className="card sales-detail-panel">
+          <div className="sales-detail-head">
+            <div>
+              <h3>Sale Details</h3>
+              <p className="muted">Sale #{selectedSale.paymentId} processed successfully.</p>
+            </div>
+            <span className={`status-badge ${statusClass(selectedSale.status)}`}>{statusLabel(selectedSale.status)}</span>
           </div>
 
-          <dl className="kv">
-            <div>
-              <dt>Sale ID</dt>
-              <dd>#{selectedSale.paymentId}</dd>
-            </div>
-            <div>
-              <dt>Date</dt>
-              <dd>{new Date(selectedSale.date).toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>Customer</dt>
-              <dd>{selectedSale.patient?.name || '-'}</dd>
-            </div>
-            <div>
-              <dt>Customer ID</dt>
-              <dd>{selectedSale.patient?.icOrPassport || '-'}</dd>
-            </div>
-            <div>
-              <dt>Payment Method</dt>
-              <dd>{prettifyMethod(selectedSale.paymentMethod)}</dd>
-            </div>
-            <div>
-              <dt>Type</dt>
-              <dd>{prettifyType(selectedSale.type)}</dd>
-            </div>
-            <div>
-              <dt>Receipt</dt>
-              <dd>{selectedSale.receipt?.receiptNo || '-'}</dd>
-            </div>
-            <div>
-              <dt>Total</dt>
-              <dd>RM {formatMoney(selectedSale.receipt?.totalAmount ?? selectedSale.amount)}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{selectedSale.status}</dd>
-            </div>
-          </dl>
+          <div className="sales-detail-grid">
+            <section className="sales-detail-card sales-detail-wide">
+              <div className="sales-summary-strip">
+                <div><span>Receipt Number</span><strong>{selectedSale.receipt?.receiptNo || '-'}</strong></div>
+                <div><span>Payment Date</span><strong>{new Date(selectedSale.date).toLocaleString()}</strong></div>
+                <div><span>Total</span><strong>RM {formatMoney(selectedSale.receipt?.totalAmount ?? selectedSale.amount)}</strong></div>
+              </div>
+              <div className="sales-detail-actions">
+                <button type="button" className="btn-secondary" onClick={() => window.print()}>Print Receipt</button>
+                <button type="button" className="btn-secondary" onClick={() => setSelectedSale(null)}>Close</button>
+              </div>
+            </section>
 
-          {selectedSale.type === 'MEDICINE' ? (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Batch</th>
-                    <th>Qty</th>
-                    <th>Subtotal (RM)</th>
-                    {isPharmacist && <th>Current Stock</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedSale.medicineItems.map((item) => (
-                    <tr key={`sale-item-${item.itemId}`}>
-                      <td>{item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`}</td>
-                      <td>{item.medicine?.batchNumber ?? '-'}</td>
-                      <td>{item.qty}</td>
-                      <td>{formatMoney(item.subtotal)}</td>
-                      {isPharmacist && <td>{item.medicine?.quantity ?? '-'}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="muted">No medicine items for this standard payment type.</p>
-          )}
+            <section className="sales-detail-card">
+              <h4>Customer Information</h4>
+              <dl className="sales-detail-kv">
+                <div><dt>Customer Name</dt><dd>{selectedSale.patient?.name || '-'}</dd></div>
+                <div><dt>Phone Number</dt><dd>{selectedSale.patient?.phone || 'Not provided'}</dd></div>
+                <div><dt>Customer ID</dt><dd>{selectedSale.patient?.icOrPassport || '-'}</dd></div>
+                <div><dt>Payment Method</dt><dd>{prettifyMethod(selectedSale.paymentMethod)}</dd></div>
+              </dl>
+            </section>
 
-          <div className="action-row" style={{ marginTop: 10 }}>
-            <button type="button" className="btn-secondary" onClick={() => setSelectedSale(null)}>
-              Close Details
-            </button>
+            <section className="sales-detail-card">
+              <h4>Dispense Information</h4>
+              <dl className="sales-detail-kv">
+                <div><dt>Status</dt><dd><span className={`status-badge ${statusClass(selectedSale.status)}`}>{statusLabel(selectedSale.status)}</span></dd></div>
+                <div><dt>Dispensed By</dt><dd>{selectedSale.dispensedByUsername || '-'}</dd></div>
+                <div><dt>Dispensed At</dt><dd>{selectedSale.dispensedAt ? new Date(selectedSale.dispensedAt).toLocaleString() : '-'}</dd></div>
+              </dl>
+              {isPharmacist && selectedSale.type === 'MEDICINE' && selectedSale.status === 'PENDING_DISPENSE' && (
+                <button type="button" onClick={() => setDispenseSale(selectedSale)} disabled={dispensingId === selectedSale.paymentId}>Dispense Medicine</button>
+              )}
+            </section>
+
+            <section className="sales-detail-card sales-detail-wide">
+              <h4>Medicine Items</h4>
+              {selectedSale.type === 'MEDICINE' ? (
+                <>
+                  <div className="table-wrap sales-detail-table-wrap">
+                    <table className="data-table sales-detail-table">
+                      <thead>
+                        <tr>
+                          <th>Medicine Name</th>
+                          <th>Batch</th>
+                          <th>Quantity</th>
+                          <th>Unit Price</th>
+                          <th>Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSale.medicineItems.map((item) => (
+                          <tr key={`sale-item-${item.itemId}`}>
+                            <td>{item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`}</td>
+                            <td>{item.medicine?.batchNumber ?? '-'}</td>
+                            <td>{item.qty}</td>
+                            <td>RM {formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))}</td>
+                            <td>RM {formatMoney(item.subtotal)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="sales-grand-total">
+                    <span>Grand Total</span>
+                    <strong>RM {formatMoney(selectedSale.receipt?.totalAmount ?? selectedSale.amount)}</strong>
+                  </div>
+                </>
+              ) : (
+                <p className="muted">No medicine items for this standard payment type.</p>
+              )}
+            </section>
           </div>
         </section>
+      )}
+
+      {dispenseSale && (
+        <div className="inventory-modal-layer" role="presentation">
+          <button type="button" className="inventory-modal-backdrop" aria-label="Cancel dispense" onClick={() => setDispenseSale(null)} disabled={Boolean(dispensingId)} />
+          <section className="inventory-modal inventory-reject-modal" role="dialog" aria-modal="true" aria-labelledby="dispense-sale-title">
+            <div className="inventory-modal-head">
+              <div>
+                <h3 id="dispense-sale-title">Dispense Sale #{dispenseSale.paymentId}</h3>
+                <p className="muted">{dispenseSale.patient?.name || 'Walk-in Customer'} - {dispenseSale.receipt?.receiptNo || '-'}</p>
+              </div>
+              <button type="button" className="patient-drawer-close" onClick={() => setDispenseSale(null)} disabled={Boolean(dispensingId)}>X</button>
+            </div>
+            <div className="inventory-modal-body">
+              <p className="muted">Confirm medicines have been checked and are ready to hand to the customer. Inventory stock will be deducted now.</p>
+            </div>
+            <div className="inventory-modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setDispenseSale(null)} disabled={Boolean(dispensingId)}>Cancel</button>
+              <button type="button" onClick={() => void onDispenseSale()} disabled={Boolean(dispensingId)}>
+                {dispensingId ? 'Dispensing...' : 'Confirm Dispense'}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </section>
   );

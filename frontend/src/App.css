@@ -436,7 +436,9 @@ body {
   .mc-print-area,
   .mc-print-area *,
   .report-print-area,
-  .report-print-area * {
+  .report-print-area *,
+  .receipt-print-area,
+  .receipt-print-area * {
     visibility: visible;
   }
 
@@ -493,6 +495,40 @@ body {
     color: #000;
   }
 
+  .receipt-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 22px;
+    border: none;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+  }
+
+  .receipt-print-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #000;
+  }
+
+  .receipt-print-header img {
+    width: 92px;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .receipt-print-header h2,
+  .receipt-print-header p {
+    margin: 0;
+    color: #000 !important;
+  }
+
   .mc-print-area {
     position: absolute;
     top: 0;
@@ -512,21 +548,38 @@ body {
   }
 
   .report-print-area .muted,
+  .receipt-print-area .muted,
   .report-print-area dt,
+  .receipt-print-area dt,
   .report-print-area dd,
+  .receipt-print-area dd,
   .report-print-area p,
+  .receipt-print-area p,
   .report-print-area h1,
+  .receipt-print-area h1,
   .report-print-area h3,
+  .receipt-print-area h3,
   .report-print-area h4,
+  .receipt-print-area h4,
   .report-print-area td,
+  .receipt-print-area td,
   .report-print-area th,
+  .receipt-print-area th,
   .report-print-area li,
+  .receipt-print-area li,
   .report-print-area strong {
     color: #000 !important;
   }
 
+  .receipt-print-area strong,
+  .receipt-print-area span,
+  .receipt-print-area small {
+    color: #000 !important;
+  }
+
   .report-print-area .report-card,
-  .report-print-area .metric-card {
+  .report-print-area .metric-card,
+  .receipt-print-area .sales-detail-card {
     border: 1px solid #000;
     background: #fff;
     box-shadow: none;
@@ -539,15 +592,34 @@ body {
     border: none;
   }
 
+  .receipt-print-area .table-wrap {
+    display: block;
+    overflow: visible;
+    border: none;
+  }
+
   .report-print-area .data-table {
     border-collapse: collapse;
     width: 100%;
   }
 
+  .receipt-print-area .data-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 0;
+  }
+
   .report-print-area .data-table th,
-  .report-print-area .data-table td {
+  .report-print-area .data-table td,
+  .receipt-print-area .data-table th,
+  .receipt-print-area .data-table td {
     border: 1px solid #000;
     padding: 6px;
+  }
+
+  .receipt-print-area .sales-detail-actions,
+  .receipt-print-area .pending-confirm-box {
+    display: none !important;
   }
 
   .prescription-print-area .muted,
@@ -2474,11 +2546,24 @@ body {
   min-height: 0;
 }
 
-.prescription-workflow-grid {
+.prescription-create-form {
   display: grid;
   grid-template-columns: minmax(300px, 0.62fr) minmax(0, 1.8fr);
   gap: 12px;
   align-items: start;
+  min-width: 0;
+}
+
+.prescription-create-form > * {
+  min-width: 0;
+}
+
+.prescription-medicine-card {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .prescription-summary-grid {
@@ -2595,6 +2680,7 @@ body {
 
 .prescription-patient-card,
 .prescription-create-card,
+.prescription-medicine-card,
 .prescription-list-card {
   padding: 12px;
 }
@@ -2651,8 +2737,8 @@ body {
 
 .prescription-empty-panel {
   display: grid;
-  gap: 4px;
-  padding: 16px;
+  gap: 5px;
+  padding: 14px;
   border: 1px dashed var(--border);
   border-radius: 12px;
   color: var(--muted);
@@ -2661,11 +2747,18 @@ body {
 
 .prescription-empty-panel strong {
   color: var(--text);
+  font-size: 0.92rem;
+}
+
+.prescription-empty-panel span {
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .prescription-create-card {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .prescription-create-card textarea {
@@ -2684,6 +2777,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 680;
 }
 
 .prescription-consultation-card,
@@ -2745,14 +2839,16 @@ body {
 .prescription-items-list {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .prescription-item-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) minmax(100px, 0.74fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) 76px auto;
-  gap: 8px;
-  align-items: end;
-  padding: 9px;
+  grid-template-columns: minmax(0, 35fr) minmax(0, 15fr) minmax(0, 15fr) minmax(0, 15fr) minmax(64px, 8fr) 98px;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
@@ -2761,7 +2857,8 @@ body {
 .prescription-item-row label {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 5px;
+  align-content: end;
 }
 
 .prescription-item-row input,
@@ -2772,7 +2869,414 @@ body {
 }
 
 .prescription-remove-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding-inline: 11px;
+  align-self: end;
+  justify-self: stretch;
+  border: 1px solid color-mix(in srgb, var(--danger) 26%, var(--border));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  box-shadow: none;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.prescription-remove-item:hover:not(:disabled) {
+  transform: none;
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger) 13%, var(--surface));
+  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.12);
+}
+
+.medicine-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.medicine-picker-control {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: none;
+  text-align: left;
+  overflow: hidden;
+}
+
+.medicine-picker-control:hover:not(:disabled) {
+  transform: none;
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.medicine-picker-control span {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.medicine-picker-name-line,
+.medicine-picker-control > span > small,
+.medicine-picker-control small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.medicine-picker-name-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+}
+
+.medicine-picker-name-line strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.medicine-picker-control strong {
+  font-size: 0.92rem;
+  line-height: 1.16;
+}
+
+.medicine-picker-control small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.medicine-picker-control b {
+  flex: 0 0 auto;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  font-size: 0.68rem;
+  font-weight: 840;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.medicine-inline-badge {
+  flex: 0 0 auto;
+  max-width: 112px;
+  min-height: 19px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 820;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.medicine-inline-badge.warning {
+  border-color: rgba(245, 158, 11, 0.32);
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.medicine-inline-badge.danger {
+  border-color: rgba(239, 68, 68, 0.34);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+
+.medicine-picker.field-invalid .medicine-picker-control {
+  border-color: var(--danger);
+}
+
+@media (max-width: 1180px) {
+  .prescription-item-row {
+    grid-template-columns: minmax(0, 35fr) minmax(0, 15fr) minmax(0, 15fr) minmax(0, 15fr) minmax(62px, 8fr) 96px;
+  }
+}
+
+@media (max-width: 980px) {
+  .prescription-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .prescription-medicine-card {
+    grid-column: auto;
+  }
+
+  .prescription-item-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .prescription-item-row label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .prescription-remove-item {
+    grid-column: auto;
+    align-self: end;
+    width: 100%;
+  }
+}
+
+.medicine-picker-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+}
+
+.medicine-picker-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(4px);
+}
+
+.medicine-picker-modal-backdrop:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.medicine-picker-modal {
+  position: relative;
+  z-index: 1;
+  width: min(920px, 100%);
+  max-height: min(760px, calc(100vh - 44px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--surface-soft));
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.3);
+}
+
+.medicine-picker-modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 96%, var(--surface-soft));
+}
+
+.medicine-picker-modal-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.medicine-picker-modal-head p {
+  margin: 4px 0 0;
+}
+
+.medicine-picker-modal-filters {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 190px 140px 150px;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-soft) 54%, transparent);
+}
+
+.medicine-picker-modal-filters input,
+.medicine-picker-modal-filters select {
+  position: relative;
+  z-index: 1;
+  min-height: 38px;
+  height: 38px;
+  cursor: pointer;
+}
+
+.medicine-picker-modal-filters input {
+  cursor: text;
+}
+
+.medicine-picker-helper {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 680;
+  line-height: 1.35;
+}
+
+.medicine-picker-modal-results {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 10px 18px;
+}
+
+.medicine-picker-modal-results button {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(360px, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 86%, var(--surface-soft));
+  box-shadow: none;
+  text-align: left;
+}
+
+.medicine-picker-modal-results button:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.medicine-picker-modal-results button.is-selected {
+  transform: none;
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+  background: color-mix(in srgb, var(--primary) 13%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.medicine-picker-modal-results button > span:first-child,
+.medicine-picker-modal-results strong,
+.medicine-picker-modal-results small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.medicine-picker-modal-results button > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.medicine-picker-modal-results strong {
+  font-size: 0.88rem;
+}
+
+.medicine-picker-modal-results small {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.medicine-picker-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.medicine-picker-modal-meta em,
+.medicine-controlled {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 19px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--border));
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-size: 0.63rem;
+  font-style: normal;
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.medicine-picker-modal-meta small {
+  min-height: 19px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.medicine-picker-modal-meta em.warning {
+  border-color: rgba(245, 158, 11, 0.28);
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.09);
+}
+
+.medicine-controlled {
+  margin-top: 5px;
+  border-color: rgba(239, 68, 68, 0.36);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.medicine-picker-empty {
+  margin: 0;
+  padding: 28px 10px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.84rem;
+}
+
+.medicine-picker-pagination {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 96%, var(--surface-soft));
+}
+
+.medicine-picker-pagination button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+.medicine-picker-pagination span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 760;
+  white-space: nowrap;
 }
 
 .medicine-warning,
@@ -2790,7 +3294,23 @@ body {
 }
 
 .prescription-create-actions {
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.prescription-items-summary {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.prescription-create-actions button {
+  margin-left: auto;
 }
 
 .prescription-table {
@@ -3021,6 +3541,7 @@ body {
 :root[data-theme='dark'] .prescription-filter-card,
 :root[data-theme='dark'] .prescription-patient-card,
 :root[data-theme='dark'] .prescription-create-card,
+:root[data-theme='dark'] .prescription-medicine-card,
 :root[data-theme='dark'] .prescription-list-card,
 :root[data-theme='dark'] .prescription-patient-grid div,
 :root[data-theme='dark'] .prescription-details-grid div,
@@ -3039,6 +3560,458 @@ body {
   grid-template-columns: 1.8fr 1.2fr 1fr 1.2fr auto;
   gap: 10px;
   align-items: center;
+}
+
+.pending-payment-workflow {
+  display: grid;
+  gap: 12px;
+}
+
+.walkin-sale-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: 12px;
+}
+
+.walkin-sale-card {
+  padding: 14px;
+}
+
+.walkin-items-card {
+  grid-column: 1 / -1;
+}
+
+.walkin-customer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.walkin-items-list {
+  display: grid;
+  gap: 8px;
+}
+
+.walkin-item-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.6fr) 90px 120px 120px 92px;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
+}
+
+.walkin-item-row label,
+.walkin-item-name {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.walkin-item-row label > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.walkin-item-name strong,
+.walkin-item-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.walkin-item-name strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.walkin-item-name small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.walkin-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  text-align: center;
+  background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
+}
+
+.walkin-picker-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+}
+
+.walkin-picker-categories {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 14px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-soft) 54%, transparent);
+}
+
+.walkin-picker-categories button {
+  justify-content: flex-start;
+  min-height: 34px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.walkin-picker-categories button.is-active,
+.walkin-picker-categories button:hover:not(:disabled) {
+  transform: none;
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+
+.walkin-picker-results {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px;
+}
+
+.walkin-medicine-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.walkin-medicine-card {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) 86px 110px 86px 96px 70px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-soft));
+}
+
+.walkin-medicine-card div,
+.walkin-medicine-card strong,
+.walkin-medicine-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.walkin-medicine-card small,
+.walkin-medicine-card span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.prescription-select-modal {
+  width: min(920px, 100%);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.prescription-picker-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.prescription-picker-medicine-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px 70px;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-soft));
+}
+
+.prescription-picker-medicine-main,
+.prescription-picker-medicine-card strong,
+.prescription-picker-medicine-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prescription-picker-medicine-main {
+  display: grid;
+  gap: 6px;
+}
+
+.prescription-picker-medicine-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prescription-picker-medicine-card strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 820;
+}
+
+.prescription-picker-category {
+  flex: 0 0 auto;
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  font-size: 0.68rem;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.prescription-picker-medicine-card small,
+.prescription-picker-medicine-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.prescription-picker-medicine-card > .status-badge {
+  justify-self: end;
+  max-width: 118px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prescription-picker-medicine-card.is-selected {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.prescription-picker-medicine-card button {
+  justify-self: end;
+  width: 70px;
+  min-height: 48px;
+  padding: 8px 12px;
+  font-size: 0.86rem;
+}
+
+.status-paid {
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.34);
+}
+
+.status-pending-dispense {
+  color: #c2410c;
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.34);
+}
+
+.sales-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.sales-actions button {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 0.74rem;
+}
+
+.sales-detail-panel {
+  margin-top: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.receipt-print-header {
+  display: none;
+}
+
+.sales-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sales-detail-head h3,
+.sales-detail-card h4 {
+  margin: 0;
+}
+
+.sales-detail-head p {
+  margin: 4px 0 0;
+}
+
+.sales-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sales-detail-wide {
+  grid-column: 1 / -1;
+}
+
+.sales-detail-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 92%, var(--surface-soft));
+}
+
+.sales-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sales-summary-strip div,
+.sales-detail-kv div {
+  min-width: 0;
+}
+
+.sales-summary-strip span,
+.sales-detail-kv dt {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.sales-summary-strip strong,
+.sales-detail-kv dd {
+  color: var(--text);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pending-confirm-box {
+  display: grid;
+  grid-template-columns: 180px minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+
+.sales-detail-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sales-detail-kv dd {
+  margin: 0;
+}
+
+.sales-detail-table-wrap {
+  max-width: 100%;
+}
+
+.sales-detail-table {
+  min-width: 680px;
+  table-layout: fixed;
+}
+
+.sales-detail-table th,
+.sales-detail-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-grand-total {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding-top: 4px;
+  color: var(--text);
+}
+
+.sales-grand-total span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.receipt-breakdown {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.receipt-breakdown div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.receipt-breakdown dt,
+.receipt-breakdown dd {
+  margin: 0;
+}
+
+.receipt-breakdown dt {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.receipt-breakdown dd {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.receipt-breakdown .receipt-breakdown-total {
+  padding-top: 12px;
+  border-bottom: 0;
+}
+
+.receipt-breakdown-total dt,
+.receipt-breakdown-total dd {
+  color: var(--text);
+  font-size: 1.04rem;
 }
 
 .users-create-grid {
@@ -3459,7 +4432,7 @@ body {
 
 .inventory-filter-grid {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(140px, 1fr) auto auto;
+  grid-template-columns: minmax(140px, 1fr) minmax(128px, 0.9fr) minmax(128px, 0.9fr) auto auto auto;
   gap: 8px;
   align-items: center;
 }
@@ -3473,6 +4446,36 @@ body {
 .inventory-filter-grid button {
   min-height: 38px;
   height: 38px;
+}
+
+.inventory-tabs {
+  display: inline-flex;
+  width: fit-content;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+}
+
+.inventory-tabs button {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.inventory-tabs button:hover:not(:disabled),
+.inventory-tabs button.is-active {
+  transform: none;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
 }
 
 .inventory-check-filter {
@@ -3949,7 +4952,7 @@ body {
 
 /* Inventory is table-first on desktop so stock, expiry, price, and approval are easy to compare. */
 .inventory-table-card {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .inventory-table-wrap {
@@ -3957,6 +4960,12 @@ body {
   max-height: min(620px, calc(100vh - 340px));
   overflow: auto;
   scrollbar-gutter: stable;
+}
+
+.inventory-table-wrap:has(.inventory-action-menu[open]) {
+  overflow: visible;
+  max-height: none;
+  margin-bottom: 92px;
 }
 
 .inventory-table {
@@ -3982,17 +4991,17 @@ body {
 
 .inventory-table th:first-child,
 .inventory-table td:first-child {
-  width: 22%;
+  width: 23%;
 }
 
 .inventory-table th:nth-child(2),
 .inventory-table td:nth-child(2) {
-  width: 11%;
+  width: 13%;
 }
 
 .inventory-table th:nth-child(3),
 .inventory-table td:nth-child(3) {
-  width: 12%;
+  width: 11%;
 }
 
 .inventory-table th:nth-child(4),
@@ -4007,7 +5016,7 @@ body {
 
 .inventory-table th:nth-child(6),
 .inventory-table td:nth-child(6) {
-  width: 9%;
+  width: 8%;
 }
 
 .inventory-table th:nth-child(7),
@@ -4017,7 +5026,8 @@ body {
 
 .inventory-table th:last-child,
 .inventory-table td:last-child {
-  width: 150px;
+  width: 78px;
+  text-align: center;
 }
 
 .inventory-name-cell {
@@ -4064,7 +5074,7 @@ body {
 
 .inventory-table-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -4154,9 +5164,566 @@ body {
   font-size: 0.82rem;
 }
 
+.inventory-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.inventory-pagination button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+.inventory-pagination span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.inventory-page .status-badge {
+  width: auto;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.inventory-approval-cell .status-badge {
+  justify-self: start;
+}
+
+.inventory-approval-note {
+  display: block;
+  max-width: 100%;
+  margin-top: 3px;
+  color: var(--danger);
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+.inventory-approval-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+.inventory-approval-card .status-badge {
+  align-self: start;
+  justify-self: end;
+}
+
+.inventory-approval-card .inventory-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.inventory-approval-card .inventory-card-head h4,
+.inventory-approval-card .inventory-card-head p,
+.inventory-approval-card .inventory-request-user {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-approval-card .inventory-card-actions {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  align-self: start;
+  min-width: 134px;
+}
+
+.inventory-approval-card .inventory-action-row {
+  justify-content: flex-end;
+}
+
+.inventory-details-link {
+  grid-column: 1;
+  justify-self: start;
+  min-height: 28px;
+  padding: 4px 0;
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.inventory-details-link:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--primary-strong);
+}
+
+.inventory-request-meta-grid {
+  grid-column: 1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.inventory-request-meta-grid span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 730;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-request-meta-grid b {
+  color: var(--muted);
+  font-size: 0.63rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.inventory-pending-table {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.inventory-pending-table th,
+.inventory-pending-table td {
+  white-space: nowrap;
+}
+
+.inventory-pending-table th:first-child,
+.inventory-pending-table td:first-child {
+  width: 20%;
+}
+
+.inventory-pending-table th:nth-child(2),
+.inventory-pending-table td:nth-child(2) {
+  width: 11%;
+}
+
+.inventory-pending-table th:nth-child(3),
+.inventory-pending-table td:nth-child(3) {
+  width: 12%;
+}
+
+.inventory-pending-table th:nth-child(4),
+.inventory-pending-table td:nth-child(4) {
+  width: 8%;
+}
+
+.inventory-pending-table th:nth-child(5),
+.inventory-pending-table td:nth-child(5),
+.inventory-pending-table th:nth-child(6),
+.inventory-pending-table td:nth-child(6) {
+  width: 10%;
+}
+
+.inventory-pending-table th:nth-child(7),
+.inventory-pending-table td:nth-child(7) {
+  width: 13%;
+}
+
+.inventory-pending-table th:last-child,
+.inventory-pending-table td:last-child {
+  width: 250px;
+}
+
+.inventory-pending-table td:not(:last-child),
+.inventory-pending-table td:not(:last-child) > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inventory-pending-table .inventory-name-cell small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 680;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-pending-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.inventory-pending-actions .inventory-details-link {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.inventory-pending-actions .inventory-action-row {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.inventory-pending-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.inventory-pending-mobile-list {
+  margin-top: 12px;
+}
+
+.inventory-action-menu {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.inventory-action-menu summary {
+  width: 34px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-soft);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.inventory-action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.inventory-action-menu summary:hover {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.inventory-action-menu div {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 148px;
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.inventory-action-menu button {
+  width: 100%;
+  min-height: 30px;
+  justify-content: flex-start;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.inventory-action-menu button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  background: var(--surface-soft);
+}
+
+.inventory-action-menu button.danger {
+  color: var(--danger);
+}
+
+.inventory-history-card {
+  overflow: hidden;
+}
+
+.inventory-history-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.inventory-movement-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(140px, 180px);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.inventory-movement-filters select {
+  min-height: 38px;
+  height: 38px;
+}
+
+.inventory-history-item {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 46px;
+  padding: 7px 10px;
+  border-color: color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 72%, var(--surface-soft));
+}
+
+.inventory-history-item:hover {
+  background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+}
+
+.inventory-history-item div {
+  gap: 2px;
+}
+
+.inventory-history-item strong {
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.inventory-history-item span:not(.status-badge):not(.inventory-activity-icon) {
+  font-size: 0.78rem;
+}
+
+.inventory-history-item small {
+  max-width: 220px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inventory-activity-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.inventory-activity-good {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.inventory-activity-warning {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.inventory-activity-critical {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.inventory-activity-info {
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.inventory-activity-neutral {
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.inventory-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+}
+
+.inventory-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.46);
+  backdrop-filter: blur(4px);
+  cursor: default;
+}
+
+.inventory-modal-backdrop:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.inventory-modal {
+  position: relative;
+  z-index: 1;
+  width: min(760px, 100%);
+  max-height: min(780px, calc(100vh - 44px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--surface-soft));
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+}
+
+.inventory-detail-section {
+  display: grid;
+  gap: 8px;
+}
+
+.inventory-detail-section h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.inventory-reject-modal {
+  width: min(560px, 100%);
+}
+
+.inventory-modal-head,
+.inventory-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.inventory-modal-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.inventory-modal-head > div {
+  min-width: 0;
+}
+
+.inventory-modal-head h3,
+.inventory-modal-head p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-modal-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.inventory-modal-head p {
+  margin: 4px 0 0;
+}
+
+.inventory-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.inventory-modal-footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+.inventory-detail-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.inventory-detail-modal-grid div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-soft) 64%, transparent);
+}
+
+.inventory-detail-modal-grid dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.inventory-detail-modal-grid dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 720;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-rejection-panel {
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+
+.inventory-rejection-panel strong {
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+
+.inventory-rejection-panel p {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.inventory-reason-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.inventory-reason-chips button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 0.74rem;
+}
+
 :root[data-theme='dark'] .inventory-filter-card,
 :root[data-theme='dark'] .inventory-table-wrap,
 :root[data-theme='dark'] .inventory-approval-card,
+:root[data-theme='dark'] .inventory-modal,
 :root[data-theme='dark'] .inventory-drawer {
   background: color-mix(in srgb, var(--surface) 88%, #020617);
 }
@@ -4908,6 +6475,30 @@ button:disabled {
     grid-template-columns: 1fr 1fr;
   }
 
+  .walkin-sale-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .walkin-customer-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .walkin-item-row {
+    grid-template-columns: minmax(0, 1fr) 90px 120px 120px 92px;
+  }
+
+  .walkin-medicine-card {
+    grid-template-columns: minmax(180px, 1fr) 76px 100px 78px 92px 66px;
+  }
+
+  .prescription-picker-medicine-card {
+    grid-template-columns: minmax(180px, 1fr) 76px 100px 78px 92px 66px;
+  }
+
+  .sales-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
   .patient-form-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -5160,10 +6751,25 @@ button:disabled {
 
   .inventory-summary-grid,
   .inventory-filter-grid,
+  .inventory-movement-filters,
   .inventory-approval-grid,
   .inventory-review-grid,
   .inventory-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-tabs,
+  .inventory-pagination {
+    width: 100%;
+  }
+
+  .inventory-tabs button,
+  .inventory-pagination button {
+    flex: 1;
+  }
+
+  .inventory-pagination {
+    justify-content: stretch;
   }
 
   .inventory-dashboard-grid,
@@ -5184,10 +6790,56 @@ button:disabled {
     grid-column: 1;
     grid-row: auto;
     justify-content: stretch;
+    min-width: 0;
+  }
+
+  .inventory-approval-card .inventory-card-head {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-request-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-details-link {
+    grid-column: 1;
+  }
+
+  .inventory-pending-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .inventory-pending-actions .inventory-details-link {
+    justify-self: start;
+  }
+
+  .inventory-pending-actions .inventory-action-row {
+    width: 100%;
   }
 
   .inventory-history-item {
     grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .inventory-history-item small {
+    grid-column: 2;
+    max-width: none;
+    text-align: left;
+  }
+
+  .inventory-detail-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-modal-layer {
+    padding: 12px;
+  }
+
+  .inventory-modal {
+    max-height: calc(100vh - 24px);
+    border-radius: 14px;
   }
 
   .inventory-filter-card {
@@ -5213,6 +6865,45 @@ button:disabled {
 
   .payments-grid {
     grid-template-columns: 1fr;
+  }
+
+  .walkin-customer-grid,
+  .walkin-item-row,
+  .walkin-picker-body,
+  .walkin-medicine-card,
+  .prescription-picker-body,
+  .prescription-picker-medicine-card,
+  .sales-summary-strip,
+  .sales-detail-kv {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-detail-head,
+  .sales-detail-actions,
+  .sales-grand-total,
+  .pending-confirm-box {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pending-confirm-box {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-detail-actions button {
+    width: 100%;
+  }
+
+  .walkin-picker-categories {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .walkin-medicine-card {
+    align-items: stretch;
   }
 
   .patient-registration-form {
@@ -5265,7 +6956,7 @@ button:disabled {
   .consultation-vitals-grid,
   .prescription-filter-bar,
   .prescription-summary-grid,
-  .prescription-workflow-grid,
+  .prescription-create-form,
   .prescription-context-grid,
   .prescription-context-summary,
   .prescription-patient-grid,
@@ -5312,6 +7003,28 @@ button:disabled {
 
   .prescription-consultation-summary {
     grid-template-columns: 1fr;
+  }
+
+  .medicine-picker-modal-layer {
+    padding: 12px;
+  }
+
+  .medicine-picker-modal {
+    max-height: calc(100vh - 24px);
+    border-radius: 14px;
+  }
+
+  .medicine-picker-modal-filters,
+  .medicine-picker-modal-results button {
+    grid-template-columns: 1fr;
+  }
+
+  .medicine-picker-modal-results button {
+    align-items: stretch;
+  }
+
+  .medicine-picker-modal-meta {
+    justify-content: flex-start;
   }
 
   .prescription-address-cell,
