@@ -30,6 +30,7 @@ type Medicine = {
   brand?: string | null;
   content?: string | null;
   packaging?: string | null;
+  stockUnit: 'tablet' | 'capsule' | 'bottle' | 'tube' | 'sachet' | 'pack' | 'box';
   batchNumber?: string;
   quantity: number;
   expiryDate: string;
@@ -45,7 +46,7 @@ type PrescriptionItem = {
   frequency: string;
   duration: string;
   qty: number;
-  medicine?: { medicineId?: number; name: string; batchNumber?: string; expiryDate?: string; quantity?: number; approvalStatus?: Medicine['approvalStatus'] };
+  medicine?: { medicineId?: number; name: string; packaging?: string | null; stockUnit?: Medicine['stockUnit']; batchNumber?: string; expiryDate?: string; quantity?: number; price?: number | string; approvalStatus?: Medicine['approvalStatus'] };
 };
 
 type PrescriptionStatus = 'PENDING' | 'PENDING_VERIFICATION' | 'VERIFIED' | 'DISPENSED' | 'REJECTED';
@@ -133,6 +134,16 @@ const toDateInput = (value: string | null | undefined) => {
 const formatMoney = (value: number | string | null | undefined) => {
   const n = typeof value === 'string' ? Number(value) : value;
   return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(2) : '-';
+};
+
+const formatStockUnit = (unit: Medicine['stockUnit'] | string | null | undefined, qty?: number) => {
+  const normalized = unit || 'unit';
+  return qty === 1 ? normalized : `${normalized}s`;
+};
+
+const formatMedicineStock = (medicine: Pick<Medicine, 'quantity' | 'stockUnit'> | undefined) => {
+  if (!medicine) return '-';
+  return `${medicine.quantity} ${formatStockUnit(medicine.stockUnit, medicine.quantity)}`;
 };
 
 const toLocalDateKey = (value: string | Date) => {
@@ -306,7 +317,7 @@ export const PrescriptionsPage = () => {
   const selectedConsultationPrescriptionId = selectedConsultation?.prescription?.prescriptionId ?? null;
   const hasSelectedCompletedConsultation = Boolean(selectedConsultation && selectedConsultation.status === 'COMPLETED');
   const selectedMedicineCount = useMemo(() => form.items.filter((item) => item.medicineId > 0).length, [form.items]);
-  const rowsPerPage = 12;
+  const rowsPerPage = 10;
 
   const prescriptionSummary = useMemo(() => {
     const today = toLocalDateKey(new Date());
@@ -774,6 +785,10 @@ export const PrescriptionsPage = () => {
       ? `${getMedicineCategoryLabel(selectedMedicine.category)} • Batch ${selectedMedicine.batchNumber || '-'} • Stock ${selectedMedicine.quantity}`
       : 'Search by name, brand, batch, or content';
 
+    const medicineDisplayMeta = selectedMedicine
+      ? `${getMedicineCategoryLabel(selectedMedicine.category)} - Batch ${selectedMedicine.batchNumber || '-'} - Available: ${formatMedicineStock(selectedMedicine)} - RM ${formatMoney(selectedMedicine.price)} per ${selectedMedicine.stockUnit}`
+      : medicineMeta;
+
     return (
       <div className={`medicine-picker ${fieldErrors[getFieldKey(idx, 'medicineId')] ? 'field-invalid' : ''}`}>
         <button type="button" className="medicine-picker-control" onClick={() => openMedicinePicker(idx)}>
@@ -785,7 +800,7 @@ export const PrescriptionsPage = () => {
                 {selectedExpiryStatus === 'NEAR_EXPIRY' && <em className="medicine-inline-badge warning">Near Expiry</em>}
                 {selectedExpiryStatus === 'EXPIRED' && <em className="medicine-inline-badge danger">Expired</em>}
               </span>
-              <small title={medicineMeta}>{medicineMeta}</small>
+              <small title={medicineDisplayMeta}>{medicineDisplayMeta}</small>
             </span>
           ) : (
             <span>
@@ -1053,6 +1068,7 @@ export const PrescriptionsPage = () => {
 
             <div className="prescription-items-list">
               {form.items.map((item, idx) => {
+                const selectedMedicine = medicineById.get(item.medicineId);
                 return (
                   <div key={item.rowKey} className="prescription-item-row">
                     <label>
@@ -1090,16 +1106,18 @@ export const PrescriptionsPage = () => {
                       />
                     </label>
                     <label>
-                      <span>Qty</span>
+                      <span>Qty Dispensed</span>
                       <input
                         type="number"
                         min={1}
+                        max={selectedMedicine?.quantity}
                         value={item.qty}
                         onChange={(e) => onUpdateItem(idx, 'qty', Number(e.target.value) || 1)}
-                        placeholder="Qty"
+                        placeholder="Qty dispensed"
                         className={fieldErrors[getFieldKey(idx, 'qty')] ? 'field-invalid' : undefined}
                         required
                       />
+                      {selectedMedicine && <small className="field-helper">Available: {formatMedicineStock(selectedMedicine)}</small>}
                     </label>
                     <button type="button" className="prescription-remove-item" onClick={() => onRemoveItem(idx)}>
                       Remove
@@ -1291,7 +1309,7 @@ export const PrescriptionsPage = () => {
                               <th>Dosage</th>
                               <th>Frequency</th>
                               <th>Duration</th>
-                              <th>Qty</th>
+                              <th>Qty Dispensed</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1300,6 +1318,7 @@ export const PrescriptionsPage = () => {
                                 <td>
                                   <strong>{item.medicine?.name ?? `Medicine #${item.medicineId}`}</strong>
                                   <small>{item.medicine?.batchNumber ? `Batch ${item.medicine.batchNumber}` : ''}</small>
+                                  <small>{item.medicine?.packaging ? `Packaging: ${item.medicine.packaging}` : ''}</small>
                                 </td>
                                 <td>
                                   {toDateInput(item.medicine?.expiryDate)}
@@ -1309,7 +1328,7 @@ export const PrescriptionsPage = () => {
                                 <td>{item.dosage}</td>
                                 <td>{item.frequency}</td>
                                 <td>{item.duration}</td>
-                                <td>{item.qty}</td>
+                                <td>{item.qty} {formatStockUnit(item.medicine?.stockUnit, item.qty)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1453,8 +1472,8 @@ export const PrescriptionsPage = () => {
                             <strong title={medicine.name}>{medicine.name}</strong>
                             <span className="prescription-picker-category">{getMedicineCategoryLabel(medicine.category)}</span>
                           </div>
-                          <small title={`Stock ${medicine.quantity} - Exp ${toDateInput(medicine.expiryDate)} - ${medicine.price !== undefined ? `RM ${formatMoney(medicine.price)}` : 'Rx item'}`}>
-                            Stock {medicine.quantity} - Exp {toDateInput(medicine.expiryDate)} - {medicine.price !== undefined ? `RM ${formatMoney(medicine.price)}` : 'Rx item'}
+                          <small title={`Available: ${formatMedicineStock(medicine)} - Exp ${toDateInput(medicine.expiryDate)} - RM ${formatMoney(medicine.price)} per ${medicine.stockUnit}`}>
+                            Available: {formatMedicineStock(medicine)} - Exp {toDateInput(medicine.expiryDate)} - RM {formatMoney(medicine.price)} per {medicine.stockUnit}
                           </small>
                           <small title={`${getMedicineCategoryLabel(medicine.category)} • Batch ${medicine.batchNumber || '-'}`}>
                             {getMedicineCategoryLabel(medicine.category)} • Batch {medicine.batchNumber || '-'}

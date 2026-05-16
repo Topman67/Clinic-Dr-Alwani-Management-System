@@ -55,6 +55,8 @@ export const clinicPaymentInclude = {
           medicineId: true,
           name: true,
           batchNumber: true,
+          packaging: true,
+          stockUnit: true,
           quantity: true,
           expiryDate: true,
         },

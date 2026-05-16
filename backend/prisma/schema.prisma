@@ -93,6 +93,16 @@ enum InventoryCategory {
   CONTROLLED_MEDICINE
 }
 
+enum StockUnit {
+  tablet
+  capsule
+  bottle
+  tube
+  sachet
+  pack
+  box
+}
+
 enum InventoryStockAction {
   STOCK_ADDED
   STOCK_DEDUCTED
@@ -154,6 +164,7 @@ model Medicine {
   companyName         String?
   availableForPrescription Boolean           @default(true)
   batchNumber         String
+  stockUnit           StockUnit              @default(tablet)
   quantity            Int
   expiryDate          DateTime
   price               Decimal                @db.Decimal(10,2)

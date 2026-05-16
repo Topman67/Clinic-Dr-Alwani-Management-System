@@ -3,9 +3,11 @@ import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
 import { useAuth } from '../context/AuthContext';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { Pagination } from '../components/Pagination';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -421,6 +423,13 @@ export const PatientsPage = () => {
     });
   }, [historyDateRange.dateFrom, historyDateRange.dateTo, selectedPatient]);
 
+  const {
+    page: listPage,
+    setPage: setListPage,
+    totalPages: listTotalPages,
+    paginated: paginatedPatients,
+  } = usePagination(patients, 10, [statusFilter, selectedFilterPatient?.patientId]);
+
   const loadPatients = useCallback(async (patientId?: number, status: PatientStatusFilter = statusFilter) => {
     setLoading(true);
     setError(null);
@@ -828,7 +837,7 @@ export const PatientsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {patients.map((patient) => {
+            {paginatedPatients.map((patient) => {
               const workflowStatus = getPatientWorkflowStatus(patient);
               const latestConsultation = getLatestConsultation(patient);
               return (
@@ -943,8 +952,10 @@ export const PatientsPage = () => {
         </table>
       </div>
 
+      <Pagination page={listPage} totalPages={listTotalPages} onPageChange={setListPage} />
+
       <div className="mobile-cards">
-        {patients.map((patient) => {
+        {paginatedPatients.map((patient) => {
           const workflowStatus = getPatientWorkflowStatus(patient);
           const latestConsultation = getLatestConsultation(patient);
           return (

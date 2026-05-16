@@ -1,4 +1,4 @@
-import { InventoryCategory, InventoryStockAction, MedicineApprovalStatus, Prisma } from '@prisma/client';
+import { InventoryCategory, InventoryStockAction, MedicineApprovalStatus, Prisma, StockUnit } from '@prisma/client';
 import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
 import { logActivity } from '../../utils/audit';
@@ -11,6 +11,10 @@ const normalizeOptional = (value: unknown) => {
 
 const isInventoryCategory = (value: unknown): value is InventoryCategory => {
   return typeof value === 'string' && Object.values(InventoryCategory).includes(value as InventoryCategory);
+};
+
+const isStockUnit = (value: unknown): value is StockUnit => {
+  return typeof value === 'string' && Object.values(StockUnit).includes(value as StockUnit);
 };
 
 const parseBoolean = (value: unknown, fallback: boolean) => {
@@ -34,6 +38,7 @@ const parseMedicinePayload = (body: Record<string, unknown>) => {
   const companyName = normalizeOptional(body.companyName);
   const availableForPrescription = parseBoolean(body.availableForPrescription, category === InventoryCategory.MEDICINE || category === InventoryCategory.CONTROLLED_MEDICINE);
   const batchNumber = normalize(body.batchNumber);
+  const stockUnit = isStockUnit(body.stockUnit) ? body.stockUnit : StockUnit.tablet;
   const expiryDateRaw = normalize(body.expiryDate);
   const quantity = Number(body.quantity);
   const price = Number(body.price);
@@ -66,6 +71,7 @@ const parseMedicinePayload = (body: Record<string, unknown>) => {
       companyName,
       availableForPrescription,
       batchNumber,
+      stockUnit,
       quantity: Math.trunc(quantity),
       expiryDate,
       price,

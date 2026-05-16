@@ -3,8 +3,10 @@ import type { FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { Pagination } from '../components/Pagination';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 type ConsultationStatus = 'WAITING' | 'IN_PROGRESS' | 'COMPLETED';
@@ -522,6 +524,13 @@ export const ConsultationsPage = () => {
     completed: consultations.filter((c) => c.status === 'COMPLETED').length,
   }), [consultations]);
 
+  const {
+    page: listPage,
+    setPage: setListPage,
+    totalPages: listTotalPages,
+    paginated: paginatedConsultations,
+  } = usePagination(consultations, 10, [statusFilter, dateRange.dateFrom, dateRange.dateTo, selectedPatientFilter?.patientId]);
+
   const activeFollowUp = active?.followUpAppointments?.[0] ?? null;
   const latestMedicalCertificate = active?.medicalCertificates?.[0] ?? null;
   const activePayment = active?.payment ?? null;
@@ -956,7 +965,7 @@ export const ConsultationsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {consultations.map((consultation) => (
+            {paginatedConsultations.map((consultation) => (
               <tr key={consultation.consultationId}>
                 <td>
                   <strong>#{consultation.consultationId}</strong>
@@ -995,8 +1004,10 @@ export const ConsultationsPage = () => {
         </table>
       </div>
 
+      <Pagination page={listPage} totalPages={listTotalPages} onPageChange={setListPage} />
+
       <div className="mobile-cards">
-        {consultations.map((consultation) => (
+        {paginatedConsultations.map((consultation) => (
           <article key={consultation.consultationId} className="mobile-card">
             <h4>{consultation.patient.name}</h4>
             <dl className="kv">

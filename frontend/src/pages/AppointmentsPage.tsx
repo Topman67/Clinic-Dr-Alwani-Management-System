@@ -4,8 +4,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { Pagination } from '../components/Pagination';
 
 type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 type AppointmentType = 'NEW' | 'FOLLOW_UP';
@@ -311,6 +313,20 @@ export const AppointmentsPage = () => {
     return appointments.filter((a) => a.status === 'ARRIVED' || a.status === 'PENDING' || a.status === 'COMPLETED');
   }, [appointments, isDoctor]);
 
+  const {
+    page: listPage,
+    setPage: setListPage,
+    totalPages: listTotalPages,
+    paginated: paginatedAppointments,
+  } = usePagination(visibleAppointments, 10, [
+    dateRange.dateFrom,
+    dateRange.dateTo,
+    statusFilter,
+    typeFilter,
+    selectedPatientFilter?.patientId,
+    isDoctor,
+  ]);
+
   const resetAppointmentForm = () => {
     setSelectedBookingPatient(null);
     setAppointmentDateTime(toDateTimeLocalInput(new Date(Date.now() + 30 * 60000)));
@@ -606,7 +622,7 @@ export const AppointmentsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {visibleAppointments.map((appointment) => (
+            {paginatedAppointments.map((appointment) => (
               <tr key={appointment.appointmentId}>
                 <td>
                   <strong>{formatDateTime(appointment.dateTime)}</strong>
@@ -693,6 +709,8 @@ export const AppointmentsPage = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination page={listPage} totalPages={listTotalPages} onPageChange={setListPage} />
 
       {!loading && visibleAppointments.length === 0 && (
         <p className="muted" style={{ marginTop: 10 }}>

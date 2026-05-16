@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
+import { Pagination } from '../components/Pagination';
 
 type Role = 'DOCTOR' | 'RECEPTIONIST' | 'PHARMACIST';
 type UserStatus = 'ACTIVE' | 'INACTIVE';
@@ -122,6 +124,8 @@ export const UsersPage = () => {
       );
     });
   }, [users, query]);
+
+  const { page, setPage, totalPages, paginated: paginatedUsers } = usePagination(filteredUsers, 10, [query]);
 
   const onCreateStaff = async (e: FormEvent) => {
     e.preventDefault();
@@ -417,7 +421,7 @@ export const UsersPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredUsers.map((user) => (
+            {paginatedUsers.map((user) => (
               <tr key={user.userId}>
                 <td>{user.userId}</td>
                 <td>{user.username}</td>
@@ -435,8 +439,10 @@ export const UsersPage = () => {
         </table>
       </div>
 
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+
       <div className="mobile-cards">
-        {filteredUsers.map((user) => (
+        {paginatedUsers.map((user) => (
           <article key={user.userId} className="mobile-card">
             <h4>{user.username}</h4>
             <dl className="kv">

@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
 import { roleBasePath } from '../config/rbac';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { Pagination } from '../components/Pagination';
 
 type SaleType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
 
@@ -40,6 +42,8 @@ type WalkInSale = {
       medicineId: number;
       name: string;
       batchNumber: string;
+      packaging?: string | null;
+      stockUnit?: string;
       quantity: number;
     };
   }>;
@@ -64,6 +68,11 @@ const statusLabel = (status: WalkInSale['status']) => {
   if (status === 'PENDING_PAYMENT') return 'Pending Payment';
   if (status === 'PENDING_DISPENSE') return 'Pending Dispense';
   return status.charAt(0) + status.slice(1).toLowerCase();
+};
+
+const formatStockUnit = (unit: string | null | undefined, qty?: number) => {
+  const normalized = unit || 'unit';
+  return qty === 1 ? normalized : `${normalized}s`;
 };
 
 const statusClass = (status: WalkInSale['status']) => {
@@ -153,6 +162,13 @@ export const SalesPage = () => {
     () => sales.reduce((sum, sale) => sum + sale.medicineItems.reduce((inner, item) => inner + item.qty, 0), 0),
     [sales],
   );
+
+  const {
+    page: listPage,
+    setPage: setListPage,
+    totalPages: listTotalPages,
+    paginated: paginatedSales,
+  } = usePagination(sales, 10, [dateRange.dateFrom, dateRange.dateTo, queryCustomerId, queryType]);
 
   const basePath = role ? roleBasePath[role] : '/';
 
@@ -246,7 +262,7 @@ export const SalesPage = () => {
             </tr>
           </thead>
           <tbody>
-            {sales.map((sale) => {
+            {paginatedSales.map((sale) => {
               const qty = sale.medicineItems.reduce((sum, item) => sum + item.qty, 0);
               const itemSummary = sale.medicineItems.map((item) => item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`);
 
@@ -279,6 +295,8 @@ export const SalesPage = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination page={listPage} totalPages={listTotalPages} onPageChange={setListPage} />
 
       {!loading && sales.length === 0 && <p className="muted">No sales found for current filters.</p>}
 
@@ -338,17 +356,20 @@ export const SalesPage = () => {
                           <th>Medicine Name</th>
                           <th>Batch</th>
                           <th>Quantity</th>
-                          <th>Unit Price</th>
+                          <th>Price Per Unit</th>
                           <th>Subtotal</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedSale.medicineItems.map((item) => (
                           <tr key={`sale-item-${item.itemId}`}>
-                            <td>{item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`}</td>
+                            <td>
+                              <strong>{item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`}</strong>
+                              <small>{item.medicine?.packaging ? `Packaging: ${item.medicine.packaging}` : ''}</small>
+                            </td>
                             <td>{item.medicine?.batchNumber ?? '-'}</td>
-                            <td>{item.qty}</td>
-                            <td>RM {formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))}</td>
+                            <td>{item.qty} {formatStockUnit(item.medicine?.stockUnit, item.qty)}</td>
+                            <td>RM {formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))} / {item.medicine?.stockUnit ?? 'unit'}</td>
                             <td>RM {formatMoney(item.subtotal)}</td>
                           </tr>
                         ))}

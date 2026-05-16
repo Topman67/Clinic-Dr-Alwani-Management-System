@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 type MedicineApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 type InventoryCategory = 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
+type StockUnit = 'tablet' | 'capsule' | 'bottle' | 'tube' | 'sachet' | 'pack' | 'box';
 type ExpiryFilter = 'ALL' | 'VALID' | 'NEAR_EXPIRY' | 'EXPIRED';
 type InventoryTab = 'ITEMS' | 'MOVEMENT';
 type MovementDateFilter = 'ALL' | 'TODAY' | '7_DAYS';
@@ -20,6 +21,7 @@ type Medicine = {
   companyName?: string | null;
   availableForPrescription: boolean;
   batchNumber: string;
+  stockUnit: StockUnit;
   quantity: number;
   expiryDate: string;
   price: number | string;
@@ -42,6 +44,7 @@ type MedicineForm = {
   companyName: string;
   availableForPrescription: boolean;
   batchNumber: string;
+  stockUnit: StockUnit;
   quantity: number;
   expiryDate: string;
   price: number;
@@ -67,12 +70,14 @@ const initialForm: MedicineForm = {
   companyName: '',
   availableForPrescription: true,
   batchNumber: '',
+  stockUnit: 'tablet',
   quantity: 0,
   expiryDate: '',
   price: 0,
 };
 
 const categoryOptions: InventoryCategory[] = ['MEDICINE', 'SUPPLEMENT', 'VITAMIN', 'CONTROLLED_MEDICINE'];
+const stockUnitOptions: StockUnit[] = ['tablet', 'capsule', 'bottle', 'tube', 'sachet', 'pack', 'box'];
 const inventoryPageSize = 10;
 const pendingRequestPreviewSize = 5;
 
@@ -113,10 +118,20 @@ const approvalClass = (status: MedicineApprovalStatus) => {
   return 'status-badge status-warning';
 };
 
-const stockInfo = (qty: number) => {
+const formatStockUnit = (unit: StockUnit | string | null | undefined, qty?: number) => {
+  const normalized = unit || 'unit';
+  return qty === 1 ? normalized : `${normalized}s`;
+};
+
+const formatStock = (medicine: Pick<Medicine, 'quantity' | 'stockUnit'>) => {
+  return `${medicine.quantity} ${formatStockUnit(medicine.stockUnit, medicine.quantity)}`;
+};
+
+const stockInfo = (qty: number, unit: StockUnit) => {
+  const stockLabel = formatStockUnit(unit, qty);
   if (qty <= 0) return { label: 'Out of Stock', className: 'status-badge status-critical' };
-  if (qty <= 10) return { label: `Low Stock (${qty})`, className: 'status-badge status-warning' };
-  return { label: `${qty} in stock`, className: 'status-badge status-good' };
+  if (qty <= 10) return { label: `Low Stock (${qty} ${stockLabel})`, className: 'status-badge status-warning' };
+  return { label: `${qty} ${stockLabel} in stock`, className: 'status-badge status-good' };
 };
 
 const expiryInfo = (expiryDate: string) => {
@@ -329,6 +344,7 @@ export const InventoryPage = () => {
       companyName: medicine.companyName ?? '',
       availableForPrescription: medicine.availableForPrescription ?? true,
       batchNumber: medicine.batchNumber,
+      stockUnit: medicine.stockUnit ?? 'tablet',
       quantity: medicine.quantity,
       expiryDate: toDateInput(medicine.expiryDate),
       price: Number(medicine.price),
@@ -657,7 +673,7 @@ export const InventoryPage = () => {
                           <th>Batch</th>
                           <th>Stock</th>
                           <th>Expiry</th>
-                          <th>Price</th>
+                          <th>Price Per Unit</th>
                           <th>Requested By</th>
                           <th>Action</th>
                         </tr>
@@ -676,9 +692,9 @@ export const InventoryPage = () => {
                               </td>
                               <td title={categoryLabel(medicine.category)}>{categoryLabel(medicine.category)}</td>
                               <td title={medicine.batchNumber}>{medicine.batchNumber}</td>
-                              <td title={`${medicine.quantity}`}>{medicine.quantity}</td>
+                              <td title={formatStock(medicine)}>{formatStock(medicine)}</td>
                               <td title={expiry.helper || expiry.label}>{expiry.label}</td>
-                              <td title={`RM ${formatMoney(medicine.price)}`}>RM {formatMoney(medicine.price)}</td>
+                              <td title={`RM ${formatMoney(medicine.price)} per ${medicine.stockUnit}`}>RM {formatMoney(medicine.price)} / {medicine.stockUnit}</td>
                               <td title={requester}>{requester}</td>
                               <td>
                                 <div className="inventory-pending-actions">
@@ -709,9 +725,9 @@ export const InventoryPage = () => {
                           <div className="inventory-request-meta-grid">
                             <span title={categoryLabel(medicine.category)}><b>Category</b>{categoryLabel(medicine.category)}</span>
                             <span title={medicine.batchNumber}><b>Batch</b>{medicine.batchNumber}</span>
-                            <span title={`${medicine.quantity}`}><b>Stock</b>{medicine.quantity}</span>
+                            <span title={formatStock(medicine)}><b>Stock</b>{formatStock(medicine)}</span>
                             <span title={expiry.helper || expiry.label}><b>Expiry</b>{expiry.label}</span>
-                            <span title={`RM ${formatMoney(medicine.price)}`}><b>Price</b>RM {formatMoney(medicine.price)}</span>
+                            <span title={`RM ${formatMoney(medicine.price)} per ${medicine.stockUnit}`}><b>Price</b>RM {formatMoney(medicine.price)} / {medicine.stockUnit}</span>
                             <span title={requester}><b>Requested By</b>{requester}</span>
                           </div>
                           <div className="inventory-pending-actions">
@@ -754,14 +770,14 @@ export const InventoryPage = () => {
                     <th>Batch</th>
                     <th>Stock</th>
                     <th>Expiry</th>
-                    <th>Price</th>
+                    <th>Price Per Unit</th>
                     <th>Approval</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedInventoryMedicines.map((medicine) => {
-                    const stock = stockInfo(medicine.quantity);
+                    const stock = stockInfo(medicine.quantity, medicine.stockUnit);
                     const expiry = expiryInfo(medicine.expiryDate);
                     return (
                       <tr key={medicine.medicineId}>
@@ -782,7 +798,7 @@ export const InventoryPage = () => {
                             {expiry.helper && <small>{expiry.helper}</small>}
                           </div>
                         </td>
-                        <td className="inventory-price-cell">RM {formatMoney(medicine.price)}</td>
+                        <td className="inventory-price-cell">RM {formatMoney(medicine.price)} / {medicine.stockUnit}</td>
                         <td>
                           <div className="inventory-approval-cell">
                             <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>
@@ -803,7 +819,7 @@ export const InventoryPage = () => {
 
             <div className="mobile-cards inventory-mobile-list">
               {paginatedInventoryMedicines.map((medicine) => {
-                const stock = stockInfo(medicine.quantity);
+                const stock = stockInfo(medicine.quantity, medicine.stockUnit);
                 const expiry = expiryInfo(medicine.expiryDate);
                 return (
                   <article key={`mobile-${medicine.medicineId}`} className="mobile-card inventory-mobile-card">
@@ -817,7 +833,7 @@ export const InventoryPage = () => {
                     <div className="inventory-mobile-meta">
                       <span className={stock.className}>{stock.label}</span>
                       <span className={expiry.className}>{expiry.label}</span>
-                      <strong>RM {formatMoney(medicine.price)}</strong>
+                      <strong>RM {formatMoney(medicine.price)} / {medicine.stockUnit}</strong>
                     </div>
                     <details className="inventory-more-details">
                       <summary>Quick details</summary>
@@ -825,6 +841,7 @@ export const InventoryPage = () => {
                         <div><dt>Brand</dt><dd>{medicine.brand || '-'}</dd></div>
                         <div><dt>Content</dt><dd>{medicine.content || '-'}</dd></div>
                         <div><dt>Packaging</dt><dd>{medicine.packaging || '-'}</dd></div>
+                        <div><dt>Stock Unit</dt><dd>{medicine.stockUnit}</dd></div>
                         <div><dt>Supplier</dt><dd>{medicine.companyName || '-'}</dd></div>
                         <div><dt>Requested By</dt><dd>{medicine.requestedByUsername || '-'}</dd></div>
                         <div><dt>Created</dt><dd>{medicine.createdAt ? new Date(medicine.createdAt).toLocaleString() : '-'}</dd></div>
@@ -920,7 +937,7 @@ export const InventoryPage = () => {
                   <h4>Product Details</h4>
                   <div className="inventory-form-grid">
                     <label className="field-block"><span>Content</span><input value={form.content} onChange={(e) => updateField('content', e.target.value)} placeholder="Vitamin C + Zinc" /></label>
-                    <label className="field-block"><span>Packaging</span><input value={form.packaging} onChange={(e) => updateField('packaging', e.target.value)} placeholder="30 tablets" /></label>
+                    <label className="field-block"><span>Packaging</span><input value={form.packaging} onChange={(e) => updateField('packaging', e.target.value)} placeholder="10 tablets/strip, 60ml bottle" /></label>
                     <label className="field-block inventory-form-wide"><span>Supplier</span><input value={form.companyName} onChange={(e) => updateField('companyName', e.target.value)} placeholder="Kotra Pharma" /></label>
                   </div>
                 </section>
@@ -929,9 +946,15 @@ export const InventoryPage = () => {
                   <h4>Inventory</h4>
                   <div className="inventory-form-grid">
                     <label className="field-block"><span>Batch</span><input value={form.batchNumber} onChange={(e) => updateField('batchNumber', e.target.value)} className={fieldErrors.batchNumber ? 'field-invalid' : undefined} required /></label>
-                    <label className="field-block"><span>Stock</span><input type="number" min={0} value={form.quantity} onChange={(e) => updateField('quantity', Number(e.target.value) || 0)} className={fieldErrors.quantity ? 'field-invalid' : undefined} required /></label>
+                    <label className="field-block">
+                      <span>Stock Unit</span>
+                      <select value={form.stockUnit} onChange={(e) => updateField('stockUnit', e.target.value as StockUnit)}>
+                        {stockUnitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                      </select>
+                    </label>
+                    <label className="field-block"><span>Stock Quantity</span><input type="number" min={0} value={form.quantity} onChange={(e) => updateField('quantity', Number(e.target.value) || 0)} className={fieldErrors.quantity ? 'field-invalid' : undefined} required /></label>
                     <label className="field-block"><span>Expiry</span><input type="date" value={form.expiryDate} onChange={(e) => updateField('expiryDate', e.target.value)} className={fieldErrors.expiryDate ? 'field-invalid' : undefined} required /></label>
-                    <label className="field-block"><span>Price</span><input type="number" min={0} step="0.01" value={form.price} onChange={(e) => updateField('price', Number(e.target.value) || 0)} className={fieldErrors.price ? 'field-invalid' : undefined} required /></label>
+                    <label className="field-block"><span>Price Per Unit</span><input type="number" min={0} step="0.01" value={form.price} onChange={(e) => updateField('price', Number(e.target.value) || 0)} className={fieldErrors.price ? 'field-invalid' : undefined} required /></label>
                   </div>
                 </section>
               </div>
@@ -971,9 +994,10 @@ export const InventoryPage = () => {
                 <h4>Inventory Info</h4>
                 <dl className="inventory-detail-modal-grid">
                   <div><dt>Batch</dt><dd title={detailMedicine.batchNumber}>{detailMedicine.batchNumber}</dd></div>
-                  <div><dt>Stock</dt><dd>{detailMedicine.quantity}</dd></div>
+                  <div><dt>Stock</dt><dd>{formatStock(detailMedicine)}</dd></div>
+                  <div><dt>Stock Unit</dt><dd>{detailMedicine.stockUnit}</dd></div>
                   <div><dt>Expiry</dt><dd>{toDateInput(detailMedicine.expiryDate) || '-'}</dd></div>
-                  <div><dt>Price</dt><dd>RM {formatMoney(detailMedicine.price)}</dd></div>
+                  <div><dt>Price Per Unit</dt><dd>RM {formatMoney(detailMedicine.price)} / {detailMedicine.stockUnit}</dd></div>
                   <div><dt>Approval</dt><dd><span className={approvalClass(detailMedicine.approvalStatus)}>{approvalLabel(detailMedicine.approvalStatus)}</span></dd></div>
                 </dl>
               </section>

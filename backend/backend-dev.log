@@ -14,4 +14,34 @@ Server running on port 4000
 [ERROR] 01:05:09 Error: listen EADDRINUSE: address already in use :::4000
 [INFO] 01:05:22 Restarting: D:\Clinic DR Alwani\backend\src\controllers\consultation\consultationController.ts has been modified
 [ERROR] 01:05:24 Error: listen EADDRINUSE: address already in use :::4000
-[INFO] 01:05:28 Restarting: D:\Clinic DR Alwani\backend\src\routes\consultations.ts ha
+[INFO] 01:05:28 Restarting: D:\Clinic DR Alwani\backend\src\routes\consultations.ts has been modified
+[ERROR] 01:05:30 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:05:52 Restarting: D:\Clinic DR Alwani\backend\src\controllers\payment\paymentController.ts has been modified
+[ERROR] 01:05:55 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:21:46 Restarting: D:\Clinic DR Alwani\backend\src\services\clinicPayment.ts has been modified
+[ERROR] 01:21:48 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:30:31 Restarting: D:\Clinic DR Alwani\backend\src\controllers\payment\paymentController.ts has been modified
+Server running on port 4000
+[INFO] 01:47:16 Restarting: D:\Clinic DR Alwani\backend\src\controllers\medicine\medicineController.ts has been modified
+Server running on port 4000
+[INFO] 01:47:25 Restarting: D:\Clinic DR Alwani\backend\src\controllers\prescription\prescriptionController.ts has been modified
+[ERROR] 01:47:27 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:47:32 Restarting: D:\Clinic DR Alwani\backend\src\services\clinicPayment.ts has been modified
+Server running on port 4000
+[INFO] 01:48:00 Restarting: D:\Clinic DR Alwani\backend\src\controllers\payment\paymentController.ts has been modified
+[ERROR] 01:48:03 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:48:21 Restarting: D:\Clinic DR Alwani\backend\src\controllers\payment\paymentController.ts has been modified
+[ERROR] 01:48:24 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:56:02 Restarting: D:\Clinic DR Alwani\backend\src\controllers\prescription\prescriptionController.ts has been modified
+[ERROR] 01:56:04 Error: listen EADDRINUSE: address already in use :::4000
+paymentController.ts has been modified
+[ERROR] 01:48:24 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:56:02 Restarting: D:\Clinic DR Alwani\backend\src\controllers\prescription\prescriptionController.ts has been modified
+[ERROR] 01:56:04 Error: listen EADDRINUSE: address already in use :::4000
+::4000
+[INFO] 01:48:00 Restarting: D:\Clinic DR Alwani\backend\src\controllers\payment\paymentController.ts has been modified
+Server running on port 4000
+[INFO] 01:48:21 Restarting: D:\Clinic DR Alwani\backend\src\controllers\payment\paymentController.ts has been modified
+[ERROR] 01:48:24 Error: listen EADDRINUSE: address already in use :::4000
+[INFO] 01:56:02 Restarting: D:\Clinic DR Alwani\backend\src\controllers\prescription\prescriptionController.ts has been modified
+[ERROR] 01:56:04 Error: listen EADDRINUSE: address already in use :::4000

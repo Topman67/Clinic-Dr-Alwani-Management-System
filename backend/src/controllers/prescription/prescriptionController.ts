@@ -193,6 +193,7 @@ export const createPrescription = async (req: Request, res: Response) => {
           medicineId: true,
           name: true,
           quantity: true,
+          stockUnit: true,
           expiryDate: true,
           approvalStatus: true,
           availableForPrescription: true,
@@ -337,6 +338,7 @@ const validatePrescriptionInventory = async (
       medicineId: true,
       name: true,
       quantity: true,
+      stockUnit: true,
       expiryDate: true,
       approvalStatus: true,
       availableForPrescription: true,
@@ -363,7 +365,7 @@ const validatePrescriptionInventory = async (
     }
 
     if (medicine.quantity < requestedQty) {
-      throw createHttpError(400, `Insufficient stock for ${medicine.name}. Available quantity: ${medicine.quantity}.`);
+      throw createHttpError(400, `Insufficient stock for ${medicine.name}. Available: ${medicine.quantity} ${medicine.stockUnit}.`);
     }
   }
 

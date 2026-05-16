@@ -3,9 +3,11 @@ import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
 import { useAuth } from '../context/AuthContext';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { Pagination } from '../components/Pagination';
 import { roleBasePath } from '../config/rbac';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
@@ -56,6 +58,8 @@ type Payment = {
       medicineId: number;
       name: string;
       batchNumber: string;
+      packaging?: string | null;
+      stockUnit?: string;
     };
   }>;
 };
@@ -66,6 +70,7 @@ type WalkInMedicine = {
   category?: 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
   brand?: string | null;
   packaging?: string | null;
+  stockUnit: string;
   batchNumber: string;
   quantity: number;
   price: number | string;
@@ -84,6 +89,11 @@ type ReceptionPaymentMode = 'PENDING' | 'WALKIN';
 const formatMoney = (value: number | string) => {
   const n = typeof value === 'string' ? Number(value) : value;
   return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+};
+
+const formatStockUnit = (unit: string | null | undefined, qty?: number) => {
+  const normalized = unit || 'unit';
+  return qty === 1 ? normalized : `${normalized}s`;
 };
 
 const CONSULTATION_FEE_OPTIONS = [10, 15, 20, 25, 30];
@@ -156,6 +166,20 @@ export const PaymentsPage = () => {
   const [medicinePickerSearch, setMedicinePickerSearch] = useState('');
   const [medicinePickerCategory, setMedicinePickerCategory] = useState<WalkInCategoryFilter>('ALL');
   const [receptionMode, setReceptionMode] = useState<ReceptionPaymentMode>('PENDING');
+
+  const {
+    page: pendingListPage,
+    setPage: setPendingListPage,
+    totalPages: pendingListTotalPages,
+    paginated: paginatedPendingPayments,
+  } = usePagination(pendingPayments, 10, [receptionMode]);
+
+  const {
+    page: paymentListPage,
+    setPage: setPaymentListPage,
+    totalPages: paymentListTotalPages,
+    paginated: paginatedPayments,
+  } = usePagination(payments, 10, [selectedFilterPatient?.patientId, queryType, dateRange.dateFrom, dateRange.dateTo]);
 
   const getApiErrorMessage = (err: unknown, fallback: string) => {
     if (typeof err === 'object' && err !== null) {
@@ -304,6 +328,13 @@ export const PaymentsPage = () => {
         .some((value) => String(value).toLowerCase().includes(q));
     });
   }, [fefoMedicineOptions, medicinePickerCategory, medicinePickerSearch]);
+
+  const {
+    page: pickerPage,
+    setPage: setPickerPage,
+    totalPages: pickerTotalPages,
+    paginated: paginatedMedicineOptions,
+  } = usePagination(filteredMedicineOptions, 10, [medicinePickerSearch, medicinePickerCategory, medicinePickerOpen]);
 
   const addWalkInItem = (medicineId: number) => {
     setWalkInItems((prev) => {
@@ -594,7 +625,7 @@ export const PaymentsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingPayments.map((p) => (
+                    {paginatedPendingPayments.map((p) => (
                       <tr key={p.paymentId}>
                         <td>{p.patient?.name ?? `Patient #${p.patientId}`}</td>
                         <td>{p.patient?.icOrPassport || p.patientId}</td>
@@ -614,8 +645,10 @@ export const PaymentsPage = () => {
                 </table>
               </div>
 
+              <Pagination page={pendingListPage} totalPages={pendingListTotalPages} onPageChange={setPendingListPage} />
+
               <div className="mobile-cards">
-                {pendingPayments.map((p) => (
+                {paginatedPendingPayments.map((p) => (
                   <article key={`pending-card-${p.paymentId}`} className="mobile-card">
                     <h4>{p.patient?.name ?? `Patient #${p.patientId}`}</h4>
                     <dl className="kv">
@@ -675,15 +708,15 @@ export const PaymentsPage = () => {
                         <div key={`walkin-item-${item.medicineId}`} className="walkin-item-row">
                           <div className="walkin-item-name">
                             <strong>{selectedMedicine?.name ?? 'Medicine'}</strong>
-                            <small>{selectedMedicine ? `${categoryLabel(selectedMedicine.category)} - Batch ${selectedMedicine.batchNumber} - Exp ${toDateInput(selectedMedicine.expiryDate)}` : '-'}</small>
+                            <small>{selectedMedicine ? `${categoryLabel(selectedMedicine.category)} - Batch ${selectedMedicine.batchNumber} - Packaging ${selectedMedicine.packaging || '-'} - Stock ${selectedMedicine.quantity} ${formatStockUnit(selectedMedicine.stockUnit, selectedMedicine.quantity)} - Exp ${toDateInput(selectedMedicine.expiryDate)}` : '-'}</small>
                           </div>
                           <label>
-                            <span>Qty</span>
+                            <span>Qty Dispensed</span>
                             <input type="number" min={1} value={item.qty} onChange={(e) => updateWalkInItem(index, { qty: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })} required />
                           </label>
                           <label>
-                            <span>Unit Price</span>
-                            <input value={selectedMedicine ? `RM ${formatMoney(selectedMedicine.price)}` : '-'} readOnly />
+                            <span>Price Per Unit</span>
+                            <input value={selectedMedicine ? `RM ${formatMoney(selectedMedicine.price)} per ${selectedMedicine.stockUnit}` : '-'} readOnly />
                           </label>
                           <label>
                             <span>Subtotal</span>
@@ -745,21 +778,23 @@ export const PaymentsPage = () => {
                       <div className="walkin-picker-results">
                         <input value={medicinePickerSearch} onChange={(e) => setMedicinePickerSearch(e.target.value)} placeholder="Search medicine, category, batch" autoFocus />
                         <div className="walkin-medicine-list">
-                          {filteredMedicineOptions.map((medicine) => (
+                          {paginatedMedicineOptions.map((medicine) => (
                             <article key={`pick-${medicine.medicineId}`} className="walkin-medicine-card">
                               <div>
                                 <strong>{medicine.name}</strong>
-                                <small>{categoryLabel(medicine.category)} - Batch {medicine.batchNumber}</small>
+                                <small>{categoryLabel(medicine.category)} - Batch {medicine.batchNumber} - Packaging {medicine.packaging || '-'}</small>
                               </div>
-                              <span>Stock {medicine.quantity}</span>
+                              <span>Stock {medicine.quantity} {formatStockUnit(medicine.stockUnit, medicine.quantity)}</span>
                               <span>Exp {toDateInput(medicine.expiryDate)}</span>
-                              <span>RM {formatMoney(medicine.price)}</span>
+                              <span>RM {formatMoney(medicine.price)} / {medicine.stockUnit}</span>
                               <span className="status-badge status-good">Available</span>
                               <button type="button" onClick={() => addWalkInItem(medicine.medicineId)}>Add</button>
                             </article>
                           ))}
                           {filteredMedicineOptions.length === 0 && <p className="walkin-empty">No medicine found.</p>}
                         </div>
+
+                        <Pagination page={pickerPage} totalPages={pickerTotalPages} onPageChange={setPickerPage} />
                       </div>
                     </div>
                   </section>
@@ -791,7 +826,7 @@ export const PaymentsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p) => (
+                {paginatedPayments.map((p) => (
                   <tr key={p.paymentId}>
                     <td>{new Date(p.date).toLocaleString()}</td>
                     <td>{p.patient?.name ?? `Patient #${p.patientId}`}</td>
@@ -811,8 +846,10 @@ export const PaymentsPage = () => {
             </table>
           </div>
 
+          <Pagination page={paymentListPage} totalPages={paymentListTotalPages} onPageChange={setPaymentListPage} />
+
           <div className="mobile-cards">
-            {payments.map((p) => (
+            {paginatedPayments.map((p) => (
               <article key={p.paymentId} className="mobile-card">
                 <h4>{p.patient?.name ?? `Patient #${p.patientId}`}</h4>
                 <dl className="kv">
@@ -945,7 +982,7 @@ export const PaymentsPage = () => {
                           <th>Medicine Name</th>
                           <th>Batch</th>
                           <th>Quantity</th>
-                          <th>Unit Price</th>
+                          <th>Price Per Unit</th>
                           <th>Subtotal</th>
                         </tr>
                       </thead>
@@ -954,8 +991,8 @@ export const PaymentsPage = () => {
                           <tr key={`receipt-item-${item.itemId}`}>
                             <td>{item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`}</td>
                             <td>{item.medicine?.batchNumber ?? '-'}</td>
-                            <td>{item.qty}</td>
-                            <td>RM {formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))}</td>
+                            <td>{item.qty} {formatStockUnit(item.medicine?.stockUnit, item.qty)}</td>
+                            <td>RM {formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))} / {item.medicine?.stockUnit ?? 'unit'}</td>
                             <td>RM {formatMoney(item.subtotal)}</td>
                           </tr>
                         ))}

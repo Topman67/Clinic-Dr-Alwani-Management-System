@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { Pagination } from '../components/Pagination';
 import { Button, Card, Input, Table, TableHead, TableWrap, Td, Th } from '../components/ui';
 import { ui } from '../styles/ui';
 
@@ -66,7 +68,7 @@ export const AuditLogsPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get('/audit');
+      const response = await api.get('/audit-logs');
       setLogs(response.data as AuditLog[]);
     } catch {
       setError('Failed to load audit logs. Doctor access is required.');
@@ -109,6 +111,13 @@ export const AuditLogsPage = () => {
       return true;
     });
   }, [logs, queryUser, queryActivity, dateRange.dateFrom, dateRange.dateTo]);
+
+  const {
+    page: listPage,
+    setPage: setListPage,
+    totalPages: listTotalPages,
+    paginated: paginatedLogs,
+  } = usePagination(filteredLogs, 10, [queryUser, queryActivity, dateRange.dateFrom, dateRange.dateTo]);
 
   const onFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -172,7 +181,7 @@ export const AuditLogsPage = () => {
             </tr>
           </TableHead>
           <tbody>
-            {filteredLogs.map((log) => (
+            {paginatedLogs.map((log) => (
               <tr key={log.logId}>
                 <Td>{new Date(log.timestamp).toLocaleString()}</Td>
                 <Td>{log.user?.username ?? 'System'}</Td>
@@ -187,8 +196,10 @@ export const AuditLogsPage = () => {
         </Table>
       </TableWrap>
 
+      <Pagination page={listPage} totalPages={listTotalPages} onPageChange={setListPage} />
+
       <div className={ui.mobileCards}>
-        {filteredLogs.map((log) => (
+        {paginatedLogs.map((log) => (
           <article key={log.logId} className={ui.mobileCard}>
             <h4 className={ui.mobileCardTitle}>{log.user?.username ?? 'System'}</h4>
             <dl className={ui.kv}>

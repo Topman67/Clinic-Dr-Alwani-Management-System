@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
+import { usePagination } from '../lib/pagination';
 import { useAuth } from '../context/AuthContext';
 import { DateRangeFilter, getDateRangeForPreset } from '../components/DateRangeFilter';
+import { Pagination } from '../components/Pagination';
 import { Button, Input, Select } from '../components/ui';
 
 type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'INVENTORY' | 'PAYMENT' | 'RECEIPT';
@@ -376,6 +378,49 @@ export const ReportsPage = () => {
     return tags;
   }, [filters, medicines, patients, reportType]);
 
+  const {
+    page: patientPage,
+    setPage: setPatientPage,
+    totalPages: patientTotalPages,
+    paginated: paginatedPatientItems,
+  } = usePagination(patientItems, 10, [reportType, generatedAt]);
+
+  const {
+    page: prescriptionPage,
+    setPage: setPrescriptionPage,
+    totalPages: prescriptionTotalPages,
+    paginated: paginatedPrescriptionItems,
+  } = usePagination(prescriptionItems, 10, [reportType, generatedAt]);
+
+  const {
+    page: lowStockPage,
+    setPage: setLowStockPage,
+    totalPages: lowStockTotalPages,
+    paginated: paginatedLowStockItems,
+  } = usePagination(lowStockItems, 10, [reportType, generatedAt]);
+
+  const {
+    page: expiringPage,
+    setPage: setExpiringPage,
+    totalPages: expiringTotalPages,
+    paginated: paginatedExpiringItems,
+  } = usePagination(expiringItems, 10, [reportType, generatedAt]);
+
+  const paymentReportItems = paymentSummary?.payments ?? [];
+  const {
+    page: paymentPage,
+    setPage: setPaymentPage,
+    totalPages: paymentTotalPages,
+    paginated: paginatedPaymentItems,
+  } = usePagination(paymentReportItems, 10, [reportType, generatedAt]);
+
+  const {
+    page: receiptPage,
+    setPage: setReceiptPage,
+    totalPages: receiptTotalPages,
+    paginated: paginatedReceiptItems,
+  } = usePagination(receiptItems, 10, [reportType, generatedAt]);
+
   return (
     <section className="card report-print-area">
       <div className="section-head">
@@ -537,7 +582,7 @@ export const ReportsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {patientItems.map((item) => (
+                {paginatedPatientItems.map((item) => (
                   <tr key={item.patientId}>
                     <td>{item.name}</td>
                     <td>{item.icOrPassport}</td>
@@ -550,6 +595,8 @@ export const ReportsPage = () => {
               </tbody>
             </table>
           </div>
+
+          <Pagination page={patientPage} totalPages={patientTotalPages} onPageChange={setPatientPage} />
           {patientItems.length === 0 && <p className="muted">No patient records found.</p>}
         </article>
       )}
@@ -568,7 +615,7 @@ export const ReportsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {prescriptionItems.map((item) => (
+                {paginatedPrescriptionItems.map((item) => (
                   <tr key={item.prescriptionId}>
                     <td>{new Date(item.date).toLocaleString()}</td>
                     <td>{item.patient.name}</td>
@@ -579,6 +626,8 @@ export const ReportsPage = () => {
               </tbody>
             </table>
           </div>
+
+          <Pagination page={prescriptionPage} totalPages={prescriptionTotalPages} onPageChange={setPrescriptionPage} />
           {prescriptionItems.length === 0 && <p className="muted">No prescriptions found.</p>}
         </article>
       )}
@@ -610,7 +659,7 @@ export const ReportsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {lowStockItems.map((item) => (
+                    {paginatedLowStockItems.map((item) => (
                       <tr key={item.medicineId}>
                         <td>{item.name}</td>
                         <td>{item.batchNumber}</td>
@@ -620,6 +669,8 @@ export const ReportsPage = () => {
                   </tbody>
                 </table>
               </div>
+
+              <Pagination page={lowStockPage} totalPages={lowStockTotalPages} onPageChange={setLowStockPage} />
             </div>
 
             <div>
@@ -635,7 +686,7 @@ export const ReportsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {expiringItems.map((item) => (
+                    {paginatedExpiringItems.map((item) => (
                       <tr key={item.medicineId}>
                         <td>{item.name}</td>
                         <td>{item.batchNumber}</td>
@@ -646,6 +697,8 @@ export const ReportsPage = () => {
                   </tbody>
                 </table>
               </div>
+
+              <Pagination page={expiringPage} totalPages={expiringTotalPages} onPageChange={setExpiringPage} />
             </div>
           </div>
 
@@ -688,7 +741,7 @@ export const ReportsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {(paymentSummary?.payments ?? []).map((item) => (
+                {paginatedPaymentItems.map((item) => (
                   <tr key={item.paymentId}>
                     <td>{new Date(item.date).toLocaleString()}</td>
                     <td>{prettifyPaymentType(item.type)}</td>
@@ -700,6 +753,8 @@ export const ReportsPage = () => {
               </tbody>
             </table>
           </div>
+
+          <Pagination page={paymentPage} totalPages={paymentTotalPages} onPageChange={setPaymentPage} />
 
           {(paymentSummary?.payments.length ?? 0) === 0 && <p className="muted">No payment transactions found.</p>}
         </article>
@@ -722,7 +777,7 @@ export const ReportsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {receiptItems.map((item) => (
+                {paginatedReceiptItems.map((item) => (
                   <tr key={item.receiptId}>
                     <td>{new Date(item.date).toLocaleString()}</td>
                     <td>{item.receiptNo}</td>
@@ -734,6 +789,8 @@ export const ReportsPage = () => {
               </tbody>
             </table>
           </div>
+
+          <Pagination page={receiptPage} totalPages={receiptTotalPages} onPageChange={setReceiptPage} />
 
           {receiptItems.length === 0 && <p className="muted">No receipts found.</p>}
         </article>
