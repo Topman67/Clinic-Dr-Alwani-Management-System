@@ -8,6 +8,8 @@ import { usePagination } from '../lib/pagination';
 import { roleBasePath } from '../config/rbac';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
 import { Pagination } from '../components/Pagination';
+import { exportReceiptPdf } from '../lib/exportDocuments';
+import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 type SaleType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
 
@@ -189,6 +191,39 @@ export const SalesPage = () => {
     }
   };
 
+  const exportSaleReceipt = (sale: WalkInSale) => {
+    exportReceiptPdf({
+      filename: `receipt-${sale.receipt?.receiptNo ?? sale.paymentId}`,
+      logoUrl: clinicLogo,
+      clinicName: 'Clinic Dr Alwani',
+      receiptNo: sale.receipt?.receiptNo ?? '-',
+      patientDetails: [
+        { label: 'Patient / Customer', value: sale.patient?.name || 'Walk-in Customer' },
+        { label: 'Customer ID', value: sale.patient?.icOrPassport || '-' },
+        { label: 'Phone Number', value: sale.patient?.phone || '-' },
+      ],
+      paymentDetails: [
+        { label: 'Payment Date', value: new Date(sale.date).toLocaleString() },
+        { label: 'Payment Method', value: prettifyMethod(sale.paymentMethod) },
+        { label: 'Payment Type', value: SALE_TYPE_OPTIONS.find((option) => option.value === sale.type)?.label ?? sale.type },
+        { label: 'Paid Status', value: statusLabel(sale.status) },
+      ],
+      medicineItems: sale.medicineItems.map((item) => ({
+        Medicine: item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`,
+        Batch: item.medicine?.batchNumber ?? '-',
+        Quantity: `${item.qty} ${formatStockUnit(item.medicine?.stockUnit, item.qty)}`,
+        'Price Per Unit': `RM ${formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))}`,
+        Subtotal: `RM ${formatMoney(item.subtotal)}`,
+      })),
+      breakdown: [
+        { label: sale.type === 'CONSULTATION' ? 'Consultation Fee' : sale.type === 'APPOINTMENT' ? 'Appointment Fee' : 'Medicine Total', value: `RM ${formatMoney(sale.receipt?.totalAmount ?? sale.amount)}` },
+      ],
+      grandTotal: formatMoney(sale.receipt?.totalAmount ?? sale.amount),
+      paidStatus: statusLabel(sale.status),
+      footerNote: 'Thank you for your payment. Please keep this receipt for your records.',
+    });
+  };
+
   return (
     <section className="card">
       <div className="section-head">
@@ -286,7 +321,7 @@ export const SalesPage = () => {
                       {isPharmacist && sale.type === 'MEDICINE' && sale.status === 'PENDING_DISPENSE' && (
                         <button type="button" onClick={() => setDispenseSale(sale)} disabled={dispensingId === sale.paymentId}>Dispense</button>
                       )}
-                      <button type="button" className="btn-secondary" onClick={() => window.print()}>Print Receipt</button>
+                      <button type="button" className="btn-secondary" onClick={() => exportSaleReceipt(sale)}>Export PDF Receipt</button>
                     </div>
                   </td>
                 </tr>
@@ -318,7 +353,7 @@ export const SalesPage = () => {
                 <div><span>Total</span><strong>RM {formatMoney(selectedSale.receipt?.totalAmount ?? selectedSale.amount)}</strong></div>
               </div>
               <div className="sales-detail-actions">
-                <button type="button" className="btn-secondary" onClick={() => window.print()}>Print Receipt</button>
+                <button type="button" className="btn-secondary" onClick={() => exportSaleReceipt(selectedSale)}>Export PDF Receipt</button>
                 <button type="button" className="btn-secondary" onClick={() => setSelectedSale(null)}>Close</button>
               </div>
             </section>

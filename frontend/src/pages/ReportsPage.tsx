@@ -7,9 +7,11 @@ import { useAuth } from '../context/AuthContext';
 import { DateRangeFilter, getDateRangeForPreset } from '../components/DateRangeFilter';
 import { Pagination } from '../components/Pagination';
 import { Button, Input, Select } from '../components/ui';
+import { exportReportExcel, exportReportPdf, type DocumentExportOptions } from '../lib/exportDocuments';
+import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
-type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'INVENTORY' | 'PAYMENT' | 'RECEIPT';
-type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'CUSTOM';
+type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'CONSULTATION' | 'INVENTORY' | 'SALES' | 'PAYMENT' | 'RECEIPT';
+type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICINE' | 'CUSTOM';
 
 type PatientOption = {
   patientId: number;
@@ -85,6 +87,41 @@ type ReceiptReportItem = {
   };
 };
 
+type ConsultationReportItem = {
+  consultationId: number;
+  createdAt: string;
+  consultationType: string;
+  status: string;
+  diagnosis?: string | null;
+  patient: { name: string; icOrPassport: string; phone: string };
+  doctor: { username: string };
+  appointment?: { appointmentId: number; dateTime: string; type: string } | null;
+  prescription?: { prescriptionId: number } | null;
+  payment?: { paymentId: number; status: string; amount: number | string } | null;
+};
+
+type SalesReportItem = {
+  paymentId: number;
+  date: string;
+  type: PaymentType;
+  status: string;
+  amount: number | string;
+  paymentMethod: string;
+  patient?: { name: string; icOrPassport: string; phone: string } | null;
+  receipt?: { receiptNo: string; totalAmount: number | string } | null;
+  medicineItems: Array<{
+    qty: number;
+    subtotal: number | string;
+    medicine?: { name: string; batchNumber: string; stockUnit: string } | null;
+  }>;
+};
+
+type SalesSummaryResponse = {
+  count: number;
+  total: number;
+  sales: SalesReportItem[];
+};
+
 type Filters = {
   dateFrom: string;
   dateTo: string;
@@ -94,6 +131,8 @@ type Filters = {
   receiptNo: string;
   query: string;
   expiringDays: number;
+  consultationStatus: string;
+  saleStatus: string;
 };
 
 const initialFilters: Filters = {
@@ -105,6 +144,8 @@ const initialFilters: Filters = {
   receiptNo: '',
   query: '',
   expiringDays: 30,
+  consultationStatus: '',
+  saleStatus: '',
 };
 
 const formatMoney = (value: number | string) => {
@@ -127,8 +168,12 @@ const daysUntil = (isoDate: string) => {
 const prettifyPaymentType = (value: PaymentType) => {
   if (value === 'CONSULTATION') return 'Consultation Fee';
   if (value === 'APPOINTMENT') return 'Appointment Fee';
+  if (value === 'MEDICAL_CHECKUP') return 'Medical Checkup';
+  if (value === 'MEDICINE') return 'Medicine Sale';
   return 'Payment';
 };
+
+const prettifyEnum = (value: string) => value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 
 const getApiErrorMessage = (err: unknown, fallback: string) => {
   if (typeof err === 'object' && err !== null) {
@@ -156,6 +201,8 @@ export const ReportsPage = () => {
   const [expiringItems, setExpiringItems] = useState<MedicineReportItem[]>([]);
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummaryResponse | null>(null);
   const [receiptItems, setReceiptItems] = useState<ReceiptReportItem[]>([]);
+  const [consultationItems, setConsultationItems] = useState<ConsultationReportItem[]>([]);
+  const [salesSummary, setSalesSummary] = useState<SalesSummaryResponse | null>(null);
 
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -213,6 +260,19 @@ export const ReportsPage = () => {
         setPrescriptionItems(response.data as PrescriptionReportItem[]);
       }
 
+      if (reportType === 'CONSULTATION') {
+        const response = await api.get('/reports/consultations', {
+          params: {
+            patientId: filters.patientId || undefined,
+            query: filters.query || undefined,
+            status: filters.consultationStatus || undefined,
+            dateFrom: filters.dateFrom || undefined,
+            dateTo: filters.dateTo || undefined,
+          },
+        });
+        setConsultationItems(response.data as ConsultationReportItem[]);
+      }
+
       if (reportType === 'INVENTORY') {
         const [lowStockRes, expiringRes] = await Promise.all([
           api.get('/reports/inventory/low-stock'),
@@ -236,6 +296,19 @@ export const ReportsPage = () => {
           },
         });
         setPaymentSummary(response.data as PaymentSummaryResponse);
+      }
+
+      if (reportType === 'SALES') {
+        const response = await api.get('/reports/sales', {
+          params: {
+            type: filters.paymentType || undefined,
+            status: filters.saleStatus || undefined,
+            query: filters.query || undefined,
+            dateFrom: filters.dateFrom || undefined,
+            dateTo: filters.dateTo || undefined,
+          },
+        });
+        setSalesSummary(response.data as SalesSummaryResponse);
       }
 
       if (reportType === 'RECEIPT') {
@@ -275,64 +348,135 @@ export const ReportsPage = () => {
     });
   }, [generateReport]);
 
-  const exportCsv = () => {
-    const lines: string[] = [];
+  const buildExportOptions = (): DocumentExportOptions<any> => {
+    const base = {
+      title: reportLabel,
+      filename: `${reportType.toLowerCase()}-report-${new Date().toISOString().slice(0, 10)}`,
+      logoUrl: clinicLogo,
+      generatedAt: generatedAt ?? undefined,
+      filters: activeFilterTags,
+      footerNote: 'Generated by Clinic Dr Alwani for audit and record keeping.',
+    };
 
     if (reportType === 'PATIENT') {
-      lines.push('Patient ID,Name,IC/Passport,Phone,Address,Prescriptions,Payments,Total Paid');
-      patientItems.forEach((item) => {
-        lines.push(
-          `${item.patientId},"${item.name}","${item.icOrPassport}","${item.phone}","${item.address ?? ''}",${item.prescriptionsCount},${item.paymentsCount},${formatMoney(item.totalPaid)}`,
-        );
-      });
+      return {
+        ...base,
+        summary: [{ label: 'Patients', value: patientItems.length }, { label: 'Total Paid (RM)', value: formatMoney(patientItems.reduce((sum, p) => sum + Number(p.totalPaid), 0)) }],
+        rows: patientItems,
+        columns: [
+          { header: 'Patient ID', value: (r: PatientReportItem) => r.patientId },
+          { header: 'Name', value: (r: PatientReportItem) => r.name },
+          { header: 'IC / Passport', value: (r: PatientReportItem) => r.icOrPassport },
+          { header: 'Phone', value: (r: PatientReportItem) => r.phone },
+          { header: 'Address', value: (r: PatientReportItem) => r.address ?? '-' },
+          { header: 'Prescriptions', value: (r: PatientReportItem) => r.prescriptionsCount },
+          { header: 'Payments', value: (r: PatientReportItem) => r.paymentsCount },
+          { header: 'Total Paid (RM)', value: (r: PatientReportItem) => formatMoney(r.totalPaid) },
+        ],
+      };
     }
 
     if (reportType === 'PRESCRIPTION') {
-      lines.push('Prescription ID,Date,Patient,Doctor,Medicines');
-      prescriptionItems.forEach((item) => {
-        const medicinesSummary = item.items.map((it) => `${it.medicine.name} x${it.qty}`).join(' | ');
-        lines.push(
-          `${item.prescriptionId},"${new Date(item.date).toLocaleString()}","${item.patient.name}","${item.doctor.username}","${medicinesSummary}"`,
-        );
-      });
+      return {
+        ...base,
+        summary: [{ label: 'Prescriptions', value: prescriptionItems.length }],
+        rows: prescriptionItems,
+        columns: [
+          { header: 'Prescription ID', value: (r: PrescriptionReportItem) => r.prescriptionId },
+          { header: 'Date', value: (r: PrescriptionReportItem) => new Date(r.date).toLocaleString() },
+          { header: 'Patient', value: (r: PrescriptionReportItem) => r.patient.name },
+          { header: 'Doctor', value: (r: PrescriptionReportItem) => r.doctor.username },
+          { header: 'Medicines', value: (r: PrescriptionReportItem) => r.items.map((m) => `${m.medicine.name} x${m.qty}`).join(', ') || '-' },
+        ],
+      };
+    }
+
+    if (reportType === 'CONSULTATION') {
+      return {
+        ...base,
+        summary: [{ label: 'Consultations', value: consultationItems.length }, { label: 'Completed', value: consultationItems.filter((c) => c.status === 'COMPLETED').length }],
+        rows: consultationItems,
+        columns: [
+          { header: 'Consultation ID', value: (r: ConsultationReportItem) => r.consultationId },
+          { header: 'Date', value: (r: ConsultationReportItem) => new Date(r.createdAt).toLocaleString() },
+          { header: 'Patient', value: (r: ConsultationReportItem) => r.patient.name },
+          { header: 'Doctor', value: (r: ConsultationReportItem) => r.doctor.username },
+          { header: 'Type', value: (r: ConsultationReportItem) => prettifyEnum(r.consultationType) },
+          { header: 'Status', value: (r: ConsultationReportItem) => prettifyEnum(r.status) },
+          { header: 'Diagnosis', value: (r: ConsultationReportItem) => r.diagnosis ?? '-' },
+          { header: 'Payment', value: (r: ConsultationReportItem) => r.payment ? `${r.payment.status} RM ${formatMoney(r.payment.amount)}` : '-' },
+        ],
+      };
     }
 
     if (reportType === 'INVENTORY') {
-      lines.push('Alert Type,Medicine,Batch,Quantity,Expiry Date,Days To Expiry');
-      lowStockItems.forEach((item) => {
-        lines.push(`Low Stock,"${item.name}","${item.batchNumber}",${item.quantity},"${toDateInput(item.expiryDate)}",${daysUntil(item.expiryDate)}`);
-      });
-      expiringItems.forEach((item) => {
-        lines.push(`Expiring,"${item.name}","${item.batchNumber}",${item.quantity},"${toDateInput(item.expiryDate)}",${daysUntil(item.expiryDate)}`);
-      });
+      const rows = [
+        ...lowStockItems.map((item) => ({ alertType: 'Low Stock', ...item })),
+        ...expiringItems.map((item) => ({ alertType: 'Expiring Soon', ...item })),
+      ];
+      return {
+        ...base,
+        summary: [{ label: 'Low Stock', value: lowStockItems.length }, { label: 'Expiring Soon', value: expiringItems.length }],
+        rows,
+        columns: [
+          { header: 'Alert Type', value: (r: MedicineReportItem & { alertType: string }) => r.alertType },
+          { header: 'Medicine', value: (r: MedicineReportItem & { alertType: string }) => r.name },
+          { header: 'Batch', value: (r: MedicineReportItem & { alertType: string }) => r.batchNumber },
+          { header: 'Quantity', value: (r: MedicineReportItem & { alertType: string }) => r.quantity },
+          { header: 'Expiry Date', value: (r: MedicineReportItem & { alertType: string }) => toDateInput(r.expiryDate) },
+          { header: 'Days To Expiry', value: (r: MedicineReportItem & { alertType: string }) => daysUntil(r.expiryDate) },
+          { header: 'Price (RM)', value: (r: MedicineReportItem & { alertType: string }) => formatMoney(r.price) },
+        ],
+      };
+    }
+
+    if (reportType === 'SALES') {
+      const sales = salesSummary?.sales ?? [];
+      return {
+        ...base,
+        summary: [{ label: 'Transactions', value: salesSummary?.count ?? 0 }, { label: 'Total (RM)', value: formatMoney(salesSummary?.total ?? 0) }],
+        rows: sales,
+        columns: [
+          { header: 'Payment ID', value: (r: SalesReportItem) => r.paymentId },
+          { header: 'Date', value: (r: SalesReportItem) => new Date(r.date).toLocaleString() },
+          { header: 'Type', value: (r: SalesReportItem) => prettifyPaymentType(r.type) },
+          { header: 'Customer', value: (r: SalesReportItem) => r.patient?.name ?? '-' },
+          { header: 'Receipt', value: (r: SalesReportItem) => r.receipt?.receiptNo ?? '-' },
+          { header: 'Items', value: (r: SalesReportItem) => r.medicineItems.map((m) => `${m.medicine?.name ?? 'Medicine'} x${m.qty}`).join(', ') || '-' },
+          { header: 'Status', value: (r: SalesReportItem) => prettifyEnum(r.status) },
+          { header: 'Total (RM)', value: (r: SalesReportItem) => formatMoney(r.receipt?.totalAmount ?? r.amount) },
+        ],
+      };
     }
 
     if (reportType === 'PAYMENT') {
-      lines.push('Payment ID,Date,Type,Patient,Amount,Receipt No');
-      (paymentSummary?.payments ?? []).forEach((item) => {
-        lines.push(
-          `${item.paymentId},"${new Date(item.date).toLocaleString()}","${prettifyPaymentType(item.type)}","${item.patient?.name ?? '-'}",${formatMoney(item.amount)},"${item.receipt?.receiptNo ?? '-'}"`,
-        );
-      });
+      return {
+        ...base,
+        summary: [{ label: 'Transactions', value: paymentSummary?.count ?? 0 }, { label: 'Total (RM)', value: formatMoney(paymentSummary?.total ?? 0) }],
+        rows: paymentSummary?.payments ?? [],
+        columns: [
+          { header: 'Payment ID', value: (r: PaymentReportItem) => r.paymentId },
+          { header: 'Date', value: (r: PaymentReportItem) => new Date(r.date).toLocaleString() },
+          { header: 'Type', value: (r: PaymentReportItem) => prettifyPaymentType(r.type) },
+          { header: 'Patient', value: (r: PaymentReportItem) => r.patient?.name ?? '-' },
+          { header: 'Amount (RM)', value: (r: PaymentReportItem) => formatMoney(r.amount) },
+          { header: 'Receipt No', value: (r: PaymentReportItem) => r.receipt?.receiptNo ?? '-' },
+        ],
+      };
     }
 
-    if (reportType === 'RECEIPT') {
-      lines.push('Receipt No,Date,Patient,Payment Type,Total');
-      receiptItems.forEach((item) => {
-        lines.push(
-          `"${item.receiptNo}","${new Date(item.date).toLocaleString()}","${item.payment?.patient?.name ?? '-'}","${item.payment ? prettifyPaymentType(item.payment.type) : '-'}",${formatMoney(item.totalAmount)}`,
-        );
-      });
-    }
-
-    const csv = lines.join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${reportType.toLowerCase()}-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    return {
+      ...base,
+      summary: [{ label: 'Receipts', value: receiptItems.length }, { label: 'Total (RM)', value: formatMoney(receiptItems.reduce((sum, r) => sum + Number(r.totalAmount), 0)) }],
+      rows: receiptItems,
+      columns: [
+        { header: 'Receipt No', value: (r: ReceiptReportItem) => r.receiptNo },
+        { header: 'Date', value: (r: ReceiptReportItem) => new Date(r.date).toLocaleString() },
+        { header: 'Patient', value: (r: ReceiptReportItem) => r.payment?.patient?.name ?? '-' },
+        { header: 'Payment Type', value: (r: ReceiptReportItem) => (r.payment ? prettifyPaymentType(r.payment.type) : '-') },
+        { header: 'Total (RM)', value: (r: ReceiptReportItem) => formatMoney(r.totalAmount) },
+      ],
+    };
   };
 
   const paymentConsultationTotal = useMemo(() => {
@@ -352,7 +496,9 @@ export const ReportsPage = () => {
   const reportLabel = useMemo(() => {
     if (reportType === 'PATIENT') return 'Patient Report';
     if (reportType === 'PRESCRIPTION') return 'Prescription Report';
+    if (reportType === 'CONSULTATION') return 'Consultation Report';
     if (reportType === 'INVENTORY') return 'Inventory Report';
+    if (reportType === 'SALES') return 'Sales Report';
     if (reportType === 'PAYMENT') return 'Payment Report';
     return 'Receipt Report';
   }, [reportType]);
@@ -363,6 +509,8 @@ export const ReportsPage = () => {
     if (filters.dateFrom) tags.push(`From: ${filters.dateFrom}`);
     if (filters.dateTo) tags.push(`To: ${filters.dateTo}`);
     if (filters.paymentType) tags.push(`Payment Type: ${prettifyPaymentType(filters.paymentType)}`);
+    if (filters.consultationStatus) tags.push(`Consultation Status: ${prettifyEnum(filters.consultationStatus)}`);
+    if (filters.saleStatus) tags.push(`Sale Status: ${prettifyEnum(filters.saleStatus)}`);
     if (filters.receiptNo) tags.push(`Receipt No: ${filters.receiptNo}`);
     if (filters.query) tags.push(`Keyword: ${filters.query}`);
     if (filters.patientId) {
@@ -393,6 +541,13 @@ export const ReportsPage = () => {
   } = usePagination(prescriptionItems, 10, [reportType, generatedAt]);
 
   const {
+    page: consultationPage,
+    setPage: setConsultationPage,
+    totalPages: consultationTotalPages,
+    paginated: paginatedConsultationItems,
+  } = usePagination(consultationItems, 10, [reportType, generatedAt]);
+
+  const {
     page: lowStockPage,
     setPage: setLowStockPage,
     totalPages: lowStockTotalPages,
@@ -407,6 +562,14 @@ export const ReportsPage = () => {
   } = usePagination(expiringItems, 10, [reportType, generatedAt]);
 
   const paymentReportItems = paymentSummary?.payments ?? [];
+  const salesReportItems = salesSummary?.sales ?? [];
+  const {
+    page: salesPage,
+    setPage: setSalesPage,
+    totalPages: salesTotalPages,
+    paginated: paginatedSalesItems,
+  } = usePagination(salesReportItems, 10, [reportType, generatedAt]);
+
   const {
     page: paymentPage,
     setPage: setPaymentPage,
@@ -449,12 +612,14 @@ export const ReportsPage = () => {
           <Select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)}>
             <option value="PATIENT">Patient Report</option>
             <option value="PRESCRIPTION">Prescription Report</option>
+            <option value="CONSULTATION">Consultation Report</option>
             <option value="INVENTORY">Inventory Report</option>
+            <option value="SALES">Sales Report</option>
             <option value="PAYMENT">Payment Report</option>
             <option value="RECEIPT">Receipt Report</option>
           </Select>
 
-          {(reportType === 'PATIENT' || reportType === 'PRESCRIPTION') && (
+          {(reportType === 'PATIENT' || reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION' || reportType === 'SALES') && (
             <Input
               value={filters.query}
               onChange={(e) => setFilters((prev) => ({ ...prev, query: e.target.value }))}
@@ -462,7 +627,7 @@ export const ReportsPage = () => {
             />
           )}
 
-          {(reportType === 'PRESCRIPTION' || reportType === 'PAYMENT' || reportType === 'RECEIPT') && (
+          {(reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION' || reportType === 'SALES' || reportType === 'PAYMENT' || reportType === 'RECEIPT') && (
             <DateRangeFilter
               value={dateRange}
               onChange={(nextRange) => {
@@ -476,7 +641,7 @@ export const ReportsPage = () => {
           <Button type="submit">Generate</Button>
         </div>
 
-        {reportType === 'PRESCRIPTION' && (
+        {(reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION') && (
           <div className="filters-grid">
             <Select
               value={filters.patientId}
@@ -490,7 +655,7 @@ export const ReportsPage = () => {
               ))}
             </Select>
 
-            {medicines.length > 0 ? (
+            {reportType === 'PRESCRIPTION' && medicines.length > 0 ? (
               <Select
                 value={filters.medicineId}
                 onChange={(e) => setFilters((prev) => ({ ...prev, medicineId: e.target.value ? Number(e.target.value) : '' }))}
@@ -502,8 +667,19 @@ export const ReportsPage = () => {
                   </option>
                 ))}
               </Select>
-            ) : (
+            ) : reportType === 'PRESCRIPTION' ? (
               <p className="muted" style={{ margin: 0 }}>Medicine filter is unavailable for this account.</p>
+            ) : null}
+            {reportType === 'CONSULTATION' && (
+              <Select
+                value={filters.consultationStatus}
+                onChange={(e) => setFilters((prev) => ({ ...prev, consultationStatus: e.target.value }))}
+              >
+                <option value="">All consultation statuses</option>
+                <option value="WAITING">Waiting</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="COMPLETED">Completed</option>
+              </Select>
             )}
           </div>
         )}
@@ -520,7 +696,7 @@ export const ReportsPage = () => {
           </div>
         )}
 
-        {(reportType === 'PAYMENT' || reportType === 'RECEIPT') && (
+        {(reportType === 'PAYMENT' || reportType === 'RECEIPT' || reportType === 'SALES') && (
           <div className="filters-grid">
             <Select
               value={filters.paymentType}
@@ -529,7 +705,22 @@ export const ReportsPage = () => {
               <option value="">All payment types</option>
               <option value="CONSULTATION">Consultation Fee</option>
               <option value="APPOINTMENT">Appointment Fee</option>
+              <option value="MEDICAL_CHECKUP">Medical Checkup</option>
+              <option value="MEDICINE">Medicine Sale</option>
             </Select>
+
+            {reportType === 'SALES' && (
+              <Select
+                value={filters.saleStatus}
+                onChange={(e) => setFilters((prev) => ({ ...prev, saleStatus: e.target.value }))}
+              >
+                <option value="">All sale statuses</option>
+                <option value="PAID">Paid</option>
+                <option value="PENDING_DISPENSE">Pending Dispense</option>
+                <option value="DISPENSED">Dispensed</option>
+                <option value="CANCELLED">Cancelled</option>
+              </Select>
+            )}
 
             {reportType === 'RECEIPT' && (
               <Input
@@ -554,11 +745,11 @@ export const ReportsPage = () => {
         >
           Reset Filters
         </Button>
-        <Button variant="secondary" onClick={() => window.print()} disabled={loading}>
-          Print
+        <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions())} disabled={loading}>
+          Export PDF
         </Button>
-        <Button variant="secondary" onClick={exportCsv} disabled={loading}>
-          Export CSV
+        <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions())} disabled={loading}>
+          Export Excel
         </Button>
       </div>
 
@@ -629,6 +820,53 @@ export const ReportsPage = () => {
 
           <Pagination page={prescriptionPage} totalPages={prescriptionTotalPages} onPageChange={setPrescriptionPage} />
           {prescriptionItems.length === 0 && <p className="muted">No prescriptions found.</p>}
+        </article>
+      )}
+
+      {!loading && reportType === 'CONSULTATION' && (
+        <article className="report-card" style={{ marginTop: 14 }}>
+          <h3>Consultation Report</h3>
+          <div className="metrics-grid">
+            <div className="metric-card">
+              <p className="muted">Consultations</p>
+              <strong>{consultationItems.length}</strong>
+            </div>
+            <div className="metric-card">
+              <p className="muted">Completed</p>
+              <strong>{consultationItems.filter((item) => item.status === 'COMPLETED').length}</strong>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Patient</th>
+                  <th>Doctor</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Diagnosis</th>
+                  <th>Payment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedConsultationItems.map((item) => (
+                  <tr key={item.consultationId}>
+                    <td>{new Date(item.createdAt).toLocaleString()}</td>
+                    <td>{item.patient.name}</td>
+                    <td>{item.doctor.username}</td>
+                    <td>{prettifyEnum(item.consultationType)}</td>
+                    <td>{prettifyEnum(item.status)}</td>
+                    <td>{item.diagnosis ?? '-'}</td>
+                    <td>{item.payment ? `${prettifyEnum(item.payment.status)} - RM ${formatMoney(item.payment.amount)}` : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination page={consultationPage} totalPages={consultationTotalPages} onPageChange={setConsultationPage} />
+          {consultationItems.length === 0 && <p className="muted">No consultations found.</p>}
         </article>
       )}
 
@@ -757,6 +995,55 @@ export const ReportsPage = () => {
           <Pagination page={paymentPage} totalPages={paymentTotalPages} onPageChange={setPaymentPage} />
 
           {(paymentSummary?.payments.length ?? 0) === 0 && <p className="muted">No payment transactions found.</p>}
+        </article>
+      )}
+
+      {!loading && reportType === 'SALES' && (
+        <article className="report-card" style={{ marginTop: 14 }}>
+          <h3>Sales Report</h3>
+
+          <div className="metrics-grid">
+            <div className="metric-card">
+              <p className="muted">Transactions</p>
+              <strong>{salesSummary?.count ?? 0}</strong>
+            </div>
+            <div className="metric-card">
+              <p className="muted">Total (RM)</p>
+              <strong>{formatMoney(salesSummary?.total ?? 0)}</strong>
+            </div>
+          </div>
+
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Customer</th>
+                  <th>Receipt</th>
+                  <th>Items</th>
+                  <th>Status</th>
+                  <th>Total (RM)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedSalesItems.map((item) => (
+                  <tr key={item.paymentId}>
+                    <td>{new Date(item.date).toLocaleString()}</td>
+                    <td>{prettifyPaymentType(item.type)}</td>
+                    <td>{item.patient?.name ?? '-'}</td>
+                    <td>{item.receipt?.receiptNo ?? '-'}</td>
+                    <td>{item.medicineItems.map((m) => `${m.medicine?.name ?? 'Medicine'} x${m.qty}`).join(', ') || '-'}</td>
+                    <td>{prettifyEnum(item.status)}</td>
+                    <td>{formatMoney(item.receipt?.totalAmount ?? item.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination page={salesPage} totalPages={salesTotalPages} onPageChange={setSalesPage} />
+          {(salesSummary?.sales.length ?? 0) === 0 && <p className="muted">No sales transactions found.</p>}
         </article>
       )}
 

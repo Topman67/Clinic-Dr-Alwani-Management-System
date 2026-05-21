@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
-import { MedicineApprovalStatus, PaymentType } from '@prisma/client';
+import { ConsultationStatus, MedicineApprovalStatus, PaymentStatus, PaymentType } from '@prisma/client';
 
 const parseDateRange = (dateFrom?: string, dateTo?: string) => {
   const from = dateFrom ? new Date(dateFrom) : undefined;
@@ -18,7 +18,7 @@ const parseDateRange = (dateFrom?: string, dateTo?: string) => {
 };
 
 const isPaymentType = (value: unknown): value is PaymentType => {
-  return value === PaymentType.CONSULTATION || value === PaymentType.APPOINTMENT;
+  return Object.values(PaymentType).includes(value as PaymentType);
 };
 
 export const patientsReport = async (req: Request, res: Response) => {
@@ -128,6 +128,57 @@ export const prescriptionsReport = async (req: Request, res: Response) => {
   res.json(prescriptions);
 };
 
+export const consultationsReport = async (req: Request, res: Response) => {
+  const { patientId, dateFrom, dateTo, status, query } = req.query as {
+    patientId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    status?: string;
+    query?: string;
+  };
+
+  const parsedDate = parseDateRange(dateFrom, dateTo);
+  if ('error' in parsedDate) {
+    return res.status(400).json({ message: parsedDate.error });
+  }
+
+  const normalizedStatus = status?.toUpperCase() as ConsultationStatus | undefined;
+  if (normalizedStatus && !Object.values(ConsultationStatus).includes(normalizedStatus)) {
+    return res.status(400).json({ message: 'Invalid consultation status.' });
+  }
+
+  const keyword = query?.trim();
+  const consultations = await prisma.consultation.findMany({
+    where: {
+      patientId: patientId ? Number(patientId) : undefined,
+      status: normalizedStatus,
+      createdAt: {
+        gte: parsedDate.from,
+        lte: parsedDate.to,
+      },
+      patient: keyword
+        ? {
+            OR: [
+              { name: { contains: keyword, mode: 'insensitive' } },
+              { icOrPassport: { contains: keyword, mode: 'insensitive' } },
+              { phone: { contains: keyword, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+    },
+    include: {
+      patient: { select: { patientId: true, name: true, icOrPassport: true, phone: true } },
+      doctor: { select: { userId: true, username: true } },
+      appointment: { select: { appointmentId: true, dateTime: true, type: true } },
+      prescription: { select: { prescriptionId: true } },
+      payment: { select: { paymentId: true, status: true, amount: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json(consultations);
+};
+
 export const paymentSummary = async (req: Request, res: Response) => {
   const { dateFrom, dateTo, type } = req.query as { dateFrom?: string; dateTo?: string; type?: string };
 
@@ -167,6 +218,62 @@ export const paymentSummary = async (req: Request, res: Response) => {
   });
   const total = payments.reduce((sum: number, p: { amount: any }) => sum + Number(p.amount), 0);
   res.json({ count: payments.length, total, payments });
+};
+
+export const salesReport = async (req: Request, res: Response) => {
+  const { dateFrom, dateTo, type, status, query } = req.query as {
+    dateFrom?: string;
+    dateTo?: string;
+    type?: string;
+    status?: string;
+    query?: string;
+  };
+
+  const parsedDate = parseDateRange(dateFrom, dateTo);
+  if ('error' in parsedDate) {
+    return res.status(400).json({ message: parsedDate.error });
+  }
+
+  if (type && !isPaymentType(type)) {
+    return res.status(400).json({ message: 'Invalid payment type.' });
+  }
+  const normalizedStatus = status?.toUpperCase() as PaymentStatus | undefined;
+  if (normalizedStatus && !Object.values(PaymentStatus).includes(normalizedStatus)) {
+    return res.status(400).json({ message: 'Invalid payment status.' });
+  }
+
+  const keyword = query?.trim();
+  const sales = await prisma.payment.findMany({
+    where: {
+      type: type ? (type as PaymentType) : undefined,
+      status: normalizedStatus,
+      date: {
+        gte: parsedDate.from,
+        lte: parsedDate.to,
+      },
+      OR: keyword
+        ? [
+            { patient: { is: { name: { contains: keyword, mode: 'insensitive' } } } },
+            { patient: { is: { icOrPassport: { contains: keyword, mode: 'insensitive' } } } },
+            { receipt: { is: { receiptNo: { contains: keyword, mode: 'insensitive' } } } },
+            { medicineItems: { some: { medicine: { name: { contains: keyword, mode: 'insensitive' } } } } },
+          ]
+        : undefined,
+    },
+    include: {
+      patient: { select: { name: true, icOrPassport: true, phone: true } },
+      receipt: true,
+      medicineItems: {
+        include: {
+          medicine: { select: { name: true, batchNumber: true, stockUnit: true } },
+        },
+      },
+    },
+    orderBy: { date: 'desc' },
+  });
+
+  const total = sales.reduce((sum, sale) => sum + Number(sale.receipt?.totalAmount ?? sale.amount), 0);
+  res.json({ count: sales.length, total, sales });
 };
 
 export const receiptsReport = async (req: Request, res: Response) => {

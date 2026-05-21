@@ -10,6 +10,7 @@ import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../
 import { Pagination } from '../components/Pagination';
 import { roleBasePath } from '../config/rbac';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import { exportReceiptPdf } from '../lib/exportDocuments';
 
 type Patient = {
   patientId: number;
@@ -524,6 +525,44 @@ export const PaymentsPage = () => {
     await loadPayments(buildCurrentFilters());
   };
 
+  const exportSelectedReceipt = (payment: Payment) => {
+    exportReceiptPdf({
+      filename: `receipt-${payment.receipt?.receiptNo ?? payment.paymentId}`,
+      logoUrl: clinicLogo,
+      clinicName: 'Clinic Dr Alwani',
+      receiptNo: payment.receipt?.receiptNo ?? '-',
+      patientDetails: [
+        { label: 'Patient / Customer', value: payment.patient?.name ?? `Patient #${payment.patientId}` },
+        { label: 'IC / Passport', value: payment.patient?.icOrPassport || '-' },
+        { label: 'Phone Number', value: payment.patient?.phone || '-' },
+        { label: 'Address', value: payment.patient?.address || '-' },
+      ],
+      paymentDetails: [
+        { label: 'Payment Date', value: new Date(payment.date).toLocaleString() },
+        { label: 'Payment Method', value: prettifyMethod(payment.paymentMethod) },
+        { label: 'Payment Type', value: getPaymentTypeLabel(payment) },
+        { label: 'Paid Status', value: statusLabel(payment.status) },
+      ],
+      medicineItems: payment.medicineItems?.map((item) => ({
+        Medicine: item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`,
+        Batch: item.medicine?.batchNumber ?? '-',
+        Quantity: `${item.qty} ${formatStockUnit(item.medicine?.stockUnit, item.qty)}`,
+        'Price Per Unit': `RM ${formatMoney(item.unitPrice ?? Number(item.subtotal) / Math.max(1, item.qty))}`,
+        Subtotal: `RM ${formatMoney(item.subtotal)}`,
+      })),
+      breakdown: [
+        payment.type === 'MEDICAL_CHECKUP'
+          ? { label: 'Medical Checkup Fee', value: `RM ${formatMoney(getMedicalCheckupFee(payment))}` }
+          : { label: 'Consultation Fee', value: `RM ${formatMoney(getDisplayedConsultationFee(payment))}` },
+        ...(payment.type === 'MEDICAL_CHECKUP' ? [] : [{ label: 'Appointment Fee', value: `RM ${formatMoney(getAppointmentFee(payment))}` }]),
+        { label: 'Medicine Total', value: `RM ${formatMoney(getMedicineTotal(payment))}` },
+      ],
+      grandTotal: formatMoney(getDisplayTotal(payment)),
+      paidStatus: statusLabel(payment.status),
+      footerNote: 'Thank you for your payment. Please keep this receipt for your records.',
+    });
+  };
+
   return (
     <section className="card">
       <div className="section-head">
@@ -937,7 +976,7 @@ export const PaymentsPage = () => {
                 </div>
               )}
               <div className="sales-detail-actions">
-                <button type="button" className="btn-secondary" onClick={() => window.print()}>Print Receipt</button>
+                <button type="button" className="btn-secondary" onClick={() => exportSelectedReceipt(selectedPayment)}>Export PDF Receipt</button>
                 {selectedPayment.type === 'MEDICINE' && <button type="button" className="btn-secondary" onClick={goToSales}>Go To Sales</button>}
                 <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(null)}>Close</button>
               </div>
