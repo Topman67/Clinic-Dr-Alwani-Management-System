@@ -39,6 +39,7 @@ enum PaymentMethod {
   CARD
   ONLINE_TRANSFER
   E_WALLET
+  QR
 }
 
 enum Gender {

@@ -976,7 +976,7 @@ export const InventoryPage = () => {
                           </div>
                         </td>
                         <td><span className="inventory-cell-text" title={categoryLabel(medicine.category)}>{categoryLabel(medicine.category)}</span></td>
-                        <td><span className="inventory-cell-text" title={medicine.batchNumber}>{medicine.batchNumber}</span></td>
+                        <td><span className="inventory-batch-text" title={medicine.batchNumber}>{medicine.batchNumber}</span></td>
                         <td><span className={stock.className}>{stock.label}</span></td>
                         <td>
                           <div className="inventory-expiry-cell">
@@ -984,7 +984,9 @@ export const InventoryPage = () => {
                             {expiry.helper && <small>{expiry.helper}</small>}
                           </div>
                         </td>
-                        <td className="inventory-price-cell">RM {formatMoney(medicine.price)} / {medicine.stockUnit}</td>
+                        <td className="inventory-price-cell" title={`RM ${formatMoney(medicine.price)} / ${medicine.stockUnit}`}>
+                          RM {formatMoney(medicine.price)} / {medicine.stockUnit}
+                        </td>
                         <td>
                           <div className="inventory-approval-cell">
                             <span className={approvalClass(medicine.approvalStatus)}>{approvalLabel(medicine.approvalStatus)}</span>

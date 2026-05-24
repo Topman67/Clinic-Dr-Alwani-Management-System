@@ -40,9 +40,8 @@ const normalizeSalesPaymentType = (value: unknown): PaymentType | undefined => {
 const isPaymentMethod = (value: unknown): value is PaymentMethod => {
   return (
     value === PaymentMethod.CASH ||
-    value === PaymentMethod.CARD ||
     value === PaymentMethod.ONLINE_TRANSFER ||
-    value === PaymentMethod.E_WALLET
+    value === PaymentMethod.QR
   );
 };
 
@@ -226,10 +225,13 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
   const normalizedCustomerName = normalizeWalkInCustomerName(customerName);
   const normalizedCustomerPhone = normalizeWalkInCustomerPhone(customerPhone);
   const normalizedCustomerId = normalizeWalkInCustomerId(customerId);
-  const resolvedWalkInCustomerId = ensureWalkInCustomerScopedId(normalizedCustomerId) ?? (await generateUniqueWalkInCustomerId());
+
+  if (!hasExplicitPatientId && !normalizedCustomerId) {
+    return res.status(400).json({ message: 'Customer IC / identity card number is required.' });
+  }
 
   if (normalizedCustomerId && normalizedCustomerId.length < 4) {
-    return res.status(400).json({ message: 'Customer ID must be at least 4 characters.' });
+    return res.status(400).json({ message: 'Customer IC / identity card number must be at least 4 characters.' });
   }
 
   const requestedItems = parseWalkInItems(itemsRaw);
@@ -242,17 +244,13 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
         where: { patientId: parsedPatientId },
         select: { patientId: true, name: true, icOrPassport: true, phone: true, address: true },
       })
-    : await prisma.patient.upsert({
-        where: {
-          icOrPassport: resolvedWalkInCustomerId,
-        },
-        update: {
+    : (await prisma.patient.findUnique({
+        where: { icOrPassport: normalizedCustomerId! },
+        select: { patientId: true, name: true, icOrPassport: true, phone: true, address: true },
+      })) ?? await prisma.patient.create({
+        data: {
           name: normalizedCustomerName,
-          phone: normalizedCustomerPhone,
-        },
-        create: {
-          name: normalizedCustomerName,
-          icOrPassport: resolvedWalkInCustomerId,
+          icOrPassport: normalizedCustomerId!,
           phone: normalizedCustomerPhone,
           address: null,
         },

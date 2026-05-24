@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
 import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { MedicineSelectorModal, type MedicineSelectorCategory } from '../components/shared/MedicineSelectorModal';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 type Patient = {
@@ -926,6 +927,9 @@ export const PrescriptionsPage = () => {
   };
 
   const activePickerOptions = medicinePickerIndex !== null ? getFilteredPickerOptions(medicinePickerIndex) : [];
+  const activePickerCategory = medicinePickerIndex !== null
+    ? medicinePickerCategory[medicinePickerIndex] ?? 'ALL'
+    : 'ALL';
 
   return (
     <section className="prescription-page">
@@ -1525,6 +1529,31 @@ export const PrescriptionsPage = () => {
       )}
 
       {medicinePickerIndex !== null && form.items[medicinePickerIndex] && (
+        <MedicineSelectorModal
+          subtitle="Choose approved, in-stock, non-expired inventory for this prescription item."
+          medicines={activePickerOptions}
+          selectedMedicineId={form.items[medicinePickerIndex].medicineId}
+          selectedCategory={(activePickerCategory === 'DEFAULT' ? 'ALL' : activePickerCategory) as MedicineSelectorCategory}
+          searchQuery={medicinePickerSearch[medicinePickerIndex] ?? ''}
+          onCategoryChange={(category) => {
+            setMedicinePickerCategory((prev) => ({ ...prev, [medicinePickerIndex]: category }));
+            setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex]: 1 }));
+          }}
+          onSearchChange={(query) => {
+            setMedicinePickerSearch((prev) => ({ ...prev, [medicinePickerIndex]: query }));
+            setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex]: 1 }));
+          }}
+          onSelectMedicine={(medicine) => {
+            if (!isPrescriptionReadyMedicine(medicine)) return;
+            if (medicinePickerIndex === null) return;
+            onUpdateItem(medicinePickerIndex, 'medicineId', medicine.medicineId);
+            setMedicinePickerIndex(null);
+          }}
+          onClose={() => setMedicinePickerIndex(null)}
+        />
+      )}
+
+      {false && medicinePickerIndex !== null && form.items[medicinePickerIndex ?? 0] && (
         <div className="medicine-picker-modal-layer" role="presentation">
           <button type="button" className="medicine-picker-modal-backdrop" aria-label="Close medicine picker" onClick={() => setMedicinePickerIndex(null)} />
           <section className="medicine-picker-modal prescription-select-modal" role="dialog" aria-modal="true" aria-labelledby="medicine-picker-title">
@@ -1549,10 +1578,10 @@ export const PrescriptionsPage = () => {
                   <button
                     key={category}
                     type="button"
-                    className={(medicinePickerCategory[medicinePickerIndex] ?? 'DEFAULT') === category ? 'is-active' : undefined}
+                    className={(medicinePickerCategory[medicinePickerIndex ?? 0] ?? 'DEFAULT') === category ? 'is-active' : undefined}
                     onClick={() => {
-                      setMedicinePickerCategory((prev) => ({ ...prev, [medicinePickerIndex]: category }));
-                      setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex]: 1 }));
+                      setMedicinePickerCategory((prev) => ({ ...prev, [medicinePickerIndex ?? 0]: category }));
+                      setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex ?? 0]: 1 }));
                     }}
                   >
                     {label}
@@ -1562,10 +1591,10 @@ export const PrescriptionsPage = () => {
 
               <div className="walkin-picker-results">
                 <input
-                  value={medicinePickerSearch[medicinePickerIndex] ?? ''}
+                  value={medicinePickerSearch[medicinePickerIndex ?? 0] ?? ''}
                   onChange={(e) => {
-                    setMedicinePickerSearch((prev) => ({ ...prev, [medicinePickerIndex]: e.target.value }));
-                    setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex]: 1 }));
+                    setMedicinePickerSearch((prev) => ({ ...prev, [medicinePickerIndex ?? 0]: e.target.value }));
+                    setMedicinePickerPage((prev) => ({ ...prev, [medicinePickerIndex ?? 0]: 1 }));
                   }}
                   placeholder="Search medicine, category, batch"
                   autoFocus
@@ -1575,7 +1604,7 @@ export const PrescriptionsPage = () => {
                 <div className="walkin-medicine-list prescription-medicine-list">
                   {activePickerOptions.map((medicine) => {
                     const expiryStatus = getMedicineExpiryStatus(medicine);
-                    const selected = medicine.medicineId === form.items[medicinePickerIndex].medicineId;
+                    const selected = medicine.medicineId === form.items[medicinePickerIndex ?? 0].medicineId;
                     return (
                       <article key={medicine.medicineId} className={`prescription-picker-medicine-card ${selected ? 'is-selected' : ''}`}>
                         <div className="prescription-picker-medicine-main">
@@ -1598,7 +1627,7 @@ export const PrescriptionsPage = () => {
                           className={selected ? 'btn-secondary' : undefined}
                           onClick={() => {
                             if (!isPrescriptionReadyMedicine(medicine)) return;
-                            onUpdateItem(medicinePickerIndex, 'medicineId', medicine.medicineId);
+                            onUpdateItem(medicinePickerIndex ?? 0, 'medicineId', medicine.medicineId);
                             setMedicinePickerIndex(null);
                           }}
                         >

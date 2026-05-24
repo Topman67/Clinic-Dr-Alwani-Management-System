@@ -11,11 +11,12 @@ import { Pagination } from '../components/Pagination';
 import { exportReceiptPdf } from '../lib/exportDocuments';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
-type SaleType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
+type SaleType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICINE';
 
 const SALE_TYPE_OPTIONS: Array<{ value: SaleType; label: string }> = [
   { value: 'CONSULTATION', label: 'Consultation Fee' },
   { value: 'APPOINTMENT', label: 'Appointment' },
+  { value: 'MEDICAL_CHECKUP', label: 'Medical Checkup' },
   { value: 'MEDICINE', label: 'Walk-in Medicine' },
 ];
 
@@ -24,7 +25,7 @@ type WalkInSale = {
   date: string;
   type: SaleType;
   status: 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
-  paymentMethod: 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET';
+  paymentMethod: 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET' | 'QR';
   amount: number | string;
   dispensedAt?: string | null;
   dispensedById?: number | null;
@@ -63,6 +64,7 @@ const formatMoney = (value: number | string) => {
 const prettifyMethod = (method: WalkInSale['paymentMethod']) => {
   if (method === 'ONLINE_TRANSFER') return 'Online Transfer';
   if (method === 'E_WALLET') return 'E-Wallet';
+  if (method === 'QR') return 'QR';
   return method.charAt(0) + method.slice(1).toLowerCase();
 };
 
@@ -199,7 +201,7 @@ export const SalesPage = () => {
       receiptNo: sale.receipt?.receiptNo ?? '-',
       patientDetails: [
         { label: 'Patient / Customer', value: sale.patient?.name || 'Walk-in Customer' },
-        { label: 'Customer ID', value: sale.patient?.icOrPassport || '-' },
+        { label: 'IC / Identity Card', value: sale.patient?.icOrPassport || '-' },
         { label: 'Phone Number', value: sale.patient?.phone || '-' },
       ],
       paymentDetails: [
@@ -216,7 +218,7 @@ export const SalesPage = () => {
         Subtotal: `RM ${formatMoney(item.subtotal)}`,
       })),
       breakdown: [
-        { label: sale.type === 'CONSULTATION' ? 'Consultation Fee' : sale.type === 'APPOINTMENT' ? 'Appointment' : 'Medicine Total', value: `RM ${formatMoney(sale.receipt?.totalAmount ?? sale.amount)}` },
+        { label: sale.type === 'CONSULTATION' ? 'Consultation Fee' : sale.type === 'APPOINTMENT' ? 'Appointment' : sale.type === 'MEDICAL_CHECKUP' ? 'Medical Checkup' : 'Medicine Total', value: `RM ${formatMoney(sale.receipt?.totalAmount ?? sale.amount)}` },
       ],
       grandTotal: formatMoney(sale.receipt?.totalAmount ?? sale.amount),
       paidStatus: statusLabel(sale.status),
@@ -291,6 +293,7 @@ export const SalesPage = () => {
               <th>Items Sold</th>
               <th>Quantity</th>
               <th>Amount (RM)</th>
+              <th>Method</th>
               <th>Status</th>
               <th>Dispense Date</th>
               <th>Action</th>
@@ -310,9 +313,10 @@ export const SalesPage = () => {
                     <small className="muted">{sale.patient?.icOrPassport || '-'}</small>
                   </td>
                   <td>{sale.receipt?.receiptNo || '-'}</td>
-                  <td>{sale.type === 'MEDICINE' ? itemSummary.join(', ') || '-' : '-'}</td>
-                  <td>{sale.type === 'MEDICINE' ? qty : '-'}</td>
+                  <td>{itemSummary.join(', ') || '-'}</td>
+                  <td>{qty || '-'}</td>
                   <td>{formatMoney(sale.receipt?.totalAmount ?? sale.amount)}</td>
+                  <td>{prettifyMethod(sale.paymentMethod)}</td>
                   <td><span className={`status-badge ${statusClass(sale.status)}`}>{statusLabel(sale.status)}</span></td>
                   <td>{sale.dispensedAt ? new Date(sale.dispensedAt).toLocaleString() : '-'}</td>
                   <td>
@@ -363,7 +367,7 @@ export const SalesPage = () => {
               <dl className="sales-detail-kv">
                 <div><dt>Customer Name</dt><dd>{selectedSale.patient?.name || '-'}</dd></div>
                 <div><dt>Phone Number</dt><dd>{selectedSale.patient?.phone || 'Not provided'}</dd></div>
-                <div><dt>Customer ID</dt><dd>{selectedSale.patient?.icOrPassport || '-'}</dd></div>
+                <div><dt>IC / Identity Card</dt><dd>{selectedSale.patient?.icOrPassport || '-'}</dd></div>
                 <div><dt>Payment Method</dt><dd>{prettifyMethod(selectedSale.paymentMethod)}</dd></div>
               </dl>
             </section>
@@ -382,7 +386,7 @@ export const SalesPage = () => {
 
             <section className="sales-detail-card sales-detail-wide">
               <h4>Medicine Items</h4>
-              {selectedSale.type === 'MEDICINE' ? (
+              {selectedSale.medicineItems.length > 0 ? (
                 <>
                   <div className="table-wrap sales-detail-table-wrap">
                     <table className="data-table sales-detail-table">
@@ -412,12 +416,12 @@ export const SalesPage = () => {
                     </table>
                   </div>
                   <div className="sales-grand-total">
-                    <span>Grand Total</span>
-                    <strong>RM {formatMoney(selectedSale.receipt?.totalAmount ?? selectedSale.amount)}</strong>
+                    <span>Medicine Total</span>
+                    <strong>RM {formatMoney(selectedSale.medicineItems.reduce((sum, item) => sum + Number(item.subtotal), 0))}</strong>
                   </div>
                 </>
               ) : (
-                <p className="muted">No medicine items for this standard payment type.</p>
+                <p className="muted">No medicine items for this payment.</p>
               )}
             </section>
           </div>

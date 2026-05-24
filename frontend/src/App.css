@@ -16,6 +16,7 @@
   --ring: rgba(37, 99, 235, 0.18);
   --radius-lg: 16px;
   --radius-md: 10px;
+  --radius-sm: 8px;
   --shadow: 0 16px 40px rgba(16, 24, 40, 0.08);
   --shadow-soft: 0 8px 24px rgba(16, 24, 40, 0.06);
 }
@@ -4042,11 +4043,12 @@ body {
 
 .walkin-item-row {
   display: grid;
-  grid-template-columns: minmax(260px, 1.6fr) 90px 120px 120px 92px;
-  gap: 10px;
-  align-items: end;
+  grid-template-columns: minmax(280px, 1.5fr) 92px minmax(150px, 0.7fr) minmax(132px, 0.6fr) 92px;
+  gap: 9px;
+  align-items: center;
   min-width: 0;
-  padding: 10px;
+  min-height: 72px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
@@ -4056,7 +4058,16 @@ body {
 .walkin-item-name {
   min-width: 0;
   display: grid;
-  gap: 5px;
+  gap: 4px;
+}
+
+.walkin-item-name {
+  align-content: center;
+  padding-block: 2px;
+}
+
+.walkin-item-row label {
+  align-content: center;
 }
 
 .walkin-item-row label > span {
@@ -4064,6 +4075,22 @@ body {
   font-size: 0.7rem;
   font-weight: 780;
   text-transform: uppercase;
+}
+
+.walkin-item-row input {
+  min-height: 38px;
+  height: 38px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+}
+
+.walkin-item-row .prescription-remove-item {
+  min-height: 38px;
+  height: 38px;
+  align-self: center;
+  padding: 7px 10px;
+  white-space: nowrap;
 }
 
 .walkin-item-name strong,
@@ -4075,12 +4102,14 @@ body {
 
 .walkin-item-name strong {
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 0.9rem;
+  line-height: 1.15;
 }
 
 .walkin-item-name small {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.74rem;
+  line-height: 1.25;
 }
 
 .walkin-empty {
@@ -4262,6 +4291,91 @@ body {
   font-size: 0.86rem;
 }
 
+.shared-medicine-selector .walkin-picker-results {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.medicine-selector-card {
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 14px;
+  padding: 12px;
+}
+
+.medicine-selector-main {
+  gap: 8px;
+}
+
+.medicine-selector-title-row {
+  gap: 10px;
+}
+
+.medicine-selector-meta-row {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
+.medicine-selector-meta-row span {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.medicine-selector-actions {
+  justify-self: end;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-items: center;
+}
+
+.medicine-selector-actions button {
+  width: 78px;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.medicine-selector-badge {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.medicine-selector-badge.is-available {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--success) 28%, transparent);
+}
+
+.medicine-selector-badge.is-near-expiry {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.medicine-selector-badge.is-low-stock {
+  color: #c2410c;
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.34);
+}
+
+.medicine-selector-badge.is-expired {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
 .status-paid {
   color: #1d4ed8;
   background: rgba(59, 130, 246, 0.14);
@@ -4370,10 +4484,11 @@ body {
 }
 
 .pending-confirm-box {
+  --payment-control-height: 44px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, auto));
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(200px, 0.95fr) minmax(240px, 1.5fr) minmax(170px, auto);
+  gap: 16px;
+  align-items: end;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
   border-radius: var(--radius-md);
@@ -4382,23 +4497,61 @@ body {
 
 .pending-confirm-box .field-inline {
   display: grid;
-  gap: 4px;
-  min-width: 160px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .pending-confirm-box .field-inline span,
 .readonly-fee-pill {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   font-weight: 700;
+  line-height: 1.15;
+  text-transform: uppercase;
 }
 
 .readonly-fee-pill {
-  padding: 10px 12px;
+  min-height: var(--payment-control-height);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--surface-strong) 82%, transparent);
   color: var(--text);
+  font-size: 0.88rem;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.pending-confirm-box select,
+.pending-confirm-box input,
+.pending-confirm-box button {
+  width: 100%;
+  min-height: var(--payment-control-height);
+  height: var(--payment-control-height);
+  margin: 0;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.pending-confirm-box select,
+.pending-confirm-box input {
+  border: 1px solid var(--border);
+  background-color: color-mix(in srgb, var(--surface) 94%, var(--surface-soft));
+  color: var(--text);
+}
+
+.pending-confirm-box input {
+  min-width: 0;
+}
+
+.pending-confirm-box button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   white-space: nowrap;
 }
 
@@ -5513,37 +5666,42 @@ body {
 
 .inventory-table th:first-child,
 .inventory-table td:first-child {
-  width: 23%;
+  width: 24%;
 }
 
 .inventory-table th:nth-child(2),
 .inventory-table td:nth-child(2) {
-  width: 13%;
+  width: 12%;
 }
 
 .inventory-table th:nth-child(3),
 .inventory-table td:nth-child(3) {
-  width: 11%;
+  width: 74px;
+  max-width: 74px;
 }
 
 .inventory-table th:nth-child(4),
 .inventory-table td:nth-child(4) {
-  width: 13%;
+  width: 12%;
 }
 
 .inventory-table th:nth-child(5),
 .inventory-table td:nth-child(5) {
-  width: 14%;
+  width: 13%;
 }
 
 .inventory-table th:nth-child(6),
 .inventory-table td:nth-child(6) {
-  width: 10%;
+  width: 154px;
+  min-width: 154px;
+  text-align: left;
 }
 
 .inventory-table th:nth-child(7),
 .inventory-table td:nth-child(7) {
-  width: 10%;
+  width: 132px;
+  min-width: 132px;
+  text-align: left;
 }
 
 .inventory-table th:last-child,
@@ -5562,6 +5720,16 @@ body {
 .inventory-name-cell small,
 .inventory-cell-text {
   display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-batch-text {
+  display: block;
+  width: 58px;
+  max-width: 58px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5589,18 +5757,20 @@ body {
 
 .inventory-price-cell {
   color: var(--text);
-  font-size: 0.68rem;
-  font-weight: 650;
+  font-size: 0.72rem;
+  font-weight: 700;
   letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .inventory-table td:nth-child(6) {
-  padding-right: 16px;
+  padding-right: 24px;
 }
 
 .inventory-table td:nth-child(7) {
-  padding-left: 16px;
+  padding-left: 20px;
 }
 
 .inventory-table-actions {
@@ -7015,7 +7185,7 @@ button:disabled {
   }
 
   .walkin-item-row {
-    grid-template-columns: minmax(0, 1fr) 90px 120px 120px 92px;
+    grid-template-columns: minmax(220px, 1fr) 90px minmax(142px, 0.7fr) minmax(120px, 0.6fr) 92px;
   }
 
   .walkin-medicine-card {
@@ -7028,6 +7198,11 @@ button:disabled {
 
   .sales-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pending-confirm-box {
+    grid-template-columns: minmax(170px, 0.9fr) minmax(180px, 0.9fr) minmax(220px, 1.3fr) minmax(160px, auto);
+    gap: 12px;
   }
 
   .patient-form-grid {
@@ -7419,9 +7594,20 @@ button:disabled {
   .walkin-medicine-card,
   .prescription-picker-body,
   .prescription-picker-medicine-card,
+  .medicine-selector-card,
   .sales-summary-strip,
   .sales-detail-kv {
     grid-template-columns: 1fr;
+  }
+
+  .medicine-selector-actions {
+    justify-self: stretch;
+    grid-template-columns: minmax(0, 1fr) auto;
+    justify-items: stretch;
+  }
+
+  .medicine-selector-actions button {
+    width: auto;
   }
 
   .sales-detail-head,

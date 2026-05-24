@@ -11,6 +11,7 @@ import { Pagination } from '../components/Pagination';
 import { roleBasePath } from '../config/rbac';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 import { exportReceiptPdf } from '../lib/exportDocuments';
+import { MedicineSelectorModal } from '../components/shared/MedicineSelectorModal';
 
 type Patient = {
   patientId: number;
@@ -28,7 +29,7 @@ type Receipt = {
 };
 
 type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICINE' | 'CUSTOM';
-type PaymentMethod = 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET';
+type PaymentMethod = 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET' | 'QR';
 
 type PaymentStatus = 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
 
@@ -127,7 +128,12 @@ const prettifyType = (t: PaymentType) => {
 const prettifyMethod = (method: PaymentMethod) => {
   if (method === 'ONLINE_TRANSFER') return 'Online Transfer';
   if (method === 'E_WALLET') return 'E-Wallet';
+  if (method === 'QR') return 'QR';
   return method.charAt(0) + method.slice(1).toLowerCase();
+};
+
+const isSelectablePaymentMethod = (method: PaymentMethod): method is 'CASH' | 'ONLINE_TRANSFER' | 'QR' => {
+  return method === 'CASH' || method === 'ONLINE_TRANSFER' || method === 'QR';
 };
 
 const statusLabel = (status: PaymentStatus) => {
@@ -432,7 +438,15 @@ export const PaymentsPage = () => {
   useEffect(() => {
     if (!selectedPayment) return;
     setConfirmConsultationFee(getConsultationFee(selectedPayment));
+    if (selectedPayment.status === 'PENDING_PAYMENT') {
+      setConfirmMethod(isSelectablePaymentMethod(selectedPayment.paymentMethod) ? selectedPayment.paymentMethod : 'CASH');
+    }
   }, [selectedPayment]);
+
+  const getDisplayedPaymentMethod = (payment: Payment) => {
+    if (payment.status === 'PENDING_PAYMENT' && isReceptionist) return confirmMethod;
+    return payment.paymentMethod;
+  };
 
   const onConfirmPendingPayment = async () => {
     if (!selectedPayment || selectedPayment.status !== 'PENDING_PAYMENT') return;
@@ -479,6 +493,11 @@ export const PaymentsPage = () => {
       return;
     }
 
+    if (!walkInCustomerId.trim()) {
+      setError('Please enter customer IC / identity card number.');
+      return;
+    }
+
     setWalkInSaving(true);
     try {
       const response = await api.post('/payments/walkin-medicine', {
@@ -510,7 +529,7 @@ export const PaymentsPage = () => {
         medicineItems: data.items,
       };
 
-      setSuccess(`${data.message || 'Walk-in Medicine Sale Successful'} (Customer ID: ${data.patient.icOrPassport || '-'})`);
+      setSuccess(`${data.message || 'Walk-in Medicine Sale Successful'} (IC / ID: ${data.patient.icOrPassport || '-'})`);
       setSelectedPayment(createdPayment);
       setWalkInItems([]);
       setWalkInRemarks('');
@@ -548,7 +567,7 @@ export const PaymentsPage = () => {
         { label: 'Consultation ID', value: payment.consultation?.consultationId ? `#${payment.consultation.consultationId}` : '-' },
         { label: 'Doctor Name', value: payment.consultation?.doctor?.username ?? '-' },
         { label: 'Payment Date', value: new Date(payment.date).toLocaleString() },
-        { label: 'Payment Method', value: prettifyMethod(payment.paymentMethod) },
+        { label: 'Payment Method', value: prettifyMethod(getDisplayedPaymentMethod(payment)) },
         { label: 'Payment Type', value: getPaymentTypeLabel(payment) },
         { label: 'Paid Status', value: statusLabel(payment.status) },
       ],
@@ -729,12 +748,12 @@ export const PaymentsPage = () => {
                 <div className="card walkin-sale-card">
                   <div className="compact-section-head">
                     <h3>Customer Information</h3>
-                    <p className="muted">Optional. The system auto-generates an ID if left blank.</p>
+                    <p className="muted">IC / identity card is required for walk-in medicine sales.</p>
                   </div>
                   <div className="walkin-customer-grid">
                     <input value={walkInCustomerName} onChange={(e) => setWalkInCustomerName(e.target.value)} placeholder="Customer name" maxLength={120} />
                     <input value={walkInCustomerPhone} onChange={(e) => setWalkInCustomerPhone(e.target.value)} placeholder="Customer phone" maxLength={30} />
-                    <input value={walkInCustomerId} onChange={(e) => setWalkInCustomerId(e.target.value)} placeholder="Customer ID" maxLength={60} />
+                    <input value={walkInCustomerId} onChange={(e) => setWalkInCustomerId(e.target.value)} placeholder="IC / identity card number" maxLength={60} required />
                   </div>
                 </div>
 
@@ -784,9 +803,8 @@ export const PaymentsPage = () => {
                   </div>
                   <select value={walkInMethod} onChange={(e) => setWalkInMethod(e.target.value as PaymentMethod)}>
                     <option value="CASH">Cash</option>
-                    <option value="CARD">Card</option>
                     <option value="ONLINE_TRANSFER">Online Transfer</option>
-                    <option value="E_WALLET">E-Wallet</option>
+                    <option value="QR">QR</option>
                   </select>
                   <textarea value={walkInRemarks} onChange={(e) => setWalkInRemarks(e.target.value)} placeholder="Remarks for walk-in medicine sale (optional)" rows={3} maxLength={500} />
                 </div>
@@ -805,6 +823,26 @@ export const PaymentsPage = () => {
               </section>
 
               {medicinePickerOpen && (
+                <MedicineSelectorModal
+                  subtitle="Search by medicine name, category, or batch. FEFO picks the nearest valid expiry."
+                  medicines={paginatedMedicineOptions}
+                  selectedCategory={medicinePickerCategory}
+                  searchQuery={medicinePickerSearch}
+                  onCategoryChange={(category) => {
+                    setMedicinePickerCategory(category);
+                    setPickerPage(1);
+                  }}
+                  onSearchChange={(query) => {
+                    setMedicinePickerSearch(query);
+                    setPickerPage(1);
+                  }}
+                  onSelectMedicine={(medicine) => addWalkInItem(medicine.medicineId)}
+                  onClose={() => setMedicinePickerOpen(false)}
+                  pagination={<Pagination page={pickerPage} totalPages={pickerTotalPages} onPageChange={setPickerPage} />}
+                />
+              )}
+
+              {false && medicinePickerOpen && (
                 <div className="medicine-picker-modal-layer" role="presentation">
                   <button type="button" className="medicine-picker-modal-backdrop" aria-label="Close medicine picker" onClick={() => setMedicinePickerOpen(false)} />
                   <section className="medicine-picker-modal walkin-medicine-modal" role="dialog" aria-modal="true" aria-labelledby="walkin-picker-title">
@@ -976,9 +1014,8 @@ export const PaymentsPage = () => {
                   )}
                   <select value={confirmMethod} onChange={(e) => setConfirmMethod(e.target.value as PaymentMethod)}>
                     <option value="CASH">Cash</option>
-                    <option value="CARD">Card</option>
                     <option value="ONLINE_TRANSFER">Online Transfer</option>
-                    <option value="E_WALLET">E-Wallet</option>
+                    <option value="QR">QR</option>
                   </select>
                   <input value={confirmRemarks} onChange={(e) => setConfirmRemarks(e.target.value)} placeholder="Payment remarks (optional)" maxLength={500} />
                   <button type="button" onClick={onConfirmPendingPayment} disabled={saving}>{saving ? 'Processing...' : 'Confirm Payment'}</button>
@@ -997,7 +1034,7 @@ export const PaymentsPage = () => {
                 <div><dt>Patient Name</dt><dd>{selectedPayment.patient?.name ?? `Patient #${selectedPayment.patientId}`}</dd></div>
                 <div><dt>Patient ID</dt><dd>{selectedPayment.patient?.icOrPassport || '-'}</dd></div>
                 <div><dt>Phone Number</dt><dd>{selectedPayment.patient?.phone || 'Not provided'}</dd></div>
-                <div><dt>Payment Method</dt><dd>{prettifyMethod(selectedPayment.paymentMethod)}</dd></div>
+                <div><dt>Payment Method</dt><dd>{prettifyMethod(getDisplayedPaymentMethod(selectedPayment))}</dd></div>
                 <div><dt>Paid Status</dt><dd>{statusLabel(selectedPayment.status)}</dd></div>
               </dl>
             </section>
