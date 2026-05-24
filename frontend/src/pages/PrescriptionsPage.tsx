@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { exportHtmlAsPdf } from '../lib/exportDocuments';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
@@ -97,6 +98,58 @@ type PrescriptionForm = {
 
 const WALKIN_CUSTOMER_IC = 'WALKIN-CUSTOMER';
 const CLINIC_NAME = 'Clinic Dr. Alwani';
+
+const escapePdfText = (value: string | number | null | undefined) =>
+  String(value ?? '-')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const prescriptionPdfShell = (title: string, body: string) => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Export</title>
+    <style>
+      @page { size: A4; margin: 14mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fff; color: #1f2933; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.45; }
+      header { display: flex; align-items: center; gap: 14px; border-bottom: 1.5px solid #2f343a; padding-bottom: 12px; margin-bottom: 16px; }
+      header img { width: 58px; height: 58px; object-fit: contain; filter: grayscale(100%); }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 20px; color: #111827; }
+      h2 { font-size: 15px; color: #2f343a; margin-top: 2px; }
+      h3 { font-size: 13px; margin: 16px 0 8px; color: #2f343a; }
+      .meta { color: #555f6d; margin-top: 4px; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin-bottom: 12px; }
+      .field { border-bottom: 1px solid #d8dce1; padding: 6px 0; }
+      .field span { display: block; color: #4b5563; font-size: 9.5px; text-transform: uppercase; }
+      .field strong { display: block; margin-top: 3px; font-weight: 700; color: #111827; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th { background: #f1f2f4; color: #111827; text-align: left; font-weight: 700; }
+      th, td { border: 1px solid #cfd4da; padding: 7px; vertical-align: top; }
+      tbody tr:nth-child(even) { background: #fafafa; }
+      .labels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .label { min-height: 150px; border: 1px solid #2f343a; padding: 12px; break-inside: avoid; page-break-inside: avoid; }
+      .label h3 { margin-top: 0; }
+      footer { position: fixed; bottom: 0; left: 0; right: 0; border-top: 1px solid #cfd4da; padding-top: 6px; color: #555f6d; font-size: 9.5px; display: flex; justify-content: space-between; }
+      .page-number:after { content: counter(page); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="${clinicLogo}" alt="${escapePdfText(CLINIC_NAME)}" />
+      <div>
+        <h1>${escapePdfText(CLINIC_NAME)}</h1>
+        <h2>${escapePdfText(title)}</h2>
+        <p class="meta">Generated: ${escapePdfText(new Date().toLocaleString())}</p>
+      </div>
+    </header>
+    ${body}
+    <footer><span>Generated: ${escapePdfText(new Date().toLocaleString())}</span><span>${escapePdfText(CLINIC_NAME)}</span><span>Page <span class="page-number"></span></span></footer>
+  </body>
+</html>`;
 
 const createItemRowKey = () => `item-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -560,6 +613,64 @@ export const PrescriptionsPage = () => {
     } finally {
       setDetailsLoading(false);
     }
+  };
+
+  const exportPrescriptionPdf = (prescription: Prescription | null = selectedPrescription) => {
+    if (!prescription) return;
+    const rows = prescription.items.map((item) => `
+      <tr>
+        <td>${escapePdfText(item.medicine?.name ?? `Medicine #${item.medicineId}`)}</td>
+        <td>${escapePdfText(item.medicine?.batchNumber || '-')}</td>
+        <td>${escapePdfText(item.dosage)}</td>
+        <td>${escapePdfText(item.frequency)}</td>
+        <td>${escapePdfText(item.duration)}</td>
+        <td>${escapePdfText(`${item.qty} ${formatStockUnit(item.medicine?.stockUnit, item.qty)}`)}</td>
+      </tr>
+    `).join('');
+    const html = prescriptionPdfShell('Prescription', `
+      <section class="grid">
+        <div class="field"><span>Prescription</span><strong>#${escapePdfText(prescription.prescriptionId)}</strong></div>
+        <div class="field"><span>Status</span><strong>${escapePdfText(getPrescriptionStatusLabel(prescription.status))}</strong></div>
+        <div class="field"><span>Patient</span><strong>${escapePdfText(prescription.patient?.name ?? `Patient #${prescription.patientId}`)}</strong></div>
+        <div class="field"><span>IC / ID</span><strong>${escapePdfText(prescription.patient?.icOrPassport ?? '-')}</strong></div>
+        <div class="field"><span>Doctor</span><strong>${escapePdfText(prescription.doctor?.username ?? 'Doctor')}</strong></div>
+        <div class="field"><span>Date</span><strong>${escapePdfText(toDisplayDateTime(prescription.date))}</strong></div>
+        <div class="field"><span>Consultation</span><strong>${escapePdfText(prescription.consultationId ? `#${prescription.consultationId}` : '-')}</strong></div>
+        <div class="field"><span>Diagnosis</span><strong>${escapePdfText(prescription.consultation?.diagnosis ?? '-')}</strong></div>
+      </section>
+      <h3>Medicine Items</h3>
+      <table>
+        <thead><tr><th>Medicine</th><th>Batch</th><th>Dosage</th><th>Frequency</th><th>Duration</th><th>Quantity</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">No medicine items.</td></tr>'}</tbody>
+      </table>
+      <h3>Notes</h3>
+      <section class="field"><strong>${escapePdfText(prescription.notes || '-')}</strong></section>
+    `);
+    exportHtmlAsPdf(html, `prescription-${prescription.prescriptionId}`);
+  };
+
+  const exportMedicineLabelPdf = (prescription: Prescription | null = selectedPrescription) => {
+    if (!prescription) return;
+    const labels = prescription.items.map((item) => `
+      <article class="label">
+        <h3>${escapePdfText(item.medicine?.name ?? `Medicine #${item.medicineId}`)}</h3>
+        <p><strong>Patient:</strong> ${escapePdfText(prescription.patient?.name ?? `Patient #${prescription.patientId}`)}</p>
+        <p><strong>Dosage:</strong> ${escapePdfText(item.dosage)}</p>
+        <p><strong>Frequency:</strong> ${escapePdfText(item.frequency)}</p>
+        <p><strong>Duration:</strong> ${escapePdfText(item.duration)}</p>
+        <p><strong>Quantity:</strong> ${escapePdfText(`${item.qty} ${formatStockUnit(item.medicine?.stockUnit, item.qty)}`)}</p>
+        <p><strong>Batch:</strong> ${escapePdfText(item.medicine?.batchNumber || '-')}</p>
+        <p><strong>Prescription:</strong> #${escapePdfText(prescription.prescriptionId)}</p>
+      </article>
+    `).join('');
+    const html = prescriptionPdfShell('Medicine Labels', `
+      <section class="grid">
+        <div class="field"><span>Prescription</span><strong>#${escapePdfText(prescription.prescriptionId)}</strong></div>
+        <div class="field"><span>Patient</span><strong>${escapePdfText(prescription.patient?.name ?? `Patient #${prescription.patientId}`)}</strong></div>
+      </section>
+      <section class="labels">${labels || '<p>No medicine items.</p>'}</section>
+    `);
+    exportHtmlAsPdf(html, `medicine-labels-${prescription.prescriptionId}`);
   };
 
   const onAddItem = () => {
@@ -1194,15 +1305,15 @@ export const PrescriptionsPage = () => {
                                   <button type="button" onClick={() => void runPharmacistAction(p.prescriptionId, 'dispense')} disabled={processingPrescriptionId === p.prescriptionId}>
                                     {processingPrescriptionId === p.prescriptionId ? 'Dispensing...' : 'Dispense'}
                                   </button>
-                                  <button type="button" onClick={() => window.print()}>Print Prescription</button>
-                                  <button type="button" onClick={() => window.print()}>Print Medicine Label</button>
+                                  <button type="button" onClick={() => exportPrescriptionPdf(p)}>Print Prescription</button>
+                                  <button type="button" onClick={() => exportMedicineLabelPdf(p)}>Print Medicine Label</button>
                                   <button type="button" className="danger" onClick={() => void runPharmacistAction(p.prescriptionId, 'reject')} disabled={processingPrescriptionId === p.prescriptionId}>Reject</button>
                                 </>
                               )}
                               {p.status === 'DISPENSED' && (
                                 <>
-                                  <button type="button" onClick={() => window.print()}>Print Prescription</button>
-                                  <button type="button" onClick={() => window.print()}>Print Medicine Label</button>
+                                  <button type="button" onClick={() => exportPrescriptionPdf(p)}>Print Prescription</button>
+                                  <button type="button" onClick={() => exportMedicineLabelPdf(p)}>Print Medicine Label</button>
                                 </>
                               )}
                               {p.status === 'REJECTED' && <span>View only</span>}
@@ -1393,12 +1504,12 @@ export const PrescriptionsPage = () => {
                       </>
                     )}
                     {(role !== 'PHARMACIST' || selectedPrescription.status === 'VERIFIED' || selectedPrescription.status === 'DISPENSED') && (
-                      <button type="button" className="prescription-print-button" onClick={() => window.print()}>
+                      <button type="button" className="prescription-print-button" onClick={() => exportPrescriptionPdf(selectedPrescription)}>
                         Print Prescription
                       </button>
                     )}
                     {role === 'PHARMACIST' && (selectedPrescription.status === 'VERIFIED' || selectedPrescription.status === 'DISPENSED') && (
-                      <button type="button" className="btn-secondary" onClick={() => window.print()}>
+                      <button type="button" className="btn-secondary" onClick={() => exportMedicineLabelPdf(selectedPrescription)}>
                         Print Medicine Label
                       </button>
                     )}

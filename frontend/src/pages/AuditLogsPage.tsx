@@ -162,7 +162,7 @@ export const AuditLogsPage = () => {
           Export PDF
         </Button>
         <Button onClick={onExportExcel} disabled={filteredLogs.length === 0}>
-          Export Excel
+          Export Excel (.xlsx)
         </Button>
       </div>
 

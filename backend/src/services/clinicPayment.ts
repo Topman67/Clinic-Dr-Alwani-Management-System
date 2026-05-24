@@ -10,7 +10,7 @@ import {
 
 export const ALLOWED_CONSULTATION_FEES = [10, 15, 20, 25, 30] as const;
 export const DEFAULT_CONSULTATION_FEE = 20;
-export const APPOINTMENT_FEE = 5;
+export const APPOINTMENT_FEE = 0;
 export const MEDICAL_CHECKUP_FEE = 40;
 
 export const clinicPaymentInclude = {
@@ -282,6 +282,7 @@ export const createPendingPaymentForCompletedAppointment = async (
   if (!appointment) return null;
   if (appointment.status !== AppointmentStatus.COMPLETED) return null;
   if (appointment.consultations.length > 0 || appointment.prescriptions.length > 0) return null;
+  if (APPOINTMENT_FEE <= 0) return null;
 
   const existing = await findExistingClinicPayment(tx, { appointmentId: appointment.appointmentId });
   if (existing) return existing;

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../lib/api';
+import { exportReportCsv, exportReportExcel, exportReportPdf } from '../lib/exportDocuments';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
+import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 type MedicineApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 type InventoryCategory = 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
@@ -142,6 +144,12 @@ const expiryInfo = (expiryDate: string) => {
 };
 
 const logLabel = (actionType: string) => actionType.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+
+const exportDateStamp = () => {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+};
 
 export const InventoryPage = () => {
   const { role } = useAuth();
@@ -480,6 +488,170 @@ export const InventoryPage = () => {
   }, [history, movementDateFilter, movementTypeFilter]);
   const lowStockCount = useMemo(() => approvedMedicines.filter((m) => m.quantity <= 10).length, [approvedMedicines]);
   const expiringSoonCount = useMemo(() => approvedMedicines.filter((m) => expiryInfo(m.expiryDate).status === 'NEAR_EXPIRY').length, [approvedMedicines]);
+  const inventoryAppliedFilters = useMemo(() => [
+    `Search: ${query.trim() || 'All'}`,
+    `Category: ${categoryFilter === 'ALL' ? 'All categories' : categoryLabel(categoryFilter)}`,
+    `Approval: ${statusFilter === 'ALL' ? 'All approval statuses' : approvalLabel(statusFilter)}`,
+    `Expiry: ${expiryFilter === 'ALL' ? 'All expiry statuses' : expiryFilter === 'NEAR_EXPIRY' ? 'Near expiry' : expiryFilter === 'EXPIRED' ? 'Expired' : 'Valid'}`,
+    `Low stock only: ${lowStockOnly ? 'Yes' : 'No'}`,
+    `Expired records: ${showExpired || expiryFilter === 'EXPIRED' ? 'Included' : 'Hidden'}`,
+  ], [categoryFilter, expiryFilter, lowStockOnly, query, showExpired, statusFilter]);
+  const movementAppliedFilters = useMemo(() => [
+    `Movement type: ${movementTypeFilter === 'ALL' ? 'All movement types' : logLabel(movementTypeFilter)}`,
+    `Date range: ${movementDateFilter === 'ALL' ? 'All dates' : movementDateFilter === 'TODAY' ? 'Today' : 'Last 7 days'}`,
+  ], [movementDateFilter, movementTypeFilter]);
+  const inventoryExportSummary = useMemo(() => [
+    { label: 'Approved items', value: visibleInventoryMedicines.filter((m) => m.approvalStatus === 'APPROVED').length },
+    { label: 'Pending items', value: visibleInventoryMedicines.filter((m) => m.approvalStatus === 'PENDING').length },
+    { label: 'Rejected items', value: visibleInventoryMedicines.filter((m) => m.approvalStatus === 'REJECTED').length },
+    { label: 'Low stock items', value: visibleInventoryMedicines.filter((m) => m.quantity <= 10).length },
+    { label: 'Expiring items', value: visibleInventoryMedicines.filter((m) => expiryInfo(m.expiryDate).status === 'NEAR_EXPIRY').length },
+  ], [visibleInventoryMedicines]);
+  const movementExportSummary = useMemo(() => {
+    const actions = ['ADD', 'UPDATE', 'APPROVE', 'DISPENSE', 'REJECT'];
+    return actions.map((action) => ({
+      label: `${logLabel(action)} movements`,
+      value: filteredHistory.filter((log) => log.actionType.toUpperCase().includes(action)).length,
+    }));
+  }, [filteredHistory]);
+
+  const inventoryPdfColumns = useMemo(() => [
+    { header: 'Medicine Name', value: (m: Medicine) => m.name, width: '180px' },
+    { header: 'Category', value: (m: Medicine) => categoryLabel(m.category), width: '110px' },
+    { header: 'Batch', value: (m: Medicine) => m.batchNumber, width: '95px' },
+    {
+      header: 'Stock',
+      value: (m: Medicine) => m.quantity,
+      pdfValue: (m: Medicine) => {
+        if (m.quantity <= 0) return 'Out of Stock';
+        if (m.quantity <= 10) return `Low Stock (${m.quantity})`;
+        return String(m.quantity);
+      },
+      width: '90px',
+    },
+    { header: 'Stock Unit', value: (m: Medicine) => m.stockUnit, width: '90px' },
+    { header: 'Packaging', value: (m: Medicine) => m.packaging || '-', width: '130px' },
+    {
+      header: 'Expiry Date',
+      value: (m: Medicine) => toDateInput(m.expiryDate) || '-',
+      pdfValue: (m: Medicine) => {
+        const expiry = expiryInfo(m.expiryDate);
+        if (expiry.status === 'EXPIRED') return `Expired (${toDateInput(m.expiryDate)})`;
+        if (expiry.status === 'NEAR_EXPIRY') return `Near Expiry (${toDateInput(m.expiryDate)})`;
+        return toDateInput(m.expiryDate) || '-';
+      },
+      width: '115px',
+    },
+    { header: 'Price Per Unit', value: (m: Medicine) => `RM ${formatMoney(m.price)}`, width: '110px' },
+    {
+      header: 'Approval Status',
+      value: (m: Medicine) => approvalLabel(m.approvalStatus),
+      width: '120px',
+    },
+    { header: 'Supplier', value: (m: Medicine) => m.companyName || '-', width: '140px' },
+  ], []);
+  const inventorySpreadsheetColumns = useMemo(() => [
+    { header: 'Name', value: (m: Medicine) => m.name, width: '180px' },
+    { header: 'Category', value: (m: Medicine) => categoryLabel(m.category), width: '120px' },
+    { header: 'Brand', value: (m: Medicine) => m.brand || '-', width: '130px' },
+    { header: 'Batch', value: (m: Medicine) => m.batchNumber, width: '110px' },
+    { header: 'Stock', value: (m: Medicine) => m.quantity, width: '80px' },
+    { header: 'Stock Unit', value: (m: Medicine) => m.stockUnit, width: '95px' },
+    { header: 'Packaging', value: (m: Medicine) => m.packaging || '-', width: '150px' },
+    { header: 'Expiry', value: (m: Medicine) => toDateInput(m.expiryDate) || '-', width: '110px' },
+    { header: 'Price Per Unit', value: (m: Medicine) => `RM ${formatMoney(m.price)}`, width: '115px' },
+    { header: 'Supplier', value: (m: Medicine) => m.companyName || '-', width: '150px' },
+    { header: 'Approval Status', value: (m: Medicine) => approvalLabel(m.approvalStatus), width: '130px' },
+    { header: 'Created Date', value: (m: Medicine) => (m.createdAt ? new Date(m.createdAt).toLocaleString() : '-'), width: '155px' },
+  ], []);
+  const movementExportColumns = useMemo(() => [
+    { header: 'Date', value: (log: InventoryLog) => new Date(log.createdAt).toLocaleString(), width: '155px' },
+    { header: 'Medicine', value: (log: InventoryLog) => log.itemName, width: '190px' },
+    { header: 'Action', value: (log: InventoryLog) => logLabel(log.actionType), width: '125px' },
+    { header: 'Quantity', value: (log: InventoryLog) => Math.abs(log.quantityChange), width: '85px' },
+    { header: 'User', value: (log: InventoryLog) => log.performedByUsername || '-', width: '120px' },
+    {
+      header: 'Notes',
+      value: (log: InventoryLog) => [
+        log.batchNumber ? `Batch ${log.batchNumber}` : '',
+        log.relatedPrescriptionId ? `Prescription #${log.relatedPrescriptionId}` : '',
+        log.quantityChange < 0 ? 'Stock deducted' : log.quantityChange > 0 ? 'Stock increased' : '',
+      ].filter(Boolean).join(' | ') || '-',
+      width: '210px',
+    },
+  ], []);
+
+  const exportInventoryPdf = () => {
+    exportReportPdf({
+      title: 'Inventory Report',
+      filename: `inventory-report-${exportDateStamp()}`,
+      logoUrl: clinicLogo,
+      filters: inventoryAppliedFilters,
+      summary: inventoryExportSummary,
+      columns: inventoryPdfColumns,
+      rows: visibleInventoryMedicines,
+      footerNote: 'Inventory report generated for clinic audit, stock monitoring, and expiry tracking.',
+    });
+  };
+
+  const exportInventoryCsv = () => {
+    exportReportCsv({
+      title: 'Inventory Audit Export',
+      filename: `inventory-audit-${exportDateStamp()}`,
+      filters: inventoryAppliedFilters,
+      summary: inventoryExportSummary,
+      columns: inventorySpreadsheetColumns,
+      rows: visibleInventoryMedicines,
+    });
+  };
+
+  const exportInventoryExcel = () => {
+    void exportReportExcel({
+      title: 'Inventory Audit Export',
+      filename: `inventory-audit-${exportDateStamp()}`,
+      logoUrl: clinicLogo,
+      filters: inventoryAppliedFilters,
+      summary: inventoryExportSummary,
+      columns: inventorySpreadsheetColumns,
+      rows: visibleInventoryMedicines,
+    });
+  };
+
+  const exportMovementPdf = () => {
+    exportReportPdf({
+      title: 'Stock Movement Report',
+      filename: `stock-movement-report-${exportDateStamp()}`,
+      logoUrl: clinicLogo,
+      filters: movementAppliedFilters,
+      summary: movementExportSummary,
+      columns: movementExportColumns,
+      rows: filteredHistory,
+      footerNote: 'Stock movement export generated for inventory audit trail review.',
+    });
+  };
+
+  const exportMovementCsv = () => {
+    exportReportCsv({
+      title: 'Stock Movement Audit Export',
+      filename: `stock-movement-audit-${exportDateStamp()}`,
+      filters: movementAppliedFilters,
+      summary: movementExportSummary,
+      columns: movementExportColumns,
+      rows: filteredHistory,
+    });
+  };
+
+  const exportMovementExcel = () => {
+    void exportReportExcel({
+      title: 'Stock Movement Audit Export',
+      filename: `stock-movement-audit-${exportDateStamp()}`,
+      logoUrl: clinicLogo,
+      filters: movementAppliedFilters,
+      summary: movementExportSummary,
+      columns: movementExportColumns,
+      rows: filteredHistory,
+    });
+  };
 
   const renderActions = (medicine: Medicine, compact = false) => {
     if (canApprove && medicine.approvalStatus === 'PENDING') {
@@ -759,6 +931,20 @@ export const InventoryPage = () => {
                 <h3>Inventory Table</h3>
                 <p className="muted">Showing {paginatedInventoryMedicines.length} of {visibleInventoryMedicines.length} records.</p>
               </div>
+              <div className="inventory-export-actions" aria-label="Export filtered inventory">
+                <button type="button" className="btn-secondary inventory-export-btn" onClick={exportInventoryPdf}>
+                  <span aria-hidden="true">PDF</span>
+                  Export PDF
+                </button>
+                <button type="button" className="btn-secondary inventory-export-btn" onClick={exportInventoryExcel}>
+                  <span aria-hidden="true">XLSX</span>
+                  Export Excel
+                </button>
+                <button type="button" className="btn-secondary inventory-export-btn" onClick={exportInventoryCsv}>
+                  <span aria-hidden="true">CSV</span>
+                  Raw CSV
+                </button>
+              </div>
             </div>
 
             <div className="table-wrap inventory-table-wrap">
@@ -871,6 +1057,20 @@ export const InventoryPage = () => {
             <div>
               <h3>Stock Movement</h3>
               <p className="muted">Audit stock changes, approvals, rejections, edits, deletions, and dispensing deductions.</p>
+            </div>
+            <div className="inventory-export-actions" aria-label="Export filtered stock movement">
+              <button type="button" className="btn-secondary inventory-export-btn" onClick={exportMovementPdf}>
+                <span aria-hidden="true">PDF</span>
+                Export PDF
+              </button>
+              <button type="button" className="btn-secondary inventory-export-btn" onClick={exportMovementExcel}>
+                <span aria-hidden="true">XLSX</span>
+                Export Excel
+              </button>
+              <button type="button" className="btn-secondary inventory-export-btn" onClick={exportMovementCsv}>
+                <span aria-hidden="true">CSV</span>
+                Raw CSV
+              </button>
             </div>
           </div>
           <div className="inventory-movement-filters">

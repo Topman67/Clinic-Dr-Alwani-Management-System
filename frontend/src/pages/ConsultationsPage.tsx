@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { exportHtmlAsPdf } from '../lib/exportDocuments';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { usePagination } from '../lib/pagination';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
@@ -205,6 +206,58 @@ const consultationTypeOptions: Array<{ value: ConsultationType; label: string }>
 ];
 
 const CLINIC_NAME = 'Clinic Dr. Alwani';
+
+const escapePdfText = (value: string | number | null | undefined) =>
+  String(value ?? '-')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const clinicPdfShell = (title: string, body: string) => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Export</title>
+    <style>
+      @page { size: A4; margin: 14mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fff; color: #1f2933; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.45; }
+      header { display: flex; align-items: center; gap: 14px; border-bottom: 1.5px solid #2f343a; padding-bottom: 12px; margin-bottom: 16px; }
+      header img { width: 58px; height: 58px; object-fit: contain; filter: grayscale(100%); }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 20px; color: #111827; }
+      h2 { font-size: 15px; color: #2f343a; margin-top: 2px; }
+      h3 { font-size: 13px; margin: 16px 0 8px; color: #2f343a; }
+      .meta { color: #555f6d; margin-top: 4px; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+      .field { border-bottom: 1px solid #d8dce1; padding: 6px 0; }
+      .field span { display: block; color: #4b5563; font-size: 9.5px; text-transform: uppercase; }
+      .field strong { display: block; margin-top: 3px; font-weight: 700; color: #111827; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th { background: #f1f2f4; color: #111827; text-align: left; font-weight: 700; }
+      th, td { border: 1px solid #cfd4da; padding: 7px; vertical-align: top; }
+      tbody tr:nth-child(even) { background: #fafafa; }
+      .paragraph { border: 1px solid #cfd4da; padding: 12px; margin-top: 10px; }
+      .signature { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; margin-top: 42px; }
+      .signature div { border-top: 1px solid #2f343a; padding-top: 8px; text-align: center; }
+      footer { position: fixed; bottom: 0; left: 0; right: 0; border-top: 1px solid #cfd4da; padding-top: 6px; color: #555f6d; font-size: 9.5px; display: flex; justify-content: space-between; }
+      .page-number:after { content: counter(page); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="${clinicLogo}" alt="${escapePdfText(CLINIC_NAME)}" />
+      <div>
+        <h1>${escapePdfText(CLINIC_NAME)}</h1>
+        <h2>${escapePdfText(title)}</h2>
+        <p class="meta">Generated: ${escapePdfText(new Date().toLocaleString())}</p>
+      </div>
+    </header>
+    ${body}
+    <footer><span>Generated: ${escapePdfText(new Date().toLocaleString())}</span><span>${escapePdfText(CLINIC_NAME)}</span><span>Page <span class="page-number"></span></span></footer>
+  </body>
+</html>`;
 
 const getApiErrorMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error !== null) {
@@ -725,11 +778,32 @@ export const ConsultationsPage = () => {
   };
 
   const printMedicalCertificate = () => {
-    document.body.classList.add('mc-printing');
-    window.setTimeout(() => {
-      window.print();
-      window.setTimeout(() => document.body.classList.remove('mc-printing'), 250);
-    }, 0);
+    if (!active || !selectedMc) return;
+    const html = clinicPdfShell('Medical Certificate', `
+      <section class="grid">
+        <div class="field"><span>MC No.</span><strong>#${escapePdfText(selectedMc.medicalCertificateId)}</strong></div>
+        <div class="field"><span>Consultation</span><strong>#${escapePdfText(active.consultationId)}</strong></div>
+        <div class="field"><span>Patient</span><strong>${escapePdfText(active.patient.name)}</strong></div>
+        <div class="field"><span>IC / ID</span><strong>${escapePdfText(active.patient.icOrPassport)}</strong></div>
+        <div class="field"><span>Consultation Date</span><strong>${escapePdfText(toDisplayDate(active.createdAt))}</strong></div>
+        <div class="field"><span>Doctor</span><strong>${escapePdfText(selectedMc.doctor?.username ?? active.doctor?.username ?? 'Doctor')}</strong></div>
+        <div class="field"><span>MC Start Date</span><strong>${escapePdfText(toDisplayDate(selectedMc.startDate))}</strong></div>
+        <div class="field"><span>Return to Work</span><strong>${escapePdfText(toDisplayDate(selectedMc.returnToWorkDate))}</strong></div>
+      </section>
+      <p class="paragraph">
+        This is to certify that <strong>${escapePdfText(active.patient.name)}</strong> (IC/ID: <strong>${escapePdfText(active.patient.icOrPassport)}</strong>)
+        was seen at ${escapePdfText(CLINIC_NAME)} and is unfit for work for <strong>${escapePdfText(selectedMc.days)} day${selectedMc.days === 1 ? '' : 's'}</strong>
+        from <strong>${escapePdfText(toDisplayDate(selectedMc.startDate))}</strong>.
+      </p>
+      <h3>Clinical Details</h3>
+      <section class="grid">
+        <div class="field"><span>Diagnosis / Reason</span><strong>${escapePdfText(selectedMc.diagnosis)}</strong></div>
+        <div class="field"><span>Status</span><strong>${escapePdfText(formatMcStatus(selectedMc.status))}</strong></div>
+        <div class="field"><span>Additional Notes</span><strong>${escapePdfText(selectedMc.notes || '-')}</strong></div>
+      </section>
+      <div class="signature"><div>Doctor Signature</div><div>Clinic Stamp</div></div>
+    `);
+    exportHtmlAsPdf(html, `medical-certificate-${selectedMc.medicalCertificateId}`);
   };
 
   const saveMedicalCertificate = async (e: FormEvent) => {
@@ -895,7 +969,38 @@ export const ConsultationsPage = () => {
   };
 
   const printSummary = () => {
-    window.print();
+    if (!active) return;
+    const html = clinicPdfShell('Consultation Summary', `
+      <section class="grid">
+        <div class="field"><span>Consultation</span><strong>#${escapePdfText(active.consultationId)}</strong></div>
+        <div class="field"><span>Status</span><strong>${escapePdfText(formatStatus(active.status))}</strong></div>
+        <div class="field"><span>Patient</span><strong>${escapePdfText(active.patient.name)}</strong></div>
+        <div class="field"><span>IC / ID</span><strong>${escapePdfText(active.patient.icOrPassport)}</strong></div>
+        <div class="field"><span>Phone</span><strong>${escapePdfText(active.patient.phone)}</strong></div>
+        <div class="field"><span>Doctor</span><strong>${escapePdfText(active.doctor?.username ?? 'Doctor')}</strong></div>
+        <div class="field"><span>Consultation Type</span><strong>${escapePdfText(formatConsultationType(form.consultationType))}</strong></div>
+        <div class="field"><span>Linked Records</span><strong>${escapePdfText(formatLinkedRecords(active).join(' / '))}</strong></div>
+      </section>
+      <h3>Clinical Notes</h3>
+      <section class="grid">
+        <div class="field"><span>Symptoms</span><strong>${escapePdfText(form.symptoms || '-')}</strong></div>
+        <div class="field"><span>Diagnosis</span><strong>${escapePdfText(form.diagnosis || '-')}</strong></div>
+        <div class="field"><span>Consultation Notes</span><strong>${escapePdfText(form.consultationNotes || '-')}</strong></div>
+        <div class="field"><span>Checkup Notes</span><strong>${escapePdfText(form.checkupNotes || '-')}</strong></div>
+      </section>
+      <h3>Measurements</h3>
+      <table>
+        <thead><tr><th>Temperature</th><th>Blood Pressure</th><th>Weight</th><th>Height</th><th>BMI</th><th>Heart Rate</th></tr></thead>
+        <tbody><tr><td>${escapePdfText(form.temperature || '-')}</td><td>${escapePdfText(form.bloodPressure || '-')}</td><td>${escapePdfText(form.weight || '-')}</td><td>${escapePdfText(form.height || '-')}</td><td>${escapePdfText(displayedBmi || '-')}</td><td>${escapePdfText(form.heartRate || '-')}</td></tr></tbody>
+      </table>
+      <h3>Follow-up / Documents</h3>
+      <section class="grid">
+        <div class="field"><span>Prescription</span><strong>${escapePdfText(active.prescription ? `Prescription #${active.prescription.prescriptionId}` : '-')}</strong></div>
+        <div class="field"><span>Medical Certificate</span><strong>${escapePdfText(latestMedicalCertificate ? `MC #${latestMedicalCertificate.medicalCertificateId}` : '-')}</strong></div>
+        <div class="field"><span>Follow-up</span><strong>${escapePdfText(scheduledFollowUpSummary ? new Date(scheduledFollowUpSummary.dateTime).toLocaleString() : activeFollowUp ? `Appointment #${activeFollowUp.appointmentId} - ${new Date(activeFollowUp.dateTime).toLocaleString()}` : '-')}</strong></div>
+      </section>
+    `);
+    exportHtmlAsPdf(html, `consultation-summary-${active.consultationId}`);
   };
 
   return (

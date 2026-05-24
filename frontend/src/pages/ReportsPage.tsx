@@ -167,7 +167,7 @@ const daysUntil = (isoDate: string) => {
 
 const prettifyPaymentType = (value: PaymentType) => {
   if (value === 'CONSULTATION') return 'Consultation Fee';
-  if (value === 'APPOINTMENT') return 'Appointment Fee';
+  if (value === 'APPOINTMENT') return 'Appointment';
   if (value === 'MEDICAL_CHECKUP') return 'Medical Checkup';
   if (value === 'MEDICINE') return 'Medicine Sale';
   return 'Payment';
@@ -704,7 +704,7 @@ export const ReportsPage = () => {
             >
               <option value="">All payment types</option>
               <option value="CONSULTATION">Consultation Fee</option>
-              <option value="APPOINTMENT">Appointment Fee</option>
+              <option value="APPOINTMENT">Appointment</option>
               <option value="MEDICAL_CHECKUP">Medical Checkup</option>
               <option value="MEDICINE">Medicine Sale</option>
             </Select>
@@ -749,7 +749,7 @@ export const ReportsPage = () => {
           Export PDF
         </Button>
         <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions())} disabled={loading}>
-          Export Excel
+          Export Excel (.xlsx)
         </Button>
       </div>
 
@@ -1050,7 +1050,7 @@ export const ReportsPage = () => {
       {!loading && reportType === 'RECEIPT' && (
         <article className="report-card" style={{ marginTop: 14 }}>
           <h3>Receipt Report</h3>
-          <p className="muted">Includes consultation fee and appointment fee transactions.</p>
+          <p className="muted">Includes consultation, appointment, and medicine-sale transactions.</p>
 
           <div className="table-wrap">
             <table className="data-table">

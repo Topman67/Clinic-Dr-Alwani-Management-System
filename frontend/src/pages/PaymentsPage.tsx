@@ -99,7 +99,7 @@ const formatStockUnit = (unit: string | null | undefined, qty?: number) => {
 
 const CONSULTATION_FEE_OPTIONS = [10, 15, 20, 25, 30];
 const DEFAULT_CONSULTATION_FEE = 20;
-const APPOINTMENT_FEE = 5;
+const APPOINTMENT_FEE = 0;
 const MEDICAL_CHECKUP_FEE = 40;
 
 const toDateInput = (value: string | null | undefined) => {
@@ -554,7 +554,7 @@ export const PaymentsPage = () => {
         payment.type === 'MEDICAL_CHECKUP'
           ? { label: 'Medical Checkup Fee', value: `RM ${formatMoney(getMedicalCheckupFee(payment))}` }
           : { label: 'Consultation Fee', value: `RM ${formatMoney(getDisplayedConsultationFee(payment))}` },
-        ...(payment.type === 'MEDICAL_CHECKUP' ? [] : [{ label: 'Appointment Fee', value: `RM ${formatMoney(getAppointmentFee(payment))}` }]),
+        ...(getAppointmentFee(payment) > 0 ? [{ label: 'Appointment', value: `RM ${formatMoney(getAppointmentFee(payment))}` }] : []),
         { label: 'Medicine Total', value: `RM ${formatMoney(getMedicineTotal(payment))}` },
       ],
       grandTotal: formatMoney(getDisplayTotal(payment)),
@@ -1004,7 +1004,9 @@ export const PaymentsPage = () => {
                 ) : (
                   <>
                     <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getDisplayedConsultationFee(selectedPayment))}</dd></div>
-                    <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                    {getAppointmentFee(selectedPayment) > 0 && (
+                      <div><dt>Appointment</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                    )}
                   </>
                 )}
               </dl>
@@ -1056,7 +1058,9 @@ export const PaymentsPage = () => {
                 ) : (
                   <>
                     <div><dt>Consultation Fee</dt><dd>RM {formatMoney(getDisplayedConsultationFee(selectedPayment))}</dd></div>
-                    <div><dt>Appointment Fee</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                    {getAppointmentFee(selectedPayment) > 0 && (
+                      <div><dt>Appointment</dt><dd>RM {formatMoney(getAppointmentFee(selectedPayment))}</dd></div>
+                    )}
                   </>
                 )}
                 <div><dt>Medicine Total</dt><dd>RM {formatMoney(getMedicineTotal(selectedPayment))}</dd></div>

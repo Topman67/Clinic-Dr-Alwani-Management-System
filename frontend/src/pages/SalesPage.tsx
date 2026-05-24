@@ -15,7 +15,7 @@ type SaleType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICINE';
 
 const SALE_TYPE_OPTIONS: Array<{ value: SaleType; label: string }> = [
   { value: 'CONSULTATION', label: 'Consultation Fee' },
-  { value: 'APPOINTMENT', label: 'Appointment Fee' },
+  { value: 'APPOINTMENT', label: 'Appointment' },
   { value: 'MEDICINE', label: 'Walk-in Medicine' },
 ];
 
@@ -216,7 +216,7 @@ export const SalesPage = () => {
         Subtotal: `RM ${formatMoney(item.subtotal)}`,
       })),
       breakdown: [
-        { label: sale.type === 'CONSULTATION' ? 'Consultation Fee' : sale.type === 'APPOINTMENT' ? 'Appointment Fee' : 'Medicine Total', value: `RM ${formatMoney(sale.receipt?.totalAmount ?? sale.amount)}` },
+        { label: sale.type === 'CONSULTATION' ? 'Consultation Fee' : sale.type === 'APPOINTMENT' ? 'Appointment' : 'Medicine Total', value: `RM ${formatMoney(sale.receipt?.totalAmount ?? sale.amount)}` },
       ],
       grandTotal: formatMoney(sale.receipt?.totalAmount ?? sale.amount),
       paidStatus: statusLabel(sale.status),

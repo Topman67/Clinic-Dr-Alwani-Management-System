@@ -4983,6 +4983,46 @@ body {
   margin: 0;
 }
 
+.inventory-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.inventory-table-card .compact-section-head,
+.inventory-history-card .compact-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-export-btn {
+  min-height: 32px;
+  height: 32px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.inventory-export-btn span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 20px;
+  margin-right: 6px;
+  border-radius: 6px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 11%, transparent);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
 .inventory-approval-section,
 .inventory-table-card,
 .inventory-history-card {
@@ -7267,6 +7307,21 @@ button:disabled {
   .inventory-list-card,
   .inventory-list-head {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-table-card .compact-section-head,
+  .inventory-history-card .compact-section-head,
+  .inventory-export-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inventory-export-actions {
+    width: 100%;
+  }
+
+  .inventory-export-btn {
+    justify-content: center;
   }
 
   .inventory-list-head {
