@@ -411,14 +411,6 @@ export const updateConsultation = async (req: Request, res: Response) => {
       });
     }
 
-    if (consultation.status === ConsultationStatus.COMPLETED) {
-      await createPendingPaymentForCompletedConsultationWithoutPrescription(
-        tx,
-        consultation.consultationId,
-        req.user?.userId ?? consultation.doctorId,
-      );
-    }
-
     return consultation;
   });
 
@@ -436,11 +428,18 @@ export const sendMedicalCheckupToPayment = async (req: Request, res: Response) =
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const payment = await createPendingPaymentForMedicalCheckup(
-        tx,
-        consultationId,
-        req.user?.userId ?? 1,
-      );
+      const consultationRecord = await tx.consultation.findUnique({
+        where: { consultationId },
+        select: { consultationType: true, doctorId: true },
+      });
+      if (!consultationRecord) {
+        throw createHttpError(404, 'Consultation not found.');
+      }
+
+      const recordedById = req.user?.userId ?? consultationRecord.doctorId;
+      const payment = consultationRecord.consultationType === ConsultationType.MEDICAL_CHECKUP
+        ? await createPendingPaymentForMedicalCheckup(tx, consultationId, recordedById)
+        : await createPendingPaymentForCompletedConsultationWithoutPrescription(tx, consultationId, recordedById);
       const consultation = await tx.consultation.findUnique({
         where: { consultationId },
         include: consultationInclude,

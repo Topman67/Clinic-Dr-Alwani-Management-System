@@ -47,7 +47,14 @@ type Payment = {
   dispensedByUsername?: string | null;
   patient?: { name: string; icOrPassport?: string; phone?: string; address?: string | null };
   receipt?: Receipt | null;
-  consultation?: { consultationId: number; appointmentId?: number | null; consultationType?: string; status: string; createdAt: string } | null;
+  consultation?: {
+    consultationId: number;
+    appointmentId?: number | null;
+    consultationType?: string;
+    status: string;
+    createdAt: string;
+    doctor?: { userId: number; username: string } | null;
+  } | null;
   prescription?: { prescriptionId: number; status: string; date: string } | null;
   appointment?: { appointmentId: number; status: string; type?: string; dateTime: string } | null;
   medicineItems?: Array<{
@@ -99,7 +106,7 @@ const formatStockUnit = (unit: string | null | undefined, qty?: number) => {
 
 const CONSULTATION_FEE_OPTIONS = [10, 15, 20, 25, 30];
 const DEFAULT_CONSULTATION_FEE = 20;
-const APPOINTMENT_FEE = 0;
+const APPOINTMENT_FEE = 5;
 const MEDICAL_CHECKUP_FEE = 40;
 
 const toDateInput = (value: string | null | undefined) => {
@@ -538,6 +545,8 @@ export const PaymentsPage = () => {
         { label: 'Address', value: payment.patient?.address || '-' },
       ],
       paymentDetails: [
+        { label: 'Consultation ID', value: payment.consultation?.consultationId ? `#${payment.consultation.consultationId}` : '-' },
+        { label: 'Doctor Name', value: payment.consultation?.doctor?.username ?? '-' },
         { label: 'Payment Date', value: new Date(payment.date).toLocaleString() },
         { label: 'Payment Method', value: prettifyMethod(payment.paymentMethod) },
         { label: 'Payment Type', value: getPaymentTypeLabel(payment) },
@@ -647,7 +656,7 @@ export const PaymentsPage = () => {
             <section className="pending-payment-workflow" style={{ marginTop: 14 }}>
               <div className="section-head">
                 <h3>Pending Payment List</h3>
-                <p className="muted">Payments appear here after consultation completion, prescription dispense, medical checkup send-to-payment, or appointment completion.</p>
+                <p className="muted">Payments appear here after prescription dispense, no-medicine send-to-payment, medical checkup send-to-payment, or appointment completion.</p>
               </div>
 
               <div className="table-wrap">
@@ -675,7 +684,7 @@ export const PaymentsPage = () => {
                         <td>
                           <div className="action-row">
                             <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>View Details</button>
-                            <button type="button" onClick={() => setSelectedPayment(p)}>Pay Now</button>
+                            <button type="button" onClick={() => setSelectedPayment(p)}>Process Payment</button>
                           </div>
                         </td>
                       </tr>
@@ -699,7 +708,7 @@ export const PaymentsPage = () => {
                     </dl>
                     <div className="action-row" style={{ marginTop: 10 }}>
                       <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>View Details</button>
-                      <button type="button" onClick={() => setSelectedPayment(p)}>Pay Now</button>
+                      <button type="button" onClick={() => setSelectedPayment(p)}>Process Payment</button>
                     </div>
                   </article>
                 ))}
@@ -989,6 +998,7 @@ export const PaymentsPage = () => {
                 <div><dt>Patient ID</dt><dd>{selectedPayment.patient?.icOrPassport || '-'}</dd></div>
                 <div><dt>Phone Number</dt><dd>{selectedPayment.patient?.phone || 'Not provided'}</dd></div>
                 <div><dt>Payment Method</dt><dd>{prettifyMethod(selectedPayment.paymentMethod)}</dd></div>
+                <div><dt>Paid Status</dt><dd>{statusLabel(selectedPayment.status)}</dd></div>
               </dl>
             </section>
 
@@ -996,6 +1006,7 @@ export const PaymentsPage = () => {
               <h4>Consultation / Appointment</h4>
               <dl className="sales-detail-kv">
                 <div><dt>Consultation ID</dt><dd>{selectedPayment.consultation?.consultationId ? `#${selectedPayment.consultation.consultationId}` : '-'}</dd></div>
+                <div><dt>Doctor Name</dt><dd>{selectedPayment.consultation?.doctor?.username ?? '-'}</dd></div>
                 <div><dt>Appointment ID</dt><dd>{selectedPayment.appointment?.appointmentId ? `#${selectedPayment.appointment.appointmentId}` : '-'}</dd></div>
                 <div><dt>Prescription ID</dt><dd>{selectedPayment.prescription?.prescriptionId ? `#${selectedPayment.prescription.prescriptionId}` : '-'}</dd></div>
                 <div><dt>Payment Type</dt><dd>{getPaymentTypeLabel(selectedPayment)}</dd></div>

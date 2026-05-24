@@ -161,7 +161,7 @@ export const createPrescription = async (req: Request, res: Response) => {
       });
 
       if (existingPayment?.status === PaymentStatus.PAID) {
-        throw createHttpError(409, 'This consultation has already been paid. Create prescription before confirming payment.');
+        throw createHttpError(409, 'This consultation has already been paid.');
       }
 
       const targetAppointmentId = appointmentId ?? consultation.appointmentId ?? undefined;
@@ -472,7 +472,7 @@ export const dispensePrescription = async (req: Request, res: Response) => {
       });
 
       if (req.user?.userId) {
-        await createPendingPaymentForDispensedPrescription(tx, dispensed.prescriptionId, req.user.userId);
+        await createPendingPaymentForDispensedPrescription(tx, dispensed.prescriptionId, req.user.userId, req.user.username);
       }
 
       return dispensed;

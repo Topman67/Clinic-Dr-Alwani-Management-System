@@ -10,7 +10,7 @@ import {
 
 export const ALLOWED_CONSULTATION_FEES = [10, 15, 20, 25, 30] as const;
 export const DEFAULT_CONSULTATION_FEE = 20;
-export const APPOINTMENT_FEE = 0;
+export const APPOINTMENT_FEE = 5;
 export const MEDICAL_CHECKUP_FEE = 40;
 
 export const clinicPaymentInclude = {
@@ -31,6 +31,12 @@ export const clinicPaymentInclude = {
       consultationType: true,
       status: true,
       createdAt: true,
+      doctor: {
+        select: {
+          userId: true,
+          username: true,
+        },
+      },
     },
   },
   prescription: {
@@ -94,6 +100,7 @@ export const createPendingPaymentForDispensedPrescription = async (
   tx: Prisma.TransactionClient,
   prescriptionId: number,
   recordedById: number,
+  recordedByUsername?: string | null,
 ) => {
   const prescription = await tx.prescription.findUnique({
     where: { prescriptionId },
@@ -156,6 +163,10 @@ export const createPendingPaymentForDispensedPrescription = async (
         consultationId: prescription.consultationId,
         prescriptionId: prescription.prescriptionId,
         appointmentId: prescription.appointmentId,
+        status: PaymentStatus.PENDING_PAYMENT,
+        dispensedAt: new Date(),
+        dispensedById: recordedById,
+        dispensedByUsername: recordedByUsername,
         remarks: 'Auto-updated after prescription dispense',
         medicineItems: {
           create: medicineItems,
@@ -175,6 +186,9 @@ export const createPendingPaymentForDispensedPrescription = async (
       consultationId: prescription.consultationId,
       prescriptionId: prescription.prescriptionId,
       appointmentId: prescription.appointmentId,
+      dispensedAt: new Date(),
+      dispensedById: recordedById,
+      dispensedByUsername: recordedByUsername,
       remarks: 'Auto-created after prescription dispense',
       medicineItems: {
         create: medicineItems,
@@ -197,16 +211,29 @@ export const createPendingPaymentForCompletedConsultationWithoutPrescription = a
     },
   });
 
-  if (!consultation) return null;
-  if (consultation.status !== ConsultationStatus.COMPLETED) return null;
-  if (consultation.prescription) return null;
-  if (consultation.consultationType === ConsultationType.MEDICAL_CHECKUP) return null;
+  if (!consultation) {
+    throw Object.assign(new Error('Consultation not found.'), { statusCode: 404 });
+  }
+  if (consultation.status !== ConsultationStatus.COMPLETED) {
+    throw Object.assign(new Error('Complete consultation before sending to payment.'), { statusCode: 400 });
+  }
+  if (consultation.prescription) {
+    throw Object.assign(new Error('Prescription must be dispensed before payment.'), { statusCode: 400 });
+  }
+  if (consultation.consultationType === ConsultationType.MEDICAL_CHECKUP) {
+    throw Object.assign(new Error('Use medical checkup send-to-payment for this consultation.'), { statusCode: 400 });
+  }
 
   const existing = await findExistingClinicPayment(tx, {
     consultationId: consultation.consultationId,
     appointmentId: consultation.appointmentId,
   });
-  if (existing) return existing;
+  if (existing) {
+    if (existing.status === PaymentStatus.PAID) {
+      throw Object.assign(new Error('This consultation has already been paid.'), { statusCode: 409 });
+    }
+    return existing;
+  }
 
   return tx.payment.create({
     data: {
@@ -249,7 +276,14 @@ export const createPendingPaymentForMedicalCheckup = async (
     throw Object.assign(new Error('This medical checkup has a prescription. Dispense prescription before payment.'), { statusCode: 400 });
   }
   if (consultation.payment) {
-    throw Object.assign(new Error('Payment has already been created for this consultation.'), { statusCode: 409 });
+    if (consultation.payment.status === PaymentStatus.PAID) {
+      throw Object.assign(new Error('This consultation has already been paid.'), { statusCode: 409 });
+    }
+    const existing = await tx.payment.findUnique({
+      where: { paymentId: consultation.payment.paymentId },
+      include: clinicPaymentInclude,
+    });
+    return existing;
   }
 
   return tx.payment.create({

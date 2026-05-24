@@ -590,10 +590,9 @@ export const ConsultationsPage = () => {
   const calculatedBmi = useMemo(() => calculateBmi(form.weight, form.height), [form.height, form.weight]);
   const displayedBmi = calculatedBmi || form.bmi;
   const isMedicalCheckup = form.consultationType === 'MEDICAL_CHECKUP';
-  const canSendMedicalCheckupToPayment = Boolean(
+  const canSendToPayment = Boolean(
     active &&
     active.status === 'COMPLETED' &&
-    active.consultationType === 'MEDICAL_CHECKUP' &&
     !active.prescription &&
     !activePayment,
   );
@@ -741,8 +740,8 @@ export const ConsultationsPage = () => {
     navigate(`/doctor/prescriptions?${params.toString()}`);
   };
 
-  const sendMedicalCheckupToPayment = async () => {
-    if (!active || !canSendMedicalCheckupToPayment) return;
+  const sendConsultationToPayment = async () => {
+    if (!active || !canSendToPayment) return;
 
     setSaving(true);
     setError(null);
@@ -753,10 +752,10 @@ export const ConsultationsPage = () => {
       const consultation = data.consultation ?? { ...active, payment: data.payment };
       setActive(consultation);
       setForm(toForm(consultation));
-      setSuccess('Medical checkup sent to pending payment.');
+      setSuccess(active.consultationType === 'MEDICAL_CHECKUP' ? 'Medical checkup sent to pending payment.' : 'Consultation sent to pending payment.');
       await loadConsultations();
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'Failed to send medical checkup to payment'));
+      setError(getApiErrorMessage(err, 'Failed to send consultation to payment'));
     } finally {
       setSaving(false);
     }
@@ -1416,22 +1415,24 @@ export const ConsultationsPage = () => {
                 >
                   View History
                 </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={createPrescription}
-                  disabled={active.status !== 'COMPLETED' || Boolean(active.prescription)}
-                >
-                  {active.prescription ? 'Prescription Created' : 'Create Prescription'}
-                </button>
-                {active.consultationType === 'MEDICAL_CHECKUP' && !active.prescription && (
+                {active.consultationType !== 'MEDICAL_CHECKUP' && (
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => void sendMedicalCheckupToPayment()}
-                    disabled={!canSendMedicalCheckupToPayment || saving}
+                    onClick={createPrescription}
+                    disabled={active.status !== 'COMPLETED' || Boolean(active.prescription) || Boolean(activePayment)}
                   >
-                    {activePayment ? 'Payment Created' : 'Send to Payment'}
+                    {active.prescription ? 'Prescription Created' : 'Create Prescription'}
+                  </button>
+                )}
+                {!active.prescription && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => void sendConsultationToPayment()}
+                    disabled={!canSendToPayment || saving}
+                  >
+                    {activePayment ? 'Payment Created' : 'Send To Payment'}
                   </button>
                 )}
                 <button
