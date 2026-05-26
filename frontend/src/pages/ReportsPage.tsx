@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { usePagination } from '../lib/pagination';
@@ -7,10 +7,11 @@ import { useAuth } from '../context/AuthContext';
 import { DateRangeFilter, getDateRangeForPreset } from '../components/DateRangeFilter';
 import { Pagination } from '../components/Pagination';
 import { Button, Input, Select } from '../components/ui';
-import { exportReportExcel, exportReportPdf, type DocumentExportOptions } from '../lib/exportDocuments';
+import { exportReceiptPdf, exportReportExcel, exportReportPdf, type DocumentExportOptions } from '../lib/exportDocuments';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'CONSULTATION' | 'INVENTORY' | 'SALES' | 'PAYMENT' | 'RECEIPT';
+type ChartMode = 'daily' | 'weekly' | 'monthly';
 type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICINE' | 'CUSTOM';
 
 type PatientOption = {
@@ -32,13 +33,16 @@ type PatientReportItem = {
   address?: string | null;
   createdAt: string;
   prescriptionsCount: number;
+  consultationsCount?: number;
   paymentsCount: number;
   totalPaid: number;
+  isActive?: boolean;
 };
 
 type PrescriptionReportItem = {
   prescriptionId: number;
   date: string;
+  status?: 'PENDING_VERIFICATION' | 'VERIFIED' | 'DISPENSED' | 'REJECTED';
   patient: { patientId: number; name: string; icOrPassport: string };
   doctor: { userId: number; username: string };
   items: Array<{
@@ -54,6 +58,8 @@ type PrescriptionReportItem = {
 type MedicineReportItem = {
   medicineId: number;
   name: string;
+  category?: string;
+  companyName?: string | null;
   batchNumber: string;
   quantity: number;
   expiryDate: string;
@@ -65,6 +71,7 @@ type PaymentReportItem = {
   date: string;
   type: PaymentType;
   amount: number | string;
+  paymentMethod?: string;
   patient?: { patientId: number; name: string };
   receipt?: { receiptNo: string } | null;
 };
@@ -83,6 +90,7 @@ type ReceiptReportItem = {
   payment?: {
     paymentId: number;
     type: PaymentType;
+    paymentMethod?: string;
     patient?: { name: string };
   };
 };
@@ -175,6 +183,103 @@ const prettifyPaymentType = (value: PaymentType) => {
 
 const prettifyEnum = (value: string) => value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 
+const reportTypeDescription = (type: ReportType) => {
+  if (type === 'PATIENT') return 'Patient registration, activity, and payment contribution overview.';
+  if (type === 'PRESCRIPTION') return 'Prescription volume, medicine mix, and dispensing readiness.';
+  if (type === 'CONSULTATION') return 'Consultation workflow, diagnosis, follow-up, and billing status.';
+  if (type === 'INVENTORY') return 'Low stock and expiry risk report for pharmacy operations.';
+  if (type === 'SALES') return 'Revenue movement across medicine sales and clinic fees.';
+  if (type === 'PAYMENT') return 'Payment collection, receipt, and revenue category summary.';
+  return 'Receipt register for payment audit and patient record keeping.';
+};
+
+const getStatusTone = (value: string | undefined) => {
+  const status = (value ?? '').toUpperCase();
+  if (['COMPLETED', 'PAID', 'DISPENSED', 'VERIFIED', 'ACTIVE'].includes(status)) return 'good';
+  if (['PENDING', 'PENDING_PAYMENT', 'PENDING_DISPENSE', 'PENDING_VERIFICATION', 'WAITING', 'IN_PROGRESS', 'LOW_STOCK', 'NEAR_EXPIRY'].includes(status)) return 'warning';
+  if (['EXPIRED', 'REJECTED', 'CANCELLED', 'NO_SHOW'].includes(status)) return 'critical';
+  return 'neutral';
+};
+
+const getTypeClass = (type: PaymentType | string) => {
+  if (type === 'CONSULTATION') return 'type-consultation';
+  if (type === 'MEDICAL_CHECKUP' || type === 'MEDICINE') return 'type-medical';
+  return 'type-appointment';
+};
+
+const formatExpiryCountdown = (isoDate: string) => {
+  const days = daysUntil(isoDate);
+  if (days < 0) return `Expired ${Math.abs(days)} days ago`;
+  if (days === 0) return 'Expires today';
+  return `Expires in ${days} days`;
+};
+
+const formatShortMoney = (value: number) => {
+  if (value >= 1000) return `RM ${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+  return `RM ${value.toFixed(0)}`;
+};
+
+const ReportBadge = ({ children, tone = 'neutral', className = '' }: { children: ReactNode; tone?: string; className?: string }) => (
+  <span className={`status-badge status-${tone} ${className}`}>{children}</span>
+);
+
+const MetricCard = ({ icon, label, value, tone = 'neutral' }: { icon: string; label: string; value: string | number; tone?: string }) => (
+  <div className={`metric-card report-metric-card report-metric-${tone}`}>
+    <span className="report-metric-icon">{icon}</span>
+    <div>
+      <p>{label}</p>
+      <strong>{value}</strong>
+    </div>
+  </div>
+);
+
+const EmptyReportState = ({ message }: { message: string }) => (
+  <div className="report-empty-state">
+    <span aria-hidden="true">--</span>
+    <strong>{message}</strong>
+    <p>Adjust filters or generate a broader date range to see records.</p>
+  </div>
+);
+
+const ReportSection = ({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) => (
+  <article className="report-card">
+    <div className="report-section-head">
+      <div>
+        <h3>{title}</h3>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+    </div>
+    {children}
+  </article>
+);
+
+const MedicineTags = ({ items }: { items: PrescriptionReportItem['items'] | SalesReportItem['medicineItems'] }) => (
+  <div className="report-tag-stack">
+    {items.length > 0 ? items.slice(0, 4).map((item, index) => (
+      <span key={`${item.medicine?.name ?? 'Medicine'}-${index}`} className="report-tag">
+        {item.medicine?.name ?? 'Medicine'} x{item.qty}
+      </span>
+    )) : <span className="muted">-</span>}
+    {items.length > 4 && <span className="report-tag report-tag-muted">+{items.length - 4} more</span>}
+  </div>
+);
+
+const ReportChart = ({ data, mode }: { data: Array<{ label: string; value: number }>; mode: ChartMode }) => {
+  const max = Math.max(...data.map((item) => item.value), 1);
+
+  return (
+    <div className="report-chart" role="img" aria-label={`${mode} sales chart`}>
+      {data.map((item) => (
+        <div key={item.label} className="report-chart-bar">
+          <span title={`${item.label}: RM ${formatMoney(item.value)}`} style={{ height: `${Math.max(8, (item.value / max) * 100)}%` }} />
+          <small>{item.label}</small>
+          <b>{formatShortMoney(item.value)}</b>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const getApiErrorMessage = (err: unknown, fallback: string) => {
   if (typeof err === 'object' && err !== null) {
     const response = (err as { response?: { data?: { message?: string } } }).response;
@@ -189,6 +294,7 @@ export const ReportsPage = () => {
   const canReadMedicine = role === 'DOCTOR' || role === 'PHARMACIST';
 
   const [reportType, setReportType] = useState<ReportType>('PAYMENT');
+  const [salesChartMode, setSalesChartMode] = useState<ChartMode>('daily');
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [dateRange, setDateRange] = useState(() => getDateRangeForPreset('last7'));
 
@@ -201,6 +307,7 @@ export const ReportsPage = () => {
   const [expiringItems, setExpiringItems] = useState<MedicineReportItem[]>([]);
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummaryResponse | null>(null);
   const [receiptItems, setReceiptItems] = useState<ReceiptReportItem[]>([]);
+  const [previewReceipt, setPreviewReceipt] = useState<ReceiptReportItem | null>(null);
   const [consultationItems, setConsultationItems] = useState<ConsultationReportItem[]>([]);
   const [salesSummary, setSalesSummary] = useState<SalesSummaryResponse | null>(null);
 
@@ -584,50 +691,146 @@ export const ReportsPage = () => {
     paginated: paginatedReceiptItems,
   } = usePagination(receiptItems, 10, [reportType, generatedAt]);
 
-  return (
-    <section className="card report-print-area">
-      <div className="section-head">
-        <h1>Generate Report</h1>
-        <p className="muted">Select report type, apply filters, generate output, then view/print/export.</p>
-      </div>
+  const walkInPatientCount = patientItems.filter((item) => item.icOrPassport?.toUpperCase().startsWith('WALKIN')).length;
+  const activePatientCount = patientItems.filter((item) => item.isActive !== false).length;
+  const prescriptionMedicineCount = prescriptionItems.reduce((sum, item) => sum + item.items.reduce((itemSum, med) => itemSum + med.qty, 0), 0);
+  const consultationFeeTotal = consultationItems.reduce((sum, item) => sum + Number(item.payment?.amount ?? 0), 0);
+  const salesMedicineTotal = salesReportItems.filter((item) => item.type === 'MEDICINE').reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0);
+  const salesConsultationTotal = salesReportItems.filter((item) => item.type === 'CONSULTATION' || item.type === 'MEDICAL_CHECKUP').reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0);
+  const salesAppointmentTotal = salesReportItems.filter((item) => item.type === 'APPOINTMENT').reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0);
+  const paymentMedicineTotal = paymentReportItems.filter((item) => item.type === 'MEDICINE').reduce((sum, item) => sum + Number(item.amount), 0);
 
-      <div className="report-print-header" style={{ marginBottom: 10 }}>
-        <h3 style={{ marginBottom: 6 }}>{reportLabel}</h3>
-        <p className="muted" style={{ margin: 0 }}>
-          Generated: {generatedAt ? new Date(generatedAt).toLocaleString() : 'Not generated yet'}
-        </p>
-        <p className="muted" style={{ marginTop: 4 }}>
-          Applied filters: {activeFilterTags.length > 0 ? activeFilterTags.join(' | ') : 'None'}
-        </p>
+  const salesChartData = useMemo(() => {
+    const source = salesReportItems.length ? salesReportItems : [];
+    const buckets = salesChartMode === 'daily' ? 7 : 6;
+    const now = new Date();
+
+    return Array.from({ length: buckets }, (_, index) => {
+      const offset = buckets - 1 - index;
+      const date = new Date(now);
+
+      if (salesChartMode === 'monthly') {
+        date.setMonth(now.getMonth() - offset, 1);
+        const key = `${date.getFullYear()}-${date.getMonth()}`;
+        return {
+          label: date.toLocaleString(undefined, { month: 'short' }),
+          value: source.filter((item) => {
+            const itemDate = new Date(item.date);
+            return `${itemDate.getFullYear()}-${itemDate.getMonth()}` === key;
+          }).reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0),
+        };
+      }
+
+      if (salesChartMode === 'weekly') {
+        date.setDate(now.getDate() - (offset * 7));
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - weekStart.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+
+        return {
+          label: `${weekStart.toLocaleDateString(undefined, { month: 'short', day: '2-digit' })}`,
+          value: source.filter((item) => {
+            const itemDate = new Date(item.date);
+            return itemDate >= weekStart && itemDate <= weekEnd;
+          }).reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0),
+        };
+      }
+
+      date.setDate(now.getDate() - offset);
+      const key = toDateInput(date.toISOString());
+      return {
+        label: date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }),
+        value: source.filter((item) => toDateInput(item.date) === key).reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0),
+      };
+    });
+  }, [salesChartMode, salesReportItems]);
+
+  const exportReceiptRecord = (receipt: ReceiptReportItem) => {
+    exportReceiptPdf({
+      filename: `receipt-${receipt.receiptNo}`,
+      logoUrl: clinicLogo,
+      clinicName: 'Clinic Dr Alwani',
+      receiptNo: receipt.receiptNo,
+      patientDetails: [
+        { label: 'Patient / Customer', value: receipt.payment?.patient?.name ?? '-' },
+      ],
+      paymentDetails: [
+        { label: 'Payment ID', value: receipt.payment?.paymentId ? `#${receipt.payment.paymentId}` : '-' },
+        { label: 'Payment Date', value: new Date(receipt.date).toLocaleString() },
+        { label: 'Payment Method', value: prettifyEnum(receipt.payment?.paymentMethod ?? '-') },
+        { label: 'Payment Type', value: receipt.payment ? prettifyPaymentType(receipt.payment.type) : '-' },
+      ],
+      breakdown: [
+        { label: receipt.payment ? prettifyPaymentType(receipt.payment.type) : 'Payment', value: `RM ${formatMoney(receipt.totalAmount)}` },
+      ],
+      grandTotal: formatMoney(receipt.totalAmount),
+      paidStatus: 'Paid',
+      footerNote: 'Thank you for your payment. Please keep this receipt for your records.',
+    });
+  };
+
+  return (
+    <section className="report-page report-print-area">
+      <div className="report-hero">
+        <div className="section-head">
+          <span className="report-eyebrow">Clinic Analytics</span>
+          <h1>Reports</h1>
+          <p>Generate operational, financial, inventory, and receipt reports for Clinic Dr Alwani.</p>
+        </div>
+        <div className="report-hero-meta">
+          <span>{generatedAt ? `Generated ${new Date(generatedAt).toLocaleString()}` : 'Not generated yet'}</span>
+          <strong>{reportLabel}</strong>
+        </div>
       </div>
 
       <form
-        className="form-grid report-filter-controls"
+        className="report-filter-controls"
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           void generateReport();
         }}
       >
-        <div className="filters-grid">
-          <Select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)}>
-            <option value="PATIENT">Patient Report</option>
-            <option value="PRESCRIPTION">Prescription Report</option>
-            <option value="CONSULTATION">Consultation Report</option>
-            <option value="INVENTORY">Inventory Report</option>
-            <option value="SALES">Sales Report</option>
-            <option value="PAYMENT">Payment Report</option>
-            <option value="RECEIPT">Receipt Report</option>
-          </Select>
+        <div className="report-controls-head">
+          <div>
+            <h3>{reportLabel}</h3>
+            <p>{reportTypeDescription(reportType)}</p>
+          </div>
+          <div className="report-filter-chips">
+            {(activeFilterTags.length > 0 ? activeFilterTags : ['No filters']).map((tag) => (
+              <span key={tag}>{tag}</span>
+            ))}
+          </div>
+        </div>
 
-          {(reportType === 'PATIENT' || reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION' || reportType === 'SALES') && (
+        <div className="report-filter-grid report-filter-grid-primary">
+          <label>
+            <span>Report Type</span>
+            <Select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)}>
+              <option value="PATIENT">Patient Report</option>
+              <option value="PRESCRIPTION">Prescription Report</option>
+              <option value="CONSULTATION">Consultation Report</option>
+              <option value="INVENTORY">Inventory Report</option>
+              <option value="SALES">Sales Report</option>
+              <option value="PAYMENT">Payment Report</option>
+              <option value="RECEIPT">Receipt Report</option>
+            </Select>
+          </label>
+
+          <label>
+            <span>Search Keyword</span>
             <Input
               value={filters.query}
               onChange={(e) => setFilters((prev) => ({ ...prev, query: e.target.value }))}
-              placeholder="Search keyword"
+              placeholder="Search patient, receipt, medicine..."
+              disabled={!(reportType === 'PATIENT' || reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION' || reportType === 'SALES')}
             />
-          )}
+          </label>
 
-          {(reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION' || reportType === 'SALES' || reportType === 'PAYMENT' || reportType === 'RECEIPT') && (
+          <div className="report-date-field">
+            <span>Date Range</span>
             <DateRangeFilter
               value={dateRange}
               onChange={(nextRange) => {
@@ -636,150 +839,157 @@ export const ReportsPage = () => {
               }}
               includeAll
             />
-          )}
+          </div>
 
-          <Button type="submit">Generate</Button>
+          <Button className="report-generate-btn" type="submit" disabled={loading}>
+            {loading && <span className="report-spinner" aria-hidden="true" />}
+            {loading ? 'Generating...' : 'Generate'}
+          </Button>
         </div>
 
-        {(reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION') && (
-          <div className="filters-grid">
-            <Select
-              value={filters.patientId}
-              onChange={(e) => setFilters((prev) => ({ ...prev, patientId: e.target.value ? Number(e.target.value) : '' }))}
-            >
-              <option value="">All patients</option>
-              {patients.map((p) => (
-                <option key={p.patientId} value={p.patientId}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
+        <div className="report-filter-grid report-filter-grid-secondary">
+          {(reportType === 'PRESCRIPTION' || reportType === 'CONSULTATION') && (
+            <label>
+              <span>Patient</span>
+              <Select
+                value={filters.patientId}
+                onChange={(e) => setFilters((prev) => ({ ...prev, patientId: e.target.value ? Number(e.target.value) : '' }))}
+              >
+                <option value="">All patients</option>
+                {patients.map((p) => (
+                  <option key={p.patientId} value={p.patientId}>{p.name}</option>
+                ))}
+              </Select>
+            </label>
+          )}
 
-            {reportType === 'PRESCRIPTION' && medicines.length > 0 ? (
+          {reportType === 'PRESCRIPTION' && medicines.length > 0 && (
+            <label>
+              <span>Medicine</span>
               <Select
                 value={filters.medicineId}
                 onChange={(e) => setFilters((prev) => ({ ...prev, medicineId: e.target.value ? Number(e.target.value) : '' }))}
               >
                 <option value="">All medicines</option>
                 {medicines.map((m) => (
-                  <option key={m.medicineId} value={m.medicineId}>
-                    {m.name} ({m.batchNumber})
-                  </option>
+                  <option key={m.medicineId} value={m.medicineId}>{m.name} ({m.batchNumber})</option>
                 ))}
               </Select>
-            ) : reportType === 'PRESCRIPTION' ? (
-              <p className="muted" style={{ margin: 0 }}>Medicine filter is unavailable for this account.</p>
-            ) : null}
-            {reportType === 'CONSULTATION' && (
-              <Select
-                value={filters.consultationStatus}
-                onChange={(e) => setFilters((prev) => ({ ...prev, consultationStatus: e.target.value }))}
-              >
+            </label>
+          )}
+
+          {reportType === 'CONSULTATION' && (
+            <label>
+              <span>Status</span>
+              <Select value={filters.consultationStatus} onChange={(e) => setFilters((prev) => ({ ...prev, consultationStatus: e.target.value }))}>
                 <option value="">All consultation statuses</option>
                 <option value="WAITING">Waiting</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="COMPLETED">Completed</option>
               </Select>
-            )}
-          </div>
-        )}
+            </label>
+          )}
 
-        {reportType === 'INVENTORY' && (
-          <div className="form-row">
-            <Input
-              type="number"
-              min={1}
-              value={filters.expiringDays}
-              onChange={(e) => setFilters((prev) => ({ ...prev, expiringDays: Math.max(1, Number(e.target.value) || 30) }))}
-              placeholder="Expiring days"
-            />
-          </div>
-        )}
+          {reportType === 'INVENTORY' && (
+            <label>
+              <span>Expiring Days</span>
+              <Input
+                type="number"
+                min={1}
+                value={filters.expiringDays}
+                onChange={(e) => setFilters((prev) => ({ ...prev, expiringDays: Math.max(1, Number(e.target.value) || 30) }))}
+                placeholder="Expiring days"
+              />
+            </label>
+          )}
 
-        {(reportType === 'PAYMENT' || reportType === 'RECEIPT' || reportType === 'SALES') && (
-          <div className="filters-grid">
-            <Select
-              value={filters.paymentType}
-              onChange={(e) => setFilters((prev) => ({ ...prev, paymentType: (e.target.value as PaymentType | '') || '' }))}
-            >
-              <option value="">All payment types</option>
-              <option value="CONSULTATION">Consultation Fee</option>
-              <option value="APPOINTMENT">Appointment</option>
-              <option value="MEDICAL_CHECKUP">Medical Checkup</option>
-              <option value="MEDICINE">Medicine Sale</option>
-            </Select>
+          {(reportType === 'PAYMENT' || reportType === 'RECEIPT' || reportType === 'SALES') && (
+            <label>
+              <span>Payment Type</span>
+              <Select value={filters.paymentType} onChange={(e) => setFilters((prev) => ({ ...prev, paymentType: (e.target.value as PaymentType | '') || '' }))}>
+                <option value="">All payment types</option>
+                <option value="CONSULTATION">Consultation Fee</option>
+                <option value="APPOINTMENT">Appointment</option>
+                <option value="MEDICAL_CHECKUP">Medical Checkup</option>
+                <option value="MEDICINE">Medicine Sale</option>
+              </Select>
+            </label>
+          )}
 
-            {reportType === 'SALES' && (
-              <Select
-                value={filters.saleStatus}
-                onChange={(e) => setFilters((prev) => ({ ...prev, saleStatus: e.target.value }))}
-              >
+          {reportType === 'SALES' && (
+            <label>
+              <span>Sale Status</span>
+              <Select value={filters.saleStatus} onChange={(e) => setFilters((prev) => ({ ...prev, saleStatus: e.target.value }))}>
                 <option value="">All sale statuses</option>
                 <option value="PAID">Paid</option>
                 <option value="PENDING_DISPENSE">Pending Dispense</option>
                 <option value="DISPENSED">Dispensed</option>
                 <option value="CANCELLED">Cancelled</option>
               </Select>
-            )}
+            </label>
+          )}
 
-            {reportType === 'RECEIPT' && (
-              <Input
-                value={filters.receiptNo}
-                onChange={(e) => setFilters((prev) => ({ ...prev, receiptNo: e.target.value }))}
-                placeholder="Receipt no"
-              />
-            )}
-          </div>
-        )}
+          {reportType === 'RECEIPT' && (
+            <label>
+              <span>Receipt No</span>
+              <Input value={filters.receiptNo} onChange={(e) => setFilters((prev) => ({ ...prev, receiptNo: e.target.value }))} placeholder="Receipt no" />
+            </label>
+          )}
+        </div>
+
+        <div className="report-print-actions">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              const nextRange = getDateRangeForPreset('last7');
+              setDateRange(nextRange);
+              setFilters({ ...initialFilters, dateFrom: nextRange.dateFrom, dateTo: nextRange.dateTo });
+            }}
+            disabled={loading}
+          >
+            <span aria-hidden="true">R</span> Reset Filters
+          </Button>
+          <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions())} disabled={loading}>
+            <span aria-hidden="true">PDF</span> Export PDF
+          </Button>
+          <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions())} disabled={loading}>
+            <span aria-hidden="true">XLS</span> Export Excel
+          </Button>
+        </div>
       </form>
 
-      <div className="action-row report-print-actions" style={{ marginTop: 12 }}>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            const nextRange = getDateRangeForPreset('last7');
-            setDateRange(nextRange);
-            setFilters({ ...initialFilters, dateFrom: nextRange.dateFrom, dateTo: nextRange.dateTo });
-          }}
-          disabled={loading}
-        >
-          Reset Filters
-        </Button>
-        <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions())} disabled={loading}>
-          Export PDF
-        </Button>
-        <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions())} disabled={loading}>
-          Export Excel (.xlsx)
-        </Button>
-      </div>
-
-      {generatedAt && <p className="muted" style={{ marginTop: 10 }}>Generated at: {new Date(generatedAt).toLocaleString()}</p>}
-      {error && <p className="error">{error}</p>}
-      {loading && <p className="muted">Generating report...</p>}
+      {error && <p className="error report-feedback">{error}</p>}
 
       {!loading && reportType === 'PATIENT' && (
-        <article className="report-card" style={{ marginTop: 14 }}>
-          <h3>Patient Report</h3>
-          <div className="table-wrap">
-            <table className="data-table">
+        <ReportSection title="Patient Report" subtitle="Patient list with registration status, activity, and paid contribution.">
+          <div className="metrics-grid report-metrics-grid">
+            <MetricCard icon="PT" label="Total Patients" value={patientItems.length} />
+            <MetricCard icon="WI" label="Walk-in Count" value={walkInPatientCount} tone="warning" />
+            <MetricCard icon="AC" label="Active Patients" value={activePatientCount} tone="good" />
+            <MetricCard icon="CT" label="Consultations" value={patientItems.reduce((sum, item) => sum + (item.consultationsCount ?? 0), 0)} />
+          </div>
+          <div className="table-wrap report-table-wrap">
+            <table className="data-table report-table">
               <thead>
                 <tr>
                   <th>Patient</th>
+                  <th>Status</th>
+                  <th>Registered</th>
                   <th>IC / Passport</th>
                   <th>Phone</th>
-                  <th>Prescriptions</th>
-                  <th>Payments</th>
+                  <th>Consultations</th>
                   <th>Total Paid (RM)</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedPatientItems.map((item) => (
                   <tr key={item.patientId}>
-                    <td>{item.name}</td>
+                    <td><strong>{item.name}</strong></td>
+                    <td><ReportBadge tone={item.isActive === false ? 'neutral' : 'good'}>{item.isActive === false ? 'Archived' : 'Active'}</ReportBadge></td>
+                    <td>{toDateInput(item.createdAt)}</td>
                     <td>{item.icOrPassport}</td>
                     <td>{item.phone}</td>
-                    <td>{item.prescriptionsCount}</td>
-                    <td>{item.paymentsCount}</td>
+                    <td>{item.consultationsCount ?? '-'}</td>
                     <td>{formatMoney(item.totalPaid)}</td>
                   </tr>
                 ))}
@@ -788,21 +998,29 @@ export const ReportsPage = () => {
           </div>
 
           <Pagination page={patientPage} totalPages={patientTotalPages} onPageChange={setPatientPage} />
-          {patientItems.length === 0 && <p className="muted">No patient records found.</p>}
-        </article>
+          {patientItems.length === 0 && <EmptyReportState message="No patient records found." />}
+        </ReportSection>
       )}
 
       {!loading && reportType === 'PRESCRIPTION' && (
-        <article className="report-card" style={{ marginTop: 14 }}>
-          <h3>Prescription Report</h3>
-          <div className="table-wrap">
-            <table className="data-table">
+        <ReportSection title="Prescription Report" subtitle="Medicine tags, status, and dispensing readiness by prescription.">
+          <div className="metrics-grid report-metrics-grid">
+            <MetricCard icon="RX" label="Prescriptions" value={prescriptionItems.length} />
+            <MetricCard icon="MD" label="Total Medicines" value={prescriptionMedicineCount} />
+            <MetricCard icon="OK" label="Dispensed" value={prescriptionItems.filter((item) => item.status === 'DISPENSED').length} tone="good" />
+            <MetricCard icon="PN" label="Pending" value={prescriptionItems.filter((item) => item.status === 'PENDING_VERIFICATION').length} tone="warning" />
+          </div>
+          <div className="table-wrap report-table-wrap">
+            <table className="data-table report-table">
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Patient</th>
                   <th>Doctor</th>
                   <th>Medicines</th>
+                  <th>Total Meds</th>
+                  <th>Status</th>
+                  <th>Dispensing</th>
                 </tr>
               </thead>
               <tbody>
@@ -811,7 +1029,10 @@ export const ReportsPage = () => {
                     <td>{new Date(item.date).toLocaleString()}</td>
                     <td>{item.patient.name}</td>
                     <td>{item.doctor.username}</td>
-                    <td>{item.items.map((m) => `${m.medicine.name} x${m.qty}`).join(', ') || '-'}</td>
+                    <td><MedicineTags items={item.items} /></td>
+                    <td>{item.items.reduce((sum, med) => sum + med.qty, 0)}</td>
+                    <td><ReportBadge tone={getStatusTone(item.status)}>{prettifyEnum(item.status ?? 'PENDING')}</ReportBadge></td>
+                    <td><ReportBadge tone={item.status === 'DISPENSED' ? 'good' : item.status === 'REJECTED' ? 'critical' : 'warning'}>{item.status === 'DISPENSED' ? 'Dispensed' : item.status === 'REJECTED' ? 'Rejected' : 'Pending'}</ReportBadge></td>
                   </tr>
                 ))}
               </tbody>
@@ -819,34 +1040,30 @@ export const ReportsPage = () => {
           </div>
 
           <Pagination page={prescriptionPage} totalPages={prescriptionTotalPages} onPageChange={setPrescriptionPage} />
-          {prescriptionItems.length === 0 && <p className="muted">No prescriptions found.</p>}
-        </article>
+          {prescriptionItems.length === 0 && <EmptyReportState message="No prescription records found." />}
+        </ReportSection>
       )}
 
       {!loading && reportType === 'CONSULTATION' && (
-        <article className="report-card" style={{ marginTop: 14 }}>
-          <h3>Consultation Report</h3>
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <p className="muted">Consultations</p>
-              <strong>{consultationItems.length}</strong>
-            </div>
-            <div className="metric-card">
-              <p className="muted">Completed</p>
-              <strong>{consultationItems.filter((item) => item.status === 'COMPLETED').length}</strong>
-            </div>
+        <ReportSection title="Consultation Report" subtitle="Consultation workload, follow-ups, fees, and clinical status at a glance.">
+          <div className="metrics-grid report-metrics-grid">
+            <MetricCard icon="DR" label="Consultations" value={consultationItems.length} />
+            <MetricCard icon="OK" label="Completed" value={consultationItems.filter((item) => item.status === 'COMPLETED').length} tone="good" />
+            <MetricCard icon="FU" label="Follow-ups" value={consultationItems.filter((item) => item.appointment?.type === 'FOLLOW_UP').length} tone="warning" />
+            <MetricCard icon="RM" label="Consultation Fees" value={`RM ${formatMoney(consultationFeeTotal)}`} />
           </div>
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="table-wrap report-table-wrap">
+            <table className="data-table report-table">
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Patient</th>
                   <th>Doctor</th>
                   <th>Type</th>
+                  <th>Follow-up</th>
                   <th>Status</th>
                   <th>Diagnosis</th>
-                  <th>Payment</th>
+                  <th>Fee</th>
                 </tr>
               </thead>
               <tbody>
@@ -855,10 +1072,19 @@ export const ReportsPage = () => {
                     <td>{new Date(item.createdAt).toLocaleString()}</td>
                     <td>{item.patient.name}</td>
                     <td>{item.doctor.username}</td>
-                    <td>{prettifyEnum(item.consultationType)}</td>
-                    <td>{prettifyEnum(item.status)}</td>
-                    <td>{item.diagnosis ?? '-'}</td>
-                    <td>{item.payment ? `${prettifyEnum(item.payment.status)} - RM ${formatMoney(item.payment.amount)}` : '-'}</td>
+                    <td><ReportBadge tone="neutral">{prettifyEnum(item.consultationType)}</ReportBadge></td>
+                    <td>
+                      <ReportBadge tone={item.appointment?.type === 'FOLLOW_UP' ? 'warning' : 'neutral'}>
+                        {item.appointment?.type === 'FOLLOW_UP' ? 'Follow-up' : 'Standard'}
+                      </ReportBadge>
+                    </td>
+                    <td><ReportBadge tone={getStatusTone(item.status)}>{prettifyEnum(item.status)}</ReportBadge></td>
+                    <td>
+                      <span className="report-diagnosis" title={item.diagnosis ?? 'No diagnosis recorded'}>
+                        {item.diagnosis ?? '-'}
+                      </span>
+                    </td>
+                    <td>{item.payment ? `RM ${formatMoney(item.payment.amount)}` : '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -866,42 +1092,48 @@ export const ReportsPage = () => {
           </div>
 
           <Pagination page={consultationPage} totalPages={consultationTotalPages} onPageChange={setConsultationPage} />
-          {consultationItems.length === 0 && <p className="muted">No consultations found.</p>}
-        </article>
+          {consultationItems.length === 0 && <EmptyReportState message="No consultation records found." />}
+        </ReportSection>
       )}
 
       {!loading && reportType === 'INVENTORY' && (
-        <article className="report-card" style={{ marginTop: 14 }}>
-          <h3>Inventory Report</h3>
-          <div className="metrics-grid" style={{ marginTop: 10 }}>
-            <div className="metric-card warning">
-              <p className="muted">Low Stock (&lt; 10)</p>
-              <strong>{lowStockItems.length}</strong>
-            </div>
-            <div className="metric-card warning">
-              <p className="muted">Expiring ≤ {filters.expiringDays} days</p>
-              <strong>{expiringItems.length}</strong>
-            </div>
+        <ReportSection title="Inventory Report" subtitle="Low stock and expiry risk split into compact operational queues.">
+          <div className="metrics-grid report-metrics-grid">
+            <MetricCard icon="LS" label="Low Stock (<10)" value={lowStockItems.length} tone="danger" />
+            <MetricCard icon="EX" label={`Expiring <= ${filters.expiringDays} days`} value={expiringItems.length} tone="warning" />
+            <MetricCard icon="AL" label="Total Alerts" value={lowStockItems.length + expiringItems.length} tone="warning" />
           </div>
 
-          <div className="alerts-grid">
-            <div>
-              <h4>Low Stock</h4>
-              <div className="table-wrap">
-                <table className="data-table">
+          <div className="report-inventory-grid">
+            <div className="report-card report-subsection">
+              <div className="report-section-head report-subsection-head">
+                <div>
+                  <h3>Low Stock</h3>
+                  <p className="muted">Medicines below reorder threshold.</p>
+                </div>
+                <ReportBadge tone={lowStockItems.length > 0 ? 'critical' : 'good'}>{lowStockItems.length} items</ReportBadge>
+              </div>
+              <div className="table-wrap report-table-wrap">
+                <table className="data-table report-table">
                   <thead>
                     <tr>
                       <th>Name</th>
+                      <th>Category</th>
+                      <th>Supplier</th>
                       <th>Batch</th>
                       <th>Qty</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginatedLowStockItems.map((item) => (
                       <tr key={item.medicineId}>
                         <td>{item.name}</td>
+                        <td>{item.category ?? 'Medicine'}</td>
+                        <td>{item.companyName ?? '-'}</td>
                         <td>{item.batchNumber}</td>
-                        <td><span className="status-badge status-critical">{item.quantity}</span></td>
+                        <td>{item.quantity}</td>
+                        <td><ReportBadge tone={item.quantity <= 0 ? 'critical' : 'warning'}>{item.quantity <= 0 ? 'Out of stock' : 'Low stock'}</ReportBadge></td>
                       </tr>
                     ))}
                   </tbody>
@@ -909,27 +1141,40 @@ export const ReportsPage = () => {
               </div>
 
               <Pagination page={lowStockPage} totalPages={lowStockTotalPages} onPageChange={setLowStockPage} />
+              {lowStockItems.length === 0 && <EmptyReportState message="All medicines are sufficiently stocked." />}
             </div>
 
-            <div>
-              <h4>Expiring Soon</h4>
-              <div className="table-wrap">
-                <table className="data-table">
+            <div className="report-card report-subsection">
+              <div className="report-section-head report-subsection-head">
+                <div>
+                  <h3>Expiring Soon</h3>
+                  <p className="muted">Medicines reaching expiry window.</p>
+                </div>
+                <ReportBadge tone={expiringItems.length > 0 ? 'warning' : 'good'}>{expiringItems.length} items</ReportBadge>
+              </div>
+              <div className="table-wrap report-table-wrap">
+                <table className="data-table report-table">
                   <thead>
                     <tr>
                       <th>Name</th>
+                      <th>Category</th>
+                      <th>Supplier</th>
                       <th>Batch</th>
                       <th>Expiry</th>
-                      <th>In Days</th>
+                      <th>Expiry Countdown</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginatedExpiringItems.map((item) => (
                       <tr key={item.medicineId}>
                         <td>{item.name}</td>
+                        <td>{item.category ?? 'Medicine'}</td>
+                        <td>{item.companyName ?? '-'}</td>
                         <td>{item.batchNumber}</td>
                         <td>{toDateInput(item.expiryDate)}</td>
-                        <td>{daysUntil(item.expiryDate)}</td>
+                        <td>{formatExpiryCountdown(item.expiryDate)}</td>
+                        <td><ReportBadge tone={daysUntil(item.expiryDate) < 0 ? 'critical' : 'warning'}>{daysUntil(item.expiryDate) < 0 ? 'Expired' : 'Near expiry'}</ReportBadge></td>
                       </tr>
                     ))}
                   </tbody>
@@ -937,42 +1182,30 @@ export const ReportsPage = () => {
               </div>
 
               <Pagination page={expiringPage} totalPages={expiringTotalPages} onPageChange={setExpiringPage} />
+              {expiringItems.length === 0 && <EmptyReportState message="No medicines are close to expiry." />}
             </div>
           </div>
 
-          {lowStockItems.length === 0 && expiringItems.length === 0 && <p className="muted">No inventory alerts found.</p>}
-        </article>
+          {lowStockItems.length === 0 && expiringItems.length === 0 && <EmptyReportState message="No inventory alerts found." />}
+        </ReportSection>
       )}
 
       {!loading && reportType === 'PAYMENT' && (
-        <article className="report-card" style={{ marginTop: 14 }}>
-          <h3>Payment Report</h3>
-
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <p className="muted">Transactions</p>
-              <strong>{paymentSummary?.count ?? 0}</strong>
-            </div>
-            <div className="metric-card">
-              <p className="muted">Total (RM)</p>
-              <strong>{formatMoney(paymentSummary?.total ?? 0)}</strong>
-            </div>
-            <div className="metric-card">
-              <p className="muted">Consultation (RM)</p>
-              <strong>{formatMoney(paymentConsultationTotal)}</strong>
-            </div>
-            <div className="metric-card">
-              <p className="muted">Appointment (RM)</p>
-              <strong>{formatMoney(paymentAppointmentTotal)}</strong>
-            </div>
+        <ReportSection title="Payment Report" subtitle="Revenue breakdown by payment type, method, receipt, and patient.">
+          <div className="metrics-grid report-metrics-grid">
+            <MetricCard icon="TX" label="Total Payments" value={paymentSummary?.count ?? 0} />
+            <MetricCard icon="DR" label="Consultation Revenue" value={`RM ${formatMoney(paymentConsultationTotal)}`} />
+            <MetricCard icon="AP" label="Appointment Revenue" value={`RM ${formatMoney(paymentAppointmentTotal)}`} />
+            <MetricCard icon="MD" label="Medicine Revenue" value={`RM ${formatMoney(paymentMedicineTotal)}`} tone="good" />
           </div>
 
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="table-wrap report-table-wrap">
+            <table className="data-table report-table">
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Type</th>
+                  <th>Method</th>
                   <th>Patient</th>
                   <th>Amount (RM)</th>
                   <th>Receipt</th>
@@ -982,7 +1215,8 @@ export const ReportsPage = () => {
                 {paginatedPaymentItems.map((item) => (
                   <tr key={item.paymentId}>
                     <td>{new Date(item.date).toLocaleString()}</td>
-                    <td>{prettifyPaymentType(item.type)}</td>
+                    <td><span className={`status-badge ${getTypeClass(item.type)}`}>{prettifyPaymentType(item.type)}</span></td>
+                    <td><ReportBadge tone="neutral">{item.paymentMethod ? prettifyEnum(item.paymentMethod) : '-'}</ReportBadge></td>
                     <td>{item.patient?.name ?? '-'}</td>
                     <td>{formatMoney(item.amount)}</td>
                     <td>{item.receipt?.receiptNo ?? '-'}</td>
@@ -994,27 +1228,43 @@ export const ReportsPage = () => {
 
           <Pagination page={paymentPage} totalPages={paymentTotalPages} onPageChange={setPaymentPage} />
 
-          {(paymentSummary?.payments.length ?? 0) === 0 && <p className="muted">No payment transactions found.</p>}
-        </article>
+          {(paymentSummary?.payments.length ?? 0) === 0 && <EmptyReportState message="No payment transactions found." />}
+        </ReportSection>
       )}
 
       {!loading && reportType === 'SALES' && (
-        <article className="report-card" style={{ marginTop: 14 }}>
-          <h3>Sales Report</h3>
-
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <p className="muted">Transactions</p>
-              <strong>{salesSummary?.count ?? 0}</strong>
-            </div>
-            <div className="metric-card">
-              <p className="muted">Total (RM)</p>
-              <strong>{formatMoney(salesSummary?.total ?? 0)}</strong>
-            </div>
+        <ReportSection title="Sales Report" subtitle="Sales trend, receipt status, and medicine items in one readable view.">
+          <div className="metrics-grid report-metrics-grid">
+            <MetricCard icon="RM" label="Total Revenue" value={`RM ${formatMoney(salesSummary?.total ?? 0)}`} tone="good" />
+            <MetricCard icon="MD" label="Medicine Sales" value={`RM ${formatMoney(salesMedicineTotal)}`} />
+            <MetricCard icon="DR" label="Consultation Fees" value={`RM ${formatMoney(salesConsultationTotal)}`} />
+            <MetricCard icon="AP" label="Appointment Fees" value={`RM ${formatMoney(salesAppointmentTotal)}`} />
           </div>
 
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="report-chart-panel">
+            <div className="report-chart-toolbar">
+              <div>
+                <h3>Revenue Trend</h3>
+                <p className="muted">Total {formatShortMoney(salesSummary?.total ?? 0)} across {salesSummary?.count ?? 0} transactions</p>
+              </div>
+              <div className="report-chart-controls" aria-label="Sales chart grouping">
+                {(['daily', 'weekly', 'monthly'] as ChartMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={salesChartMode === mode ? 'is-active' : ''}
+                    onClick={() => setSalesChartMode(mode)}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ReportChart data={salesChartData} mode={salesChartMode} />
+          </div>
+
+          <div className="table-wrap report-table-wrap">
+            <table className="data-table report-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -1030,11 +1280,11 @@ export const ReportsPage = () => {
                 {paginatedSalesItems.map((item) => (
                   <tr key={item.paymentId}>
                     <td>{new Date(item.date).toLocaleString()}</td>
-                    <td>{prettifyPaymentType(item.type)}</td>
+                    <td><span className={`status-badge ${getTypeClass(item.type)}`}>{prettifyPaymentType(item.type)}</span></td>
                     <td>{item.patient?.name ?? '-'}</td>
                     <td>{item.receipt?.receiptNo ?? '-'}</td>
-                    <td>{item.medicineItems.map((m) => `${m.medicine?.name ?? 'Medicine'} x${m.qty}`).join(', ') || '-'}</td>
-                    <td>{prettifyEnum(item.status)}</td>
+                    <td><MedicineTags items={item.medicineItems} /></td>
+                    <td><ReportBadge tone={getStatusTone(item.status)}>{prettifyEnum(item.status)}</ReportBadge></td>
                     <td>{formatMoney(item.receipt?.totalAmount ?? item.amount)}</td>
                   </tr>
                 ))}
@@ -1043,17 +1293,30 @@ export const ReportsPage = () => {
           </div>
 
           <Pagination page={salesPage} totalPages={salesTotalPages} onPageChange={setSalesPage} />
-          {(salesSummary?.sales.length ?? 0) === 0 && <p className="muted">No sales transactions found.</p>}
-        </article>
+          {(salesSummary?.sales.length ?? 0) === 0 && <EmptyReportState message="No sales transactions found." />}
+        </ReportSection>
       )}
 
       {!loading && reportType === 'RECEIPT' && (
-        <article className="report-card" style={{ marginTop: 14 }}>
-          <h3>Receipt Report</h3>
-          <p className="muted">Includes consultation, appointment, and medicine-sale transactions.</p>
+        <ReportSection title="Receipt Report" subtitle="Receipt lookup with compact actions for viewing, printing, and PDF export.">
+          {previewReceipt && (
+            <div className="report-receipt-preview" role="region" aria-label="Receipt preview">
+              <div>
+                <span className="report-receipt-label">Preview</span>
+                <strong>{previewReceipt.receiptNo}</strong>
+                <p className="muted">
+                  {previewReceipt.payment?.patient?.name ?? 'Walk-in customer'} - {previewReceipt.payment ? prettifyPaymentType(previewReceipt.payment.type) : 'Receipt'}
+                </p>
+              </div>
+              <div>
+                <span className="report-receipt-total">RM {formatMoney(previewReceipt.totalAmount)}</span>
+                <button type="button" className="btn btn-ghost report-icon-btn" onClick={() => setPreviewReceipt(null)}>Close</button>
+              </div>
+            </div>
+          )}
 
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="table-wrap report-table-wrap">
+            <table className="data-table report-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -1061,6 +1324,7 @@ export const ReportsPage = () => {
                   <th>Patient</th>
                   <th>Type</th>
                   <th>Total (RM)</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1069,8 +1333,15 @@ export const ReportsPage = () => {
                     <td>{new Date(item.date).toLocaleString()}</td>
                     <td>{item.receiptNo}</td>
                     <td>{item.payment?.patient?.name ?? '-'}</td>
-                    <td>{item.payment ? prettifyPaymentType(item.payment.type) : '-'}</td>
+                    <td>{item.payment ? <span className={`status-badge ${getTypeClass(item.payment.type)}`}>{prettifyPaymentType(item.payment.type)}</span> : '-'}</td>
                     <td>{formatMoney(item.totalAmount)}</td>
+                    <td>
+                      <div className="report-row-actions">
+                        <button type="button" className="btn btn-ghost report-icon-btn" onClick={() => setPreviewReceipt(item)}>View</button>
+                        <button type="button" className="btn btn-ghost report-icon-btn" onClick={() => exportReceiptRecord(item)}>Print</button>
+                        <button type="button" className="btn btn-ghost report-icon-btn" onClick={() => exportReceiptRecord(item)}>PDF</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1079,8 +1350,8 @@ export const ReportsPage = () => {
 
           <Pagination page={receiptPage} totalPages={receiptTotalPages} onPageChange={setReceiptPage} />
 
-          {receiptItems.length === 0 && <p className="muted">No receipts found.</p>}
-        </article>
+          {receiptItems.length === 0 && <EmptyReportState message="No receipts found." />}
+        </ReportSection>
       )}
     </section>
   );

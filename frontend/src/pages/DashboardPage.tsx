@@ -253,7 +253,19 @@ const EmptyState = ({ icon = '-', message }: { icon?: string; message: string })
   </div>
 );
 
-const ValueChart = ({ data, format = 'number', variant = 'area' }: { data: Array<{ label: string; value: number }>; format?: ChartFormat; variant?: 'area' | 'bar' }) => {
+const buildSmoothPath = (points: Array<{ x: number; y: number }>) => {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+
+  return points.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x} ${point.y}`;
+    const previous = points[index - 1];
+    const controlX = (previous.x + point.x) / 2;
+    return `${path} Q ${controlX} ${previous.y} ${point.x} ${point.y}`;
+  }, '');
+};
+
+const ValueChart = ({ data, format = 'number', variant = 'area', summary }: { data: Array<{ label: string; value: number }>; format?: ChartFormat; variant?: 'area' | 'bar'; summary?: string }) => {
   if (data.length === 0 || data.every((item) => item.value === 0)) {
     return <EmptyState icon="-" message={format === 'money' ? 'No paid transactions in this period.' : 'No chart data available yet.'} />;
   }
@@ -271,11 +283,12 @@ const ValueChart = ({ data, format = 'number', variant = 'area' }: { data: Array
     const y = padding.top + chartHeight - (item.value / max) * chartHeight;
     return { ...item, x, y };
   });
-  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  const path = buildSmoothPath(points);
   const areaPath = `${path} L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
 
   return (
     <div className="dashboard-chart-card">
+      {summary && <span className="dashboard-chart-summary">{summary}</span>}
       <svg className="dashboard-svg-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Dashboard analytics chart">
         <defs>
           <linearGradient id="dashboardAreaFill" x1="0" x2="0" y1="0" y2="1">
@@ -385,13 +398,14 @@ const WorkflowList = ({ items, emptyMessage }: { items: Array<{ title: string; m
   </div>
 );
 
-const DashboardPanel = ({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) => (
+const DashboardPanel = ({ title, subtitle, action, children }: { title: string; subtitle: string; action?: ReactNode; children: ReactNode }) => (
   <section className="dashboard-panel">
     <div className="dashboard-panel-head">
       <div>
         <h3>{title}</h3>
         <p>{subtitle}</p>
       </div>
+      {action}
     </div>
     {children}
   </section>
@@ -617,14 +631,18 @@ export const DashboardPage = () => {
         text: prettify(item.activityType ?? item.action),
         date: item.timestamp ?? item.createdAt ?? '',
       })),
-  ].filter((item) => item.date).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
+  ].filter((item) => item.date).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
 
-  const inventoryAlertItems = [
+  const allInventoryAlertItems = [
     ...expiredMedicines.map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} - Expired ${new Date(item.expiryDate).toLocaleDateString()}`, status: 'Expired', severity: 'critical' as Severity })),
     ...outOfStock.map((item) => ({ title: item.name, meta: `${item.batchNumber ?? 'No batch'} - ${new Date(item.expiryDate).toLocaleDateString()}`, status: 'Out of stock', severity: 'critical' as Severity })),
     ...nearExpiry.map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} - expires in ${daysUntil(item.expiryDate)} days`, status: 'Near expiry', severity: 'warning' as Severity })),
     ...lowStock.map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} remaining`, status: 'Low stock', severity: 'warning' as Severity })),
-  ].slice(0, 7);
+  ];
+  const inventoryAlertItems = allInventoryAlertItems.slice(0, 3);
+  const chartSummary = role === 'PHARMACIST'
+    ? `${topMedicines.reduce((sum, item) => sum + item.value, 0)} sold`
+    : `RM ${formatMoney(graphData.reduce((sum, item) => sum + item.value, 0))} ${chartMode === 'monthly' ? 'period' : 'this week'}`;
 
   const flowItems = role === 'RECEPTIONIST'
     ? [
@@ -678,7 +696,7 @@ export const DashboardPage = () => {
         ))}
       </div>
 
-      <FlowStrip items={flowItems} />
+      {role !== 'DOCTOR' && <FlowStrip items={flowItems} />}
 
       <div className="dashboard-chart-grid">
         <section className="dashboard-panel dashboard-main-chart">
@@ -687,18 +705,21 @@ export const DashboardPage = () => {
               <h3>{role === 'PHARMACIST' ? 'Top Selling Medicines' : role === 'RECEPTIONIST' ? 'Daily Payment / Revenue' : 'Revenue / Sales'}</h3>
               <p>{role === 'PHARMACIST' ? 'Quantity sold by medicine with readable values' : 'Paid transactions grouped by period'}</p>
             </div>
-            {role !== 'PHARMACIST' && (
-              <div className="dashboard-segment">
-                {(['daily', 'weekly', 'monthly'] as ChartMode[]).map((mode) => (
-                  <button key={mode} type="button" className={chartMode === mode ? 'is-active' : ''} onClick={() => setChartMode(mode)}>{prettify(mode)}</button>
-                ))}
-              </div>
-            )}
+            <div className="dashboard-chart-tools">
+              <strong>{chartSummary}</strong>
+              {role !== 'PHARMACIST' && (
+                <div className="dashboard-segment">
+                  {(['daily', 'weekly', 'monthly'] as ChartMode[]).map((mode) => (
+                    <button key={mode} type="button" className={chartMode === mode ? 'is-active' : ''} onClick={() => setChartMode(mode)}>{prettify(mode)}</button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           {role === 'PHARMACIST' ? (
             <HorizontalBarChart data={topMedicines} emptyMessage="No medicine sales recorded yet." />
           ) : (
-            <ValueChart data={graphData} format="money" variant="area" />
+            <ValueChart data={graphData} format="money" variant="area" summary={chartSummary} />
           )}
         </section>
 
@@ -730,11 +751,12 @@ export const DashboardPage = () => {
         <DashboardPanel
           title={role === 'RECEPTIONIST' ? 'Pending Payments' : role === 'PHARMACIST' ? 'Low Stock Medicines' : 'Inventory Alerts'}
           subtitle={role === 'DOCTOR' ? 'Critical and warning inventory conditions separated by severity' : 'Items that need attention'}
+          action={role !== 'RECEPTIONIST' && allInventoryAlertItems.length > 3 ? <button type="button" className="dashboard-panel-action" onClick={() => navigate(`${basePath}/inventory`)}>View All</button> : undefined}
         >
           {role === 'RECEPTIONIST' ? (
-            <DashboardTable rows={data.pendingPayments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} emptyMessage="No pending payments." />
+            <DashboardTable rows={data.pendingPayments.slice(0, 5).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} emptyMessage="No pending payments." />
           ) : role === 'PHARMACIST' ? (
-            <WorkflowList items={[...outOfStock, ...lowStock].slice(0, 7).map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} remaining`, status: item.quantity <= 0 ? 'Out of stock' : 'Low stock', severity: item.quantity <= 0 ? 'critical' : 'warning' }))} emptyMessage="All medicines are sufficiently stocked." />
+            <WorkflowList items={[...outOfStock, ...lowStock].slice(0, 4).map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} remaining`, status: item.quantity <= 0 ? 'Out of stock' : 'Low stock', severity: item.quantity <= 0 ? 'critical' : 'warning' }))} emptyMessage="All medicines are sufficiently stocked." />
           ) : (
             <WorkflowList items={inventoryAlertItems} emptyMessage="All medicines are sufficiently stocked." />
           )}
@@ -745,24 +767,26 @@ export const DashboardPage = () => {
         <DashboardPanel
           title={role === 'PHARMACIST' ? 'Recent Sales' : role === 'RECEPTIONIST' ? 'Upcoming Appointments' : 'Follow-up Appointments'}
           subtitle={role === 'PHARMACIST' ? 'Latest medicine sales and dispense status' : role === 'RECEPTIONIST' ? 'Next appointments to prepare for' : 'Follow-up visits linked to earlier care'}
+          action={<button type="button" className="dashboard-panel-action" onClick={() => navigate(role === 'PHARMACIST' ? `${basePath}/sales` : `${basePath}/appointments`)}>View More</button>}
         >
           {role === 'PHARMACIST' ? (
-            <DashboardTable rows={data.sales.slice(0, 7).map((item) => [item.patient?.name ?? 'Customer', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Customer', 'Total', 'Status']} statusColumn={2} emptyMessage="No recent medicine sales." />
+            <DashboardTable rows={data.sales.slice(0, 5).map((item) => [item.patient?.name ?? 'Customer', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Customer', 'Total', 'Status']} statusColumn={2} emptyMessage="No recent medicine sales." />
           ) : role === 'RECEPTIONIST' ? (
-            <DashboardTable rows={upcomingAppointments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Date / Time', 'Status']} statusColumn={2} emptyMessage="No upcoming appointments." />
+            <DashboardTable rows={upcomingAppointments.slice(0, 5).map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Date / Time', 'Status']} statusColumn={2} emptyMessage="No upcoming appointments." />
           ) : (
-            <DashboardTable rows={followUpAppointments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Date / Time', 'Status']} statusColumn={2} emptyMessage="No upcoming follow-up appointments." />
+            <DashboardTable rows={followUpAppointments.slice(0, 5).map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Date / Time', 'Status']} statusColumn={2} emptyMessage="No upcoming follow-up appointments." />
           )}
         </DashboardPanel>
 
         <DashboardPanel
           title={role === 'PHARMACIST' ? 'Near Expiry Medicines' : role === 'RECEPTIONIST' ? 'Recent Payments' : 'Recent Patients'}
           subtitle={role === 'PHARMACIST' ? 'Expiry warnings within 30 days' : role === 'RECEPTIONIST' ? 'Latest received and pending transactions' : 'Recently registered patients'}
+          action={role === 'RECEPTIONIST' ? <button type="button" className="dashboard-panel-action" onClick={() => navigate(`${basePath}/payments`)}>View More</button> : undefined}
         >
           {role === 'PHARMACIST' ? (
-            <WorkflowList items={nearExpiry.slice(0, 7).map((item) => ({ title: item.name, meta: `${item.batchNumber ?? 'No batch'} - expires ${new Date(item.expiryDate).toLocaleDateString()}`, status: 'Near expiry', severity: 'warning' }))} emptyMessage="No near expiry medicines." />
+            <WorkflowList items={nearExpiry.slice(0, 4).map((item) => ({ title: item.name, meta: `${item.batchNumber ?? 'No batch'} - expires ${new Date(item.expiryDate).toLocaleDateString()}`, status: 'Near expiry', severity: 'warning' }))} emptyMessage="No near expiry medicines." />
           ) : role === 'RECEPTIONIST' ? (
-            <DashboardTable rows={recentPayments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} emptyMessage="No recent payments." />
+            <DashboardTable rows={recentPayments.slice(0, 5).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} emptyMessage="No recent payments." />
           ) : (
             <DashboardTable rows={recentPatients.slice(0, 7).map((item) => [item.name, item.icOrPassport ?? '-', item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-'])} headers={['Patient', 'IC / ID', 'Registered']} emptyMessage="No recent patients." />
           )}
@@ -776,7 +800,11 @@ export const DashboardPage = () => {
           </DashboardPanel>
         )}
 
-        <DashboardPanel title="Activity Timeline" subtitle="Meaningful clinic activity only">
+        <DashboardPanel
+          title="Activity Timeline"
+          subtitle="Meaningful clinic activity only"
+          action={role === 'DOCTOR' ? <button type="button" className="dashboard-panel-action" onClick={() => navigate(`${basePath}/audit-logs`)}>View Audit Logs</button> : undefined}
+        >
           <Timeline items={activity} />
         </DashboardPanel>
       </div>
