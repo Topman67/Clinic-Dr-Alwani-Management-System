@@ -47,7 +47,7 @@ export const createUser = async (req: Request, res: Response) => {
     data: { username: username.trim(), passwordHash, role, status: UserStatus.ACTIVE },
   });
   try {
-    await logActivity(req.user?.userId, `create_user:${user.userId}`);
+    await logActivity(req.user?.userId, `create_user:${role.toLowerCase()}_account:${user.username}:${user.userId}`);
   } catch (_) {}
   res.status(201).json({ userId: user.userId, username: user.username, role: user.role, status: user.status });
 };
@@ -77,6 +77,17 @@ export const updateUser = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'You cannot deactivate your own account' });
   }
 
+  if (existing.role === Role.DOCTOR) {
+    if (role && role !== Role.DOCTOR) {
+      return res.status(400).json({ message: 'Primary doctor role cannot be changed.' });
+    }
+    if (status && status !== UserStatus.ACTIVE) {
+      return res.status(400).json({ message: 'Primary doctor account cannot be deactivated.' });
+    }
+  } else if (role && !STAFF_ROLES.includes(role)) {
+    return res.status(400).json({ message: 'Staff role must be RECEPTIONIST or PHARMACIST.' });
+  }
+
   const nextUsername = username?.trim();
   if (nextUsername && nextUsername.length < 3) {
     return res.status(400).json({ message: 'Username must be at least 3 characters' });
@@ -94,7 +105,11 @@ export const updateUser = async (req: Request, res: Response) => {
     data: { username: nextUsername, role, status },
   });
   try {
-    await logActivity(req.user?.userId, `update_user:${user.userId}`);
+    const changes: string[] = [];
+    if (nextUsername && nextUsername !== existing.username) changes.push('username');
+    if (role && role !== existing.role) changes.push(`role:${existing.role}->${role}`);
+    if (status && status !== existing.status) changes.push(`status:${existing.status}->${status}`);
+    await logActivity(req.user?.userId, `update_user:${user.userId}:${changes.join(',') || 'no_changes'}`);
   } catch (_) {}
   res.json({ userId: user.userId, username: user.username, role: user.role, status: user.status });
 };
@@ -110,7 +125,7 @@ export const updatePassword = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Password must be at least 6 characters' });
   }
 
-  const existing = await prisma.user.findUnique({ where: { userId: id }, select: { userId: true } });
+  const existing = await prisma.user.findUnique({ where: { userId: id }, select: { userId: true, username: true, role: true } });
   if (!existing) {
     return res.status(404).json({ message: 'User not found' });
   }
@@ -118,7 +133,7 @@ export const updatePassword = async (req: Request, res: Response) => {
   const passwordHash = await hashPassword(password);
   await prisma.user.update({ where: { userId: id }, data: { passwordHash } });
   try {
-    await logActivity(req.user?.userId, `reset_password:${id}`);
+    await logActivity(req.user?.userId, `reset_password:${existing.role.toLowerCase()}_account:${existing.username}:${id}`);
   } catch (_) {}
   res.json({ message: 'Password updated' });
 };
@@ -138,9 +153,13 @@ export const deactivateUser = async (req: Request, res: Response) => {
     return res.status(404).json({ message: 'User not found' });
   }
 
+  if (existing.role === Role.DOCTOR) {
+    return res.status(400).json({ message: 'Primary doctor account cannot be deactivated.' });
+  }
+
   const user = await prisma.user.update({ where: { userId: id }, data: { status: UserStatus.INACTIVE } });
   try {
-    await logActivity(req.user?.userId, `deactivate_user:${id}`);
+    await logActivity(req.user?.userId, `deactivate_user:${existing.role.toLowerCase()}_account:${existing.username}:${id}`);
   } catch (_) {}
 
   res.json({ userId: user.userId, username: user.username, role: user.role, status: user.status });
@@ -166,6 +185,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     select: {
       userId: true,
       role: true,
+      username: true,
       _count: {
         select: {
           prescriptions: true,
@@ -211,7 +231,7 @@ export const deleteUser = async (req: Request, res: Response) => {
   });
 
   try {
-    await logActivity(actingUserId, `delete_user:${id}`);
+    await logActivity(actingUserId, `delete_user:${existing.role.toLowerCase()}_account:${existing.username}:${id}`);
   } catch (_) {}
   res.json({ message: 'User deleted' });
 };

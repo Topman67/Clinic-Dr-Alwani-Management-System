@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
@@ -16,6 +16,10 @@ type Appointment = {
   appointmentId: number;
   dateTime: string;
   status: 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+  type?: 'NEW' | 'FOLLOW_UP';
+  createdAt?: string;
+  previousPrescriptionId?: number | null;
+  followUpFromConsultationId?: number | null;
   patient?: { name: string; icOrPassport?: string | null } | null;
 };
 
@@ -43,6 +47,8 @@ type Medicine = {
   quantity: number;
   stockUnit?: string;
   expiryDate: string;
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt?: string;
 };
 
 type Payment = {
@@ -78,6 +84,8 @@ type DashboardData = {
 };
 
 type ChartMode = 'daily' | 'weekly' | 'monthly';
+type ChartFormat = 'money' | 'number';
+type Severity = 'critical' | 'warning' | 'good' | 'neutral' | 'verified';
 
 const emptyData: DashboardData = {
   patients: [],
@@ -123,6 +131,21 @@ const daysUntil = (value: string) => {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   return Math.ceil((expiry.getTime() - now.getTime()) / 86_400_000);
+};
+
+const formatShortValue = (value: number, format: ChartFormat) => {
+  if (format === 'money') {
+    if (value >= 1000) return `RM ${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+    return `RM ${value.toFixed(0)}`;
+  }
+  return String(Math.round(value));
+};
+
+const formatDelta = (current: number, previous: number, unit = '') => {
+  const difference = current - previous;
+  if (difference === 0) return current === 0 ? 'No activity today' : 'No change from yesterday';
+  const suffix = unit ? ` ${unit}` : '';
+  return `${difference > 0 ? '+' : ''}${difference}${suffix} from yesterday`;
 };
 
 const categoryLabel = (category: Medicine['category']) => {
@@ -191,48 +214,229 @@ const buildSeries = (payments: Payment[], mode: ChartMode) => {
   return labels.map((label, index) => ({ label, value: values[index] }));
 };
 
-const MiniBarChart = ({ data }: { data: Array<{ label: string; value: number }> }) => {
+const buildCountSeries = <T extends { dateTime?: string; date?: string; createdAt?: string }>(items: T[], mode: ChartMode, dateKey: keyof T) => {
+  const buckets = mode === 'monthly' ? 6 : 7;
+  const now = new Date();
+
+  return Array.from({ length: buckets }, (_, index) => {
+    const offset = buckets - 1 - index;
+    const start = new Date(now);
+
+    if (mode === 'monthly') {
+      start.setMonth(now.getMonth() - offset, 1);
+      start.setHours(0, 0, 0, 0);
+      const key = `${start.getFullYear()}-${start.getMonth()}`;
+      return {
+        label: start.toLocaleString(undefined, { month: 'short' }),
+        value: items.filter((item) => {
+          const raw = item[dateKey];
+          const date = raw ? new Date(String(raw)) : null;
+          return date && `${date.getFullYear()}-${date.getMonth()}` === key;
+        }).length,
+      };
+    }
+
+    start.setDate(now.getDate() - offset);
+    start.setHours(0, 0, 0, 0);
+    const key = toDateKey(start);
+    return {
+      label: mode === 'weekly' ? start.toLocaleDateString(undefined, { weekday: 'short' }) : start.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }),
+      value: items.filter((item) => toDateKey(String(item[dateKey] ?? '')) === key).length,
+    };
+  });
+};
+
+const EmptyState = ({ icon = '-', message }: { icon?: string; message: string }) => (
+  <div className="dashboard-empty">
+    <span aria-hidden="true">{icon}</span>
+    <p>{message}</p>
+  </div>
+);
+
+const ValueChart = ({ data, format = 'number', variant = 'area' }: { data: Array<{ label: string; value: number }>; format?: ChartFormat; variant?: 'area' | 'bar' }) => {
+  if (data.length === 0 || data.every((item) => item.value === 0)) {
+    return <EmptyState icon="-" message={format === 'money' ? 'No paid transactions in this period.' : 'No chart data available yet.'} />;
+  }
+
+  const width = 640;
+  const height = 260;
+  const padding = { top: 22, right: 24, bottom: 42, left: 66 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
   const max = Math.max(...data.map((item) => item.value), 1);
+  const yTicks = [0, 0.5, 1].map((ratio) => Math.round(max * ratio));
+  const xStep = data.length > 1 ? chartWidth / (data.length - 1) : chartWidth;
+  const points = data.map((item, index) => {
+    const x = padding.left + (data.length > 1 ? index * xStep : chartWidth / 2);
+    const y = padding.top + chartHeight - (item.value / max) * chartHeight;
+    return { ...item, x, y };
+  });
+  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  const areaPath = `${path} L ${points[points.length - 1].x} ${padding.top + chartHeight} L ${points[0].x} ${padding.top + chartHeight} Z`;
+
   return (
-    <div className="dashboard-bars" role="img" aria-label="Revenue chart">
+    <div className="dashboard-chart-card">
+      <svg className="dashboard-svg-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Dashboard analytics chart">
+        <defs>
+          <linearGradient id="dashboardAreaFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.34" />
+            <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {yTicks.map((tick) => {
+          const y = padding.top + chartHeight - (tick / max) * chartHeight;
+          return (
+            <g key={tick}>
+              <line className="dashboard-chart-gridline" x1={padding.left} x2={width - padding.right} y1={y} y2={y} />
+              <text className="dashboard-chart-axis" x={padding.left - 10} y={y + 4} textAnchor="end">{formatShortValue(tick, format)}</text>
+            </g>
+          );
+        })}
+        <line className="dashboard-chart-axis-line" x1={padding.left} x2={width - padding.right} y1={padding.top + chartHeight} y2={padding.top + chartHeight} />
+        <line className="dashboard-chart-axis-line" x1={padding.left} x2={padding.left} y1={padding.top} y2={padding.top + chartHeight} />
+
+        {variant === 'bar' ? points.map((point, index) => {
+          const barWidth = Math.min(44, chartWidth / data.length - 10);
+          const barHeight = padding.top + chartHeight - point.y;
+          return (
+            <g key={point.label}>
+              <rect
+                className="dashboard-chart-bar"
+                x={point.x - barWidth / 2}
+                y={point.y}
+                width={barWidth}
+                height={Math.max(2, barHeight)}
+                rx="6"
+              >
+                <title>{`${point.label}: ${formatShortValue(point.value, format)}`}</title>
+              </rect>
+              <text className="dashboard-chart-value" x={point.x} y={Math.max(14, point.y - 8)} textAnchor="middle">{formatShortValue(point.value, format)}</text>
+              <text className="dashboard-chart-axis" x={point.x} y={height - 14} textAnchor="middle">{point.label}</text>
+              {index < points.length - 1 && <line className="dashboard-chart-tick" x1={point.x} x2={point.x} y1={padding.top + chartHeight} y2={padding.top + chartHeight + 5} />}
+            </g>
+          );
+        }) : (
+          <>
+            <path className="dashboard-chart-area" d={areaPath} />
+            <path className="dashboard-chart-line" d={path} />
+            {points.map((point) => (
+              <g key={point.label}>
+                <circle className="dashboard-chart-point" cx={point.x} cy={point.y} r="4.5">
+                  <title>{`${point.label}: ${formatShortValue(point.value, format)}`}</title>
+                </circle>
+                <text className="dashboard-chart-value" x={point.x} y={Math.max(14, point.y - 9)} textAnchor="middle">{formatShortValue(point.value, format)}</text>
+                <text className="dashboard-chart-axis" x={point.x} y={height - 14} textAnchor="middle">{point.label}</text>
+              </g>
+            ))}
+          </>
+        )}
+      </svg>
+    </div>
+  );
+};
+
+const HorizontalBarChart = ({ data, format = 'number', emptyMessage }: { data: Array<{ label: string; value: number; color?: string }>; format?: ChartFormat; emptyMessage: string }) => {
+  const max = Math.max(...data.map((item) => item.value), 0);
+  if (max === 0) return <EmptyState icon="-" message={emptyMessage} />;
+
+  return (
+    <div className="dashboard-hbar-chart" role="img" aria-label="Dashboard bar chart">
       {data.map((item) => (
-        <div key={item.label} className="dashboard-bar-item">
-          <div className="dashboard-bar-track">
-            <span style={{ height: `${Math.max(8, (item.value / max) * 100)}%` }} />
+        <div key={item.label} className="dashboard-hbar-row">
+          <span>{item.label}</span>
+          <div className="dashboard-hbar-track">
+            <i style={{ width: `${Math.max(5, (item.value / max) * 100)}%`, background: item.color }}>
+              <title>{`${item.label}: ${formatShortValue(item.value, format)}`}</title>
+            </i>
           </div>
-          <small>{item.label}</small>
+          <b>{formatShortValue(item.value, format)}</b>
         </div>
       ))}
     </div>
   );
 };
 
-const PieChart = ({ data }: { data: Array<{ label: string; value: number; color: string }> }) => {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
-  let cumulative = 0;
+const FlowStrip = ({ items }: { items: Array<{ label: string; value: number | string; tone?: Severity }> }) => (
+  <div className="dashboard-flow-strip">
+    {items.map((item) => (
+      <article key={item.label} className={item.tone ? `is-${item.tone}` : undefined}>
+        <span>{item.label}</span>
+        <strong>{item.value}</strong>
+      </article>
+    ))}
+  </div>
+);
 
-  const gradient = total > 0
-    ? data.map((item) => {
-        const start = (cumulative / total) * 100;
-        cumulative += item.value;
-        const end = (cumulative / total) * 100;
-        return `${item.color} ${start}% ${end}%`;
-      }).join(', ')
-    : '#334155 0% 100%';
+const SeverityPill = ({ label, severity }: { label: string; severity: Severity }) => (
+  <span className={`dashboard-severity dashboard-severity-${severity}`}>{label}</span>
+);
 
-  return (
-    <div className="dashboard-pie-wrap">
-      <div className="dashboard-pie" style={{ background: `conic-gradient(${gradient})` }}>
-        <span>{total}</span>
-      </div>
-      <div className="dashboard-legend">
-        {data.map((item) => (
-          <span key={item.label}><i style={{ background: item.color }} />{item.label}<b>{item.value}</b></span>
-        ))}
+const WorkflowList = ({ items, emptyMessage }: { items: Array<{ title: string; meta: string; status?: string; severity?: Severity }>; emptyMessage: string }) => (
+  <div className="dashboard-workflow-list">
+    {items.length > 0 ? items.map((item, index) => (
+      <article key={`${item.title}-${item.meta}-${index}`}>
+        <div>
+          <strong>{item.title}</strong>
+          <small>{item.meta}</small>
+        </div>
+        {item.severity ? <SeverityPill label={item.status ?? prettify(item.severity)} severity={item.severity} /> : item.status ? <span className={`status-badge ${statusClass(item.status.toUpperCase().replace(/ /g, '_'))}`}>{item.status}</span> : null}
+      </article>
+    )) : <EmptyState icon="OK" message={emptyMessage} />}
+  </div>
+);
+
+const DashboardPanel = ({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) => (
+  <section className="dashboard-panel">
+    <div className="dashboard-panel-head">
+      <div>
+        <h3>{title}</h3>
+        <p>{subtitle}</p>
       </div>
     </div>
-  );
-};
+    {children}
+  </section>
+);
+
+const DashboardTable = ({ headers, rows, statusColumn, emptyMessage, emptyIcon = '-' }: { headers: string[]; rows: string[][]; statusColumn?: number; emptyMessage: string; emptyIcon?: string }) => (
+  <div className="dashboard-table-wrap">
+    <table className="dashboard-table">
+      <thead>
+        <tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.length > 0 ? rows.map((row, index) => (
+          <tr key={`${row.join('-')}-${index}`}>
+            {row.map((cell, cellIndex) => (
+              <td key={`${cell}-${cellIndex}`}>
+                {statusColumn === cellIndex ? <span className={`status-badge ${statusClass(cell.toUpperCase().replace(/ /g, '_'))}`}>{cell}</span> : cell}
+              </td>
+            ))}
+          </tr>
+        )) : (
+          <tr>
+            <td colSpan={headers.length}>
+              <EmptyState icon={emptyIcon} message={emptyMessage} />
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+);
+
+const Timeline = ({ items }: { items: Array<{ text: string; date: string }> }) => (
+  <div className="dashboard-timeline">
+    {items.length > 0 ? items.map((item, index) => (
+      <article key={`${item.text}-${index}`}>
+        <span />
+        <div>
+          <strong>{item.text}</strong>
+          <small>{item.date ? new Date(item.date).toLocaleString() : '-'}</small>
+        </div>
+      </article>
+    )) : <EmptyState icon="OK" message="No meaningful clinic activity yet." />}
+  </div>
+);
 
 export const DashboardPage = () => {
   const { role, username } = useAuth();
@@ -254,7 +458,7 @@ export const DashboardPage = () => {
       const common = {
         patients: fetchOrEmpty<Patient>('/patients'),
         prescriptions: role !== 'RECEPTIONIST' ? fetchOrEmpty<Prescription>('/prescriptions') : Promise.resolve([]),
-        medicines: role !== 'RECEPTIONIST' ? fetchOrEmpty<Medicine>('/medicine') : Promise.resolve([]),
+        medicines: role !== 'RECEPTIONIST' ? fetchOrEmpty<Medicine>('/medicine', { includePending: true }) : Promise.resolve([]),
         sales: fetchOrEmpty<Payment>('/payments/sales'),
       };
 
@@ -287,56 +491,78 @@ export const DashboardPage = () => {
   const paidClinicPayments = data.payments.filter((payment) => payment.status === 'PAID');
   const paidSales = data.sales.filter((payment) => payment.status === 'PAID' || payment.status === 'DISPENSED' || payment.type !== 'MEDICINE');
   const allRevenue = [...paidClinicPayments, ...paidSales];
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayKey = toDateKey(yesterday);
   const todayRevenue = sumAmount(allRevenue.filter((payment) => toDateKey(payment.date) === today));
+  const yesterdayRevenue = sumAmount(allRevenue.filter((payment) => toDateKey(payment.date) === yesterdayKey));
   const todayPatients = data.patients.filter((patient) => toDateKey(patient.createdAt) === today);
+  const yesterdayPatients = data.patients.filter((patient) => toDateKey(patient.createdAt) === yesterdayKey);
   const todayAppointments = data.appointments.filter((appointment) => toDateKey(appointment.dateTime) === today);
+  const yesterdayAppointments = data.appointments.filter((appointment) => toDateKey(appointment.dateTime) === yesterdayKey);
   const todayConsultations = data.consultations.filter((consultation) => consultation.status === 'COMPLETED' && toDateKey(consultation.createdAt) === today);
+  const yesterdayConsultations = data.consultations.filter((consultation) => consultation.status === 'COMPLETED' && toDateKey(consultation.createdAt) === yesterdayKey);
   const todayPrescriptions = data.prescriptions.filter((prescription) => toDateKey(prescription.date) === today);
-  const lowStock = data.medicines.filter((medicine) => medicine.quantity <= 10);
-  const nearExpiry = data.medicines.filter((medicine) => daysUntil(medicine.expiryDate) >= 0 && daysUntil(medicine.expiryDate) <= 30);
+  const yesterdayPrescriptions = data.prescriptions.filter((prescription) => toDateKey(prescription.date) === yesterdayKey);
+  const approvedMedicines = data.medicines.filter((medicine) => !medicine.approvalStatus || medicine.approvalStatus === 'APPROVED');
+  const pendingInventory = data.medicines.filter((medicine) => medicine.approvalStatus === 'PENDING');
+  const expiredMedicines = approvedMedicines.filter((medicine) => daysUntil(medicine.expiryDate) < 0);
+  const outOfStock = approvedMedicines.filter((medicine) => medicine.quantity <= 0);
+  const lowStock = approvedMedicines.filter((medicine) => medicine.quantity > 0 && medicine.quantity <= 10);
+  const nearExpiry = approvedMedicines.filter((medicine) => daysUntil(medicine.expiryDate) >= 0 && daysUntil(medicine.expiryDate) <= 30);
   const pendingPrescriptions = data.prescriptions.filter((prescription) => prescription.status === 'PENDING_VERIFICATION' || prescription.status === 'VERIFIED');
+  const verifiedPrescriptions = data.prescriptions.filter((prescription) => prescription.status === 'VERIFIED');
   const dispensedToday = data.prescriptions.filter((prescription) => prescription.status === 'DISPENSED' && toDateKey(prescription.date) === today);
+  const dispensedYesterday = data.prescriptions.filter((prescription) => prescription.status === 'DISPENSED' && toDateKey(prescription.date) === yesterdayKey);
   const pendingDispenseSales = data.sales.filter((sale) => sale.status === 'PENDING_DISPENSE');
   const walkInToday = data.sales.filter((sale) => sale.type === 'MEDICINE' && toDateKey(sale.date) === today);
+  const walkInYesterday = data.sales.filter((sale) => sale.type === 'MEDICINE' && toDateKey(sale.date) === yesterdayKey);
+  const waitingConsultations = data.consultations.filter((consultation) => consultation.status === 'WAITING' || consultation.status === 'IN_PROGRESS');
+  const followUpAppointments = data.appointments.filter((appointment) => appointment.type === 'FOLLOW_UP' || appointment.previousPrescriptionId || appointment.followUpFromConsultationId);
+  const receptionistQueue = todayAppointments.filter((appointment) => appointment.status === 'PENDING' || appointment.status === 'ARRIVED');
+  const upcomingAppointments = data.appointments.filter((appointment) => new Date(appointment.dateTime).getTime() >= Date.now() && appointment.status !== 'CANCELLED' && appointment.status !== 'NO_SHOW');
+  const recentPatients = [...data.patients].sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+  const recentPayments = [...data.payments, ...data.sales].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const summaryCards = useMemo(() => {
     if (role === 'RECEPTIONIST') {
       return [
-        { title: 'Today Appointments', value: todayAppointments.length, icon: 'A', subtitle: 'scheduled today' },
-        { title: 'Pending Payments', value: data.pendingPayments.length, icon: 'P', subtitle: 'awaiting confirmation' },
-        { title: 'Walk-in Customers', value: walkInToday.length, icon: 'W', subtitle: 'medicine sales today' },
-        { title: 'Today Revenue', value: `RM ${formatMoney(todayRevenue)}`, icon: 'R', subtitle: 'paid and sales total' },
+        { title: 'Today Queue', value: receptionistQueue.length, icon: 'Q', subtitle: `${todayAppointments.length} appointments today` },
+        { title: 'Pending Payments', value: data.pendingPayments.length, icon: 'P', subtitle: data.pendingPayments.length ? `${data.pendingPayments.length} pending confirmation` : 'No pending payments' },
+        { title: 'Walk-in Patients', value: walkInToday.length, icon: 'W', subtitle: formatDelta(walkInToday.length, walkInYesterday.length, 'walk-ins') },
+        { title: 'Today Revenue', value: `RM ${formatMoney(todayRevenue)}`, icon: 'RM', subtitle: yesterdayRevenue === 0 && todayRevenue === 0 ? 'No payment activity today' : `RM ${formatMoney(todayRevenue - yesterdayRevenue)} from yesterday` },
       ];
     }
 
     if (role === 'PHARMACIST') {
       return [
-        { title: 'Pending Dispense', value: pendingPrescriptions.length + pendingDispenseSales.length, icon: 'D', subtitle: 'prescriptions and sales' },
-        { title: 'Dispensed Today', value: dispensedToday.length, icon: 'V', subtitle: 'prescriptions completed' },
-        { title: 'Low Stock Medicines', value: lowStock.length, icon: 'L', subtitle: 'need attention' },
-        { title: 'Today Medicine Sales', value: `RM ${formatMoney(sumAmount(walkInToday))}`, icon: 'S', subtitle: 'walk-in medicine revenue' },
+        { title: 'Pending Dispense', value: verifiedPrescriptions.length + pendingDispenseSales.length, icon: 'D', subtitle: `${verifiedPrescriptions.length} prescriptions ready` },
+        { title: 'Dispensed Today', value: dispensedToday.length, icon: 'V', subtitle: formatDelta(dispensedToday.length, dispensedYesterday.length, 'dispensed') },
+        { title: 'Low Stock Medicines', value: lowStock.length + outOfStock.length, icon: 'L', subtitle: outOfStock.length ? `${outOfStock.length} out of stock` : 'Stock levels acceptable' },
+        { title: 'Pending Approvals', value: pendingInventory.length, icon: 'A', subtitle: pendingInventory.length ? 'Awaiting doctor review' : 'No pending inventory approvals' },
+        { title: 'Today Medicine Sales', value: `RM ${formatMoney(sumAmount(walkInToday))}`, icon: 'RM', subtitle: `${walkInToday.length} walk-in sales today` },
       ];
     }
 
     return [
-      { title: 'Patients Today', value: todayPatients.length, icon: 'P', subtitle: 'patients registered' },
-      { title: 'Appointments Today', value: todayAppointments.length, icon: 'A', subtitle: 'appointments scheduled' },
-      { title: 'Consultations Completed', value: todayConsultations.length, icon: 'C', subtitle: 'completed today' },
-      { title: 'Prescriptions Created', value: todayPrescriptions.length, icon: 'Rx', subtitle: 'prescriptions today' },
-      { title: 'Today Sales', value: `RM ${formatMoney(todayRevenue)}`, icon: 'RM', subtitle: 'clinic revenue today' },
+      { title: 'Waiting Consultations', value: waitingConsultations.length, icon: 'W', subtitle: waitingConsultations.length ? `${waitingConsultations.filter((item) => item.status === 'IN_PROGRESS').length} in progress` : 'No patients waiting' },
+      { title: 'Appointments Today', value: todayAppointments.length, icon: 'A', subtitle: formatDelta(todayAppointments.length, yesterdayAppointments.length, 'appointments') },
+      { title: 'Completed Today', value: todayConsultations.length, icon: 'C', subtitle: formatDelta(todayConsultations.length, yesterdayConsultations.length, 'consultations') },
+      { title: 'Pending Prescriptions', value: pendingPrescriptions.length, icon: 'Rx', subtitle: pendingPrescriptions.length ? `${verifiedPrescriptions.length} ready to dispense` : 'No pending prescriptions' },
+      { title: 'Today Revenue', value: `RM ${formatMoney(todayRevenue)}`, icon: 'RM', subtitle: yesterdayRevenue === 0 && todayRevenue === 0 ? 'No revenue today' : `RM ${formatMoney(todayRevenue - yesterdayRevenue)} from yesterday` },
     ];
-  }, [role, todayAppointments.length, data.pendingPayments.length, walkInToday, todayRevenue, pendingPrescriptions.length, pendingDispenseSales.length, dispensedToday.length, lowStock.length, todayPatients.length, todayConsultations.length, todayPrescriptions.length]);
+  }, [role, receptionistQueue.length, todayAppointments.length, data.pendingPayments.length, walkInToday, walkInYesterday.length, todayRevenue, yesterdayRevenue, verifiedPrescriptions.length, pendingDispenseSales.length, dispensedToday.length, dispensedYesterday.length, lowStock.length, outOfStock.length, pendingInventory.length, waitingConsultations, yesterdayAppointments.length, todayConsultations.length, yesterdayConsultations.length, pendingPrescriptions.length]);
 
-  const categoryPie = ['MEDICINE', 'VITAMIN', 'SUPPLEMENT', 'CONTROLLED_MEDICINE'].map((category, index) => ({
+  const categoryChart = ['MEDICINE', 'VITAMIN', 'SUPPLEMENT', 'CONTROLLED_MEDICINE'].map((category, index) => ({
     label: categoryLabel(category as Medicine['category']),
-    value: data.medicines.filter((medicine) => (medicine.category ?? 'MEDICINE') === category).length,
+    value: approvedMedicines.filter((medicine) => (medicine.category ?? 'MEDICINE') === category).length,
     color: ['#38bdf8', '#34d399', '#fbbf24', '#f87171'][index],
   }));
 
-  const appointmentPie = ['PENDING', 'COMPLETED', 'CANCELLED'].map((status, index) => ({
+  const appointmentChart = ['PENDING', 'ARRIVED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map((status, index) => ({
     label: prettify(status),
     value: data.appointments.filter((appointment) => appointment.status === status).length,
-    color: ['#fbbf24', '#34d399', '#f87171'][index],
+    color: ['#fbbf24', '#38bdf8', '#34d399', '#f87171', '#94a3b8'][index],
   }));
 
   const topMedicines = Object.entries(data.sales.flatMap((sale) => sale.medicineItems ?? []).reduce<Record<string, number>>((acc, item) => {
@@ -345,8 +571,12 @@ export const DashboardPage = () => {
     return acc;
   }, {})).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([label, value]) => ({ label, value }));
 
-  const graphData = role === 'PHARMACIST' && topMedicines.length > 0 ? topMedicines : buildSeries(allRevenue, chartMode);
-  const pieData = role === 'RECEPTIONIST' ? appointmentPie : categoryPie;
+  const graphData = role === 'RECEPTIONIST'
+    ? buildSeries(paidClinicPayments, chartMode)
+    : role === 'PHARMACIST'
+      ? buildCountSeries(data.sales.filter((sale) => sale.type === 'MEDICINE'), chartMode, 'date')
+      : buildSeries(allRevenue, chartMode);
+  const sideChartData = role === 'RECEPTIONIST' ? appointmentChart : categoryChart;
 
   const quickActions = role === 'RECEPTIONIST'
     ? [
@@ -367,23 +597,55 @@ export const DashboardPage = () => {
         ];
 
   const activity = [
-    ...data.prescriptions.slice(0, 4).map((item) => ({ text: `Prescription #${item.prescriptionId} ${prettify(item.status)}`, date: item.date })),
-    ...allRevenue.slice(0, 4).map((item) => ({ text: `Payment received from ${item.patient?.name ?? 'patient'}`, date: item.date })),
+    ...data.prescriptions
+      .filter((item) => item.status === 'DISPENSED')
+      .map((item) => ({ text: `Prescription #${item.prescriptionId} dispensed`, date: item.date })),
+    ...allRevenue.map((item) => ({ text: `Payment received from ${item.patient?.name ?? 'patient'}`, date: item.date })),
+    ...data.appointments.map((item) => ({ text: `Appointment created for ${item.patient?.name ?? 'patient'}`, date: item.createdAt ?? item.dateTime })),
+    ...data.consultations
+      .filter((item) => item.status === 'COMPLETED')
+      .map((item) => ({ text: `Consultation completed for ${item.patient?.name ?? 'patient'}`, date: item.createdAt })),
+    ...pendingInventory.map((item) => ({ text: `Inventory approval pending: ${item.name}`, date: item.createdAt ?? item.expiryDate })),
+    ...outOfStock.map((item) => ({ text: `Out of stock alert: ${item.name}`, date: item.createdAt ?? item.expiryDate })),
+    ...nearExpiry.map((item) => ({ text: `Expiry warning: ${item.name}`, date: item.expiryDate })),
     ...data.auditLogs
-      .slice(0, 4)
+      .filter((item) => {
+        const action = (item.activityType ?? item.action ?? '').toLowerCase();
+        return action && !action.includes('login') && /(dispense|payment|appointment|consultation|inventory|medicine)/.test(action);
+      })
       .map((item) => ({
-        text: (item.activityType ?? item.action ?? '').replace(/_/g, ' '),
+        text: prettify(item.activityType ?? item.action),
         date: item.timestamp ?? item.createdAt ?? '',
       })),
-  ].filter((item) => item.date).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+  ].filter((item) => item.date).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6);
 
-  const appointmentsTable = role === 'RECEPTIONIST'
-    ? data.appointments.filter((item) => item.status === 'PENDING' || item.status === 'ARRIVED').slice(0, 5)
-    : data.appointments.slice(0, 5);
-  const alertMedicines = Array.from(new Map([...lowStock, ...nearExpiry].map((item) => [item.medicineId, item])).values()).slice(0, 5);
-  const alertRows = role === 'PHARMACIST'
-    ? alertMedicines.map((item) => [item.name, item.batchNumber ?? '-', new Date(item.expiryDate).toLocaleDateString()])
-    : alertMedicines.map((item) => [item.name, `${item.quantity} ${item.stockUnit ?? 'unit'}`, daysUntil(item.expiryDate) <= 30 ? 'Near Expiry' : 'Low Stock']);
+  const inventoryAlertItems = [
+    ...expiredMedicines.map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} - Expired ${new Date(item.expiryDate).toLocaleDateString()}`, status: 'Expired', severity: 'critical' as Severity })),
+    ...outOfStock.map((item) => ({ title: item.name, meta: `${item.batchNumber ?? 'No batch'} - ${new Date(item.expiryDate).toLocaleDateString()}`, status: 'Out of stock', severity: 'critical' as Severity })),
+    ...nearExpiry.map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} - expires in ${daysUntil(item.expiryDate)} days`, status: 'Near expiry', severity: 'warning' as Severity })),
+    ...lowStock.map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} remaining`, status: 'Low stock', severity: 'warning' as Severity })),
+  ].slice(0, 7);
+
+  const flowItems = role === 'RECEPTIONIST'
+    ? [
+        { label: 'In Queue', value: receptionistQueue.length, tone: receptionistQueue.length ? 'warning' as Severity : 'good' as Severity },
+        { label: 'Upcoming', value: upcomingAppointments.length },
+        { label: 'Pending Payment', value: data.pendingPayments.length, tone: data.pendingPayments.length ? 'warning' as Severity : 'good' as Severity },
+        { label: 'Walk-ins', value: walkInToday.length },
+      ]
+    : role === 'PHARMACIST'
+      ? [
+          { label: 'Rx Ready', value: verifiedPrescriptions.length, tone: verifiedPrescriptions.length ? 'warning' as Severity : 'good' as Severity },
+          { label: 'Sales To Dispense', value: pendingDispenseSales.length, tone: pendingDispenseSales.length ? 'warning' as Severity : 'good' as Severity },
+          { label: 'Low Stock', value: lowStock.length + outOfStock.length, tone: lowStock.length + outOfStock.length ? 'critical' as Severity : 'good' as Severity },
+          { label: 'Near Expiry', value: nearExpiry.length, tone: nearExpiry.length ? 'warning' as Severity : 'good' as Severity },
+        ]
+      : [
+          { label: 'Waiting', value: waitingConsultations.length, tone: waitingConsultations.length ? 'warning' as Severity : 'good' as Severity },
+          { label: 'Follow-ups', value: followUpAppointments.length },
+          { label: 'Patients Today', value: todayPatients.length, tone: todayPatients.length > yesterdayPatients.length ? 'verified' as Severity : 'neutral' as Severity },
+          { label: 'Rx Created', value: todayPrescriptions.length, tone: todayPrescriptions.length > yesterdayPrescriptions.length ? 'verified' as Severity : 'neutral' as Severity },
+        ];
 
   return (
     <section className="dashboard-page">
@@ -416,12 +678,14 @@ export const DashboardPage = () => {
         ))}
       </div>
 
+      <FlowStrip items={flowItems} />
+
       <div className="dashboard-chart-grid">
         <section className="dashboard-panel dashboard-main-chart">
           <div className="dashboard-panel-head">
             <div>
               <h3>{role === 'PHARMACIST' ? 'Top Selling Medicines' : role === 'RECEPTIONIST' ? 'Daily Payment / Revenue' : 'Revenue / Sales'}</h3>
-              <p>{role === 'PHARMACIST' ? 'Quantity sold by medicine' : 'Paid transactions grouped by period'}</p>
+              <p>{role === 'PHARMACIST' ? 'Quantity sold by medicine with readable values' : 'Paid transactions grouped by period'}</p>
             </div>
             {role !== 'PHARMACIST' && (
               <div className="dashboard-segment">
@@ -431,116 +695,91 @@ export const DashboardPage = () => {
               </div>
             )}
           </div>
-          <MiniBarChart data={graphData} />
+          {role === 'PHARMACIST' ? (
+            <HorizontalBarChart data={topMedicines} emptyMessage="No medicine sales recorded yet." />
+          ) : (
+            <ValueChart data={graphData} format="money" variant="area" />
+          )}
         </section>
 
         <section className="dashboard-panel">
           <div className="dashboard-panel-head">
             <div>
               <h3>{role === 'RECEPTIONIST' ? 'Appointment Status' : 'Medicine Categories'}</h3>
-              <p>{role === 'RECEPTIONIST' ? 'Pending, completed, and cancelled' : 'Inventory category distribution'}</p>
+              <p>{role === 'RECEPTIONIST' ? 'Clinic flow by status' : 'Approved inventory category distribution'}</p>
             </div>
           </div>
-          <PieChart data={pieData} />
+          <HorizontalBarChart data={sideChartData} emptyMessage={role === 'RECEPTIONIST' ? 'No appointments to visualize yet.' : 'No approved inventory to visualize yet.'} />
         </section>
       </div>
 
       <div className="dashboard-lower-grid">
-        <section className="dashboard-panel">
-          <div className="dashboard-panel-head">
-            <div>
-              <h3>{role === 'PHARMACIST' ? 'Pending Prescriptions' : role === 'RECEPTIONIST' ? 'Upcoming Appointments' : 'Recent Appointments'}</h3>
-              <p>Most relevant queue for your role</p>
-            </div>
-          </div>
+        <DashboardPanel
+          title={role === 'PHARMACIST' ? 'Pending Prescriptions' : role === 'RECEPTIONIST' ? "Today's Queue" : 'Waiting Consultations'}
+          subtitle={role === 'PHARMACIST' ? 'Verified prescriptions ready to dispense' : role === 'RECEPTIONIST' ? 'Patients expected or already arrived today' : 'Patients waiting for consultation workflow'}
+        >
           {role === 'PHARMACIST' ? (
-            <DashboardTable rows={pendingPrescriptions.slice(0, 5).map((item) => [item.patient?.name ?? 'Patient', String(item.items?.length ?? 0), prettify(item.status)])} headers={['Patient', 'Medicine Count', 'Status']} statusColumn={2} />
+            <DashboardTable rows={verifiedPrescriptions.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', String(item.items?.length ?? 0), prettify(item.status)])} headers={['Patient', 'Medicine Count', 'Status']} statusColumn={2} emptyMessage="No pending prescriptions today." />
+          ) : role === 'RECEPTIONIST' ? (
+            <DashboardTable rows={receptionistQueue.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Time', 'Status']} statusColumn={2} emptyMessage="No patients in today's queue." />
           ) : (
-            <DashboardTable rows={appointmentsTable.map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Time', 'Status']} statusColumn={2} />
+            <DashboardTable rows={waitingConsultations.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', prettify(item.consultationType), prettify(item.status)])} headers={['Patient', 'Type', 'Status']} statusColumn={2} emptyMessage="No waiting consultations." />
           )}
-        </section>
+        </DashboardPanel>
 
-        <section className="dashboard-panel">
-          <div className="dashboard-panel-head">
-            <div>
-              <h3>{role === 'RECEPTIONIST' ? 'Pending Payments' : role === 'PHARMACIST' ? 'Near Expiry Medicines' : 'Inventory Alerts'}</h3>
-              <p>Items that need attention</p>
-            </div>
-          </div>
+        <DashboardPanel
+          title={role === 'RECEPTIONIST' ? 'Pending Payments' : role === 'PHARMACIST' ? 'Low Stock Medicines' : 'Inventory Alerts'}
+          subtitle={role === 'DOCTOR' ? 'Critical and warning inventory conditions separated by severity' : 'Items that need attention'}
+        >
           {role === 'RECEPTIONIST' ? (
-            <DashboardTable rows={data.pendingPayments.slice(0, 5).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} />
+            <DashboardTable rows={data.pendingPayments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} emptyMessage="No pending payments." />
+          ) : role === 'PHARMACIST' ? (
+            <WorkflowList items={[...outOfStock, ...lowStock].slice(0, 7).map((item) => ({ title: item.name, meta: `${item.quantity} ${item.stockUnit ?? 'unit'} remaining`, status: item.quantity <= 0 ? 'Out of stock' : 'Low stock', severity: item.quantity <= 0 ? 'critical' : 'warning' }))} emptyMessage="All medicines are sufficiently stocked." />
           ) : (
-            <DashboardTable rows={alertRows} headers={role === 'PHARMACIST' ? ['Medicine', 'Batch', 'Expiry Date'] : ['Medicine', 'Stock', 'Expiry Status']} statusColumn={role === 'PHARMACIST' ? undefined : 2} />
+            <WorkflowList items={inventoryAlertItems} emptyMessage="All medicines are sufficiently stocked." />
           )}
-        </section>
+        </DashboardPanel>
       </div>
 
       <div className="dashboard-footer-grid">
-        <section className="dashboard-panel">
-          <div className="dashboard-panel-head">
-            <div>
-              <h3>{role === 'PHARMACIST' ? 'Recent Walk-in Sales' : role === 'RECEPTIONIST' ? 'Recent Payments' : 'Activity Timeline'}</h3>
-              <p>Latest movement in the clinic</p>
-            </div>
-          </div>
+        <DashboardPanel
+          title={role === 'PHARMACIST' ? 'Recent Sales' : role === 'RECEPTIONIST' ? 'Upcoming Appointments' : 'Follow-up Appointments'}
+          subtitle={role === 'PHARMACIST' ? 'Latest medicine sales and dispense status' : role === 'RECEPTIONIST' ? 'Next appointments to prepare for' : 'Follow-up visits linked to earlier care'}
+        >
           {role === 'PHARMACIST' ? (
-            <DashboardTable rows={data.sales.slice(0, 5).map((item) => [item.patient?.name ?? 'Customer', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Customer', 'Total', 'Status']} statusColumn={2} />
+            <DashboardTable rows={data.sales.slice(0, 7).map((item) => [item.patient?.name ?? 'Customer', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Customer', 'Total', 'Status']} statusColumn={2} emptyMessage="No recent medicine sales." />
           ) : role === 'RECEPTIONIST' ? (
-            <DashboardTable rows={[...data.payments, ...data.sales].slice(0, 5).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} />
+            <DashboardTable rows={upcomingAppointments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Date / Time', 'Status']} statusColumn={2} emptyMessage="No upcoming appointments." />
           ) : (
-            <Timeline items={activity} />
+            <DashboardTable rows={followUpAppointments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', new Date(item.dateTime).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }), prettify(item.status)])} headers={['Patient', 'Date / Time', 'Status']} statusColumn={2} emptyMessage="No upcoming follow-up appointments." />
           )}
-        </section>
+        </DashboardPanel>
 
-        {role !== 'DOCTOR' && (
-          <section className="dashboard-panel">
-            <div className="dashboard-panel-head">
-              <div>
-                <h3>Activity Timeline</h3>
-                <p>Recent system activity</p>
-              </div>
-            </div>
-            <Timeline items={activity} />
-          </section>
+        <DashboardPanel
+          title={role === 'PHARMACIST' ? 'Near Expiry Medicines' : role === 'RECEPTIONIST' ? 'Recent Payments' : 'Recent Patients'}
+          subtitle={role === 'PHARMACIST' ? 'Expiry warnings within 30 days' : role === 'RECEPTIONIST' ? 'Latest received and pending transactions' : 'Recently registered patients'}
+        >
+          {role === 'PHARMACIST' ? (
+            <WorkflowList items={nearExpiry.slice(0, 7).map((item) => ({ title: item.name, meta: `${item.batchNumber ?? 'No batch'} - expires ${new Date(item.expiryDate).toLocaleDateString()}`, status: 'Near expiry', severity: 'warning' }))} emptyMessage="No near expiry medicines." />
+          ) : role === 'RECEPTIONIST' ? (
+            <DashboardTable rows={recentPayments.slice(0, 7).map((item) => [item.patient?.name ?? 'Patient', `RM ${formatMoney(item.amount)}`, prettify(item.status)])} headers={['Patient', 'Total', 'Status']} statusColumn={2} emptyMessage="No recent payments." />
+          ) : (
+            <DashboardTable rows={recentPatients.slice(0, 7).map((item) => [item.name, item.icOrPassport ?? '-', item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-'])} headers={['Patient', 'IC / ID', 'Registered']} emptyMessage="No recent patients." />
+          )}
+        </DashboardPanel>
+      </div>
+
+      <div className="dashboard-footer-grid">
+        {role === 'PHARMACIST' && (
+          <DashboardPanel title="Pending Inventory Approvals" subtitle="Inventory requests waiting for doctor review">
+            <DashboardTable rows={pendingInventory.slice(0, 7).map((item) => [item.name, item.batchNumber ?? '-', item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-'])} headers={['Medicine', 'Batch', 'Requested']} emptyMessage="No pending inventory approvals." />
+          </DashboardPanel>
         )}
+
+        <DashboardPanel title="Activity Timeline" subtitle="Meaningful clinic activity only">
+          <Timeline items={activity} />
+        </DashboardPanel>
       </div>
     </section>
   );
 };
-
-const DashboardTable = ({ headers, rows, statusColumn }: { headers: string[]; rows: string[][]; statusColumn?: number }) => (
-  <div className="dashboard-table-wrap">
-    <table className="dashboard-table">
-      <thead>
-        <tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr>
-      </thead>
-      <tbody>
-        {rows.length > 0 ? rows.map((row, index) => (
-          <tr key={`${row.join('-')}-${index}`}>
-            {row.map((cell, cellIndex) => (
-              <td key={`${cell}-${cellIndex}`}>
-                {statusColumn === cellIndex ? <span className={`status-badge ${statusClass(cell.toUpperCase().replace(/ /g, '_'))}`}>{cell}</span> : cell}
-              </td>
-            ))}
-          </tr>
-        )) : (
-          <tr><td colSpan={headers.length}>No records found.</td></tr>
-        )}
-      </tbody>
-    </table>
-  </div>
-);
-
-const Timeline = ({ items }: { items: Array<{ text: string; date: string }> }) => (
-  <div className="dashboard-timeline">
-    {items.length > 0 ? items.map((item, index) => (
-      <article key={`${item.text}-${index}`}>
-        <span />
-        <div>
-          <strong>{item.text}</strong>
-          <small>{item.date ? new Date(item.date).toLocaleString() : '-'}</small>
-        </div>
-      </article>
-    )) : <p className="muted">No recent activity yet.</p>}
-  </div>
-);
