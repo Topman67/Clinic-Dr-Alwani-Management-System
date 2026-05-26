@@ -6,7 +6,8 @@ import { subscribeInAppDataSync } from '../lib/sync';
 import { usePagination } from '../lib/pagination';
 import { useAuth } from '../context/AuthContext';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
-import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { DateRangeFilter } from '../components/DateRangeFilter';
+import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
 import { roleBasePath } from '../config/rbac';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
@@ -377,24 +378,24 @@ export const PaymentsPage = () => {
     }, 0);
   }, [walkInItems, walkInMedicines]);
 
-  const getMedicineTotal = (payment: Payment) => {
+  const getMedicineTotal = useCallback((payment: Payment) => {
     return payment.medicineItems?.reduce((sum, item) => sum + Number(item.subtotal), 0) ?? 0;
-  };
+  }, []);
 
-  const hasAppointmentConsultation = (payment: Payment) => {
+  const hasAppointmentConsultation = useCallback((payment: Payment) => {
     return Boolean(payment.consultation?.appointmentId);
-  };
+  }, []);
 
   const isAdjustableConsultationPayment = (payment: Payment) => {
     return payment.type === 'CONSULTATION' && Boolean(payment.consultation?.consultationId);
   };
 
-  const getConsultationFee = (payment: Payment) => {
+  const getConsultationFee = useCallback((payment: Payment) => {
     if (payment.type === 'MEDICAL_CHECKUP') return 0;
     if (payment.type !== 'CONSULTATION') return 0;
     const fee = Number(payment.amount) - getMedicineTotal(payment) - (hasAppointmentConsultation(payment) ? APPOINTMENT_FEE : 0);
     return CONSULTATION_FEE_OPTIONS.includes(fee) ? fee : DEFAULT_CONSULTATION_FEE;
-  };
+  }, [getMedicineTotal, hasAppointmentConsultation]);
 
   const getAppointmentFee = (payment: Payment) => {
     if (payment.type === 'MEDICAL_CHECKUP') return 0;
@@ -441,7 +442,7 @@ export const PaymentsPage = () => {
     if (selectedPayment.status === 'PENDING_PAYMENT') {
       setConfirmMethod(isSelectablePaymentMethod(selectedPayment.paymentMethod) ? selectedPayment.paymentMethod : 'CASH');
     }
-  }, [selectedPayment]);
+  }, [getConsultationFee, selectedPayment]);
 
   const getDisplayedPaymentMethod = (payment: Payment) => {
     if (payment.status === 'PENDING_PAYMENT' && isReceptionist) return confirmMethod;
@@ -842,50 +843,6 @@ export const PaymentsPage = () => {
                 />
               )}
 
-              {false && medicinePickerOpen && (
-                <div className="medicine-picker-modal-layer" role="presentation">
-                  <button type="button" className="medicine-picker-modal-backdrop" aria-label="Close medicine picker" onClick={() => setMedicinePickerOpen(false)} />
-                  <section className="medicine-picker-modal walkin-medicine-modal" role="dialog" aria-modal="true" aria-labelledby="walkin-picker-title">
-                    <div className="medicine-picker-modal-head">
-                      <div>
-                        <h3 id="walkin-picker-title">Select Medicine</h3>
-                        <p className="muted">Search by medicine name, category, or batch. FEFO picks the nearest valid expiry.</p>
-                      </div>
-                      <button type="button" className="patient-drawer-close" onClick={() => setMedicinePickerOpen(false)}>X</button>
-                    </div>
-                    <div className="walkin-picker-body">
-                      <aside className="walkin-picker-categories">
-                        {(['ALL', 'MEDICINE', 'VITAMIN', 'SUPPLEMENT', 'CONTROLLED_MEDICINE'] as WalkInCategoryFilter[]).map((category) => (
-                          <button key={category} type="button" className={medicinePickerCategory === category ? 'is-active' : undefined} onClick={() => setMedicinePickerCategory(category)}>
-                            {category === 'ALL' ? 'All' : categoryLabel(category)}
-                          </button>
-                        ))}
-                      </aside>
-                      <div className="walkin-picker-results">
-                        <input value={medicinePickerSearch} onChange={(e) => setMedicinePickerSearch(e.target.value)} placeholder="Search medicine, category, batch" autoFocus />
-                        <div className="walkin-medicine-list">
-                          {paginatedMedicineOptions.map((medicine) => (
-                            <article key={`pick-${medicine.medicineId}`} className="walkin-medicine-card">
-                              <div>
-                                <strong>{medicine.name}</strong>
-                                <small>{categoryLabel(medicine.category)} - Batch {medicine.batchNumber} - Packaging {medicine.packaging || '-'}</small>
-                              </div>
-                              <span>Stock {medicine.quantity} {formatStockUnit(medicine.stockUnit, medicine.quantity)}</span>
-                              <span>Exp {toDateInput(medicine.expiryDate)}</span>
-                              <span>RM {formatMoney(medicine.price)} / {medicine.stockUnit}</span>
-                              <span className="status-badge status-good">Available</span>
-                              <button type="button" onClick={() => addWalkInItem(medicine.medicineId)}>Add</button>
-                            </article>
-                          ))}
-                          {filteredMedicineOptions.length === 0 && <p className="walkin-empty">No medicine found.</p>}
-                        </div>
-
-                        <Pagination page={pickerPage} totalPages={pickerTotalPages} onPageChange={setPickerPage} />
-                      </div>
-                    </div>
-                  </section>
-                </div>
-              )}
             </form>
           )}
         </>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
@@ -463,7 +463,7 @@ export const DashboardPage = () => {
   const basePath = role ? roleBasePath[role] : '';
   const today = todayKey();
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     if (!role) return;
     setLoading(true);
     setError(null);
@@ -494,13 +494,13 @@ export const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [role]);
 
   useEffect(() => {
     void loadDashboard();
-  }, [role]);
+  }, [loadDashboard]);
 
-  useEffect(() => subscribeInAppDataSync(() => void loadDashboard()), [role]);
+  useEffect(() => subscribeInAppDataSync(() => void loadDashboard()), [loadDashboard]);
 
   const paidClinicPayments = data.payments.filter((payment) => payment.status === 'PAID');
   const paidSales = data.sales.filter((payment) => payment.status === 'PAID' || payment.status === 'DISPENSED' || payment.type !== 'MEDICINE');

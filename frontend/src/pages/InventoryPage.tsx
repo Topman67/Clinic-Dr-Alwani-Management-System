@@ -261,7 +261,10 @@ export const InventoryPage = () => {
       if (event.key !== 'Escape') return;
       setOpenActionMenuId(null);
       setDetailMedicine(null);
-      if (!rejectingId) closeRejectModal();
+      if (!rejectingId) {
+        setRejectMedicine(null);
+        setRejectionReason('');
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);

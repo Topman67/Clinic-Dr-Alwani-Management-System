@@ -6,7 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { usePagination } from '../lib/pagination';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
-import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { DateRangeFilter } from '../components/DateRangeFilter';
+import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
 
 type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';

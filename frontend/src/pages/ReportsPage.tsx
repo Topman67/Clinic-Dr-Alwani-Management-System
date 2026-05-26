@@ -4,7 +4,8 @@ import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { usePagination } from '../lib/pagination';
 import { useAuth } from '../context/AuthContext';
-import { DateRangeFilter, getDateRangeForPreset } from '../components/DateRangeFilter';
+import { DateRangeFilter } from '../components/DateRangeFilter';
+import { getDateRangeForPreset } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
 import { Button, Input, Select } from '../components/ui';
 import { exportReceiptPdf, exportReportExcel, exportReportPdf, type DocumentExportOptions } from '../lib/exportDocuments';
@@ -129,6 +130,17 @@ type SalesSummaryResponse = {
   total: number;
   sales: SalesReportItem[];
 };
+
+type InventoryAlertReportItem = MedicineReportItem & { alertType: string };
+
+type ReportExportOptions =
+  | DocumentExportOptions<PatientReportItem>
+  | DocumentExportOptions<PrescriptionReportItem>
+  | DocumentExportOptions<ConsultationReportItem>
+  | DocumentExportOptions<InventoryAlertReportItem>
+  | DocumentExportOptions<SalesReportItem>
+  | DocumentExportOptions<PaymentReportItem>
+  | DocumentExportOptions<ReceiptReportItem>;
 
 type Filters = {
   dateFrom: string;
@@ -455,7 +467,7 @@ export const ReportsPage = () => {
     });
   }, [generateReport]);
 
-  const buildExportOptions = (): DocumentExportOptions<any> => {
+  const buildExportOptions = (): ReportExportOptions => {
     const base = {
       title: reportLabel,
       filename: `${reportType.toLowerCase()}-report-${new Date().toISOString().slice(0, 10)}`,
@@ -526,13 +538,13 @@ export const ReportsPage = () => {
         summary: [{ label: 'Low Stock', value: lowStockItems.length }, { label: 'Expiring Soon', value: expiringItems.length }],
         rows,
         columns: [
-          { header: 'Alert Type', value: (r: MedicineReportItem & { alertType: string }) => r.alertType },
-          { header: 'Medicine', value: (r: MedicineReportItem & { alertType: string }) => r.name },
-          { header: 'Batch', value: (r: MedicineReportItem & { alertType: string }) => r.batchNumber },
-          { header: 'Quantity', value: (r: MedicineReportItem & { alertType: string }) => r.quantity },
-          { header: 'Expiry Date', value: (r: MedicineReportItem & { alertType: string }) => toDateInput(r.expiryDate) },
-          { header: 'Days To Expiry', value: (r: MedicineReportItem & { alertType: string }) => daysUntil(r.expiryDate) },
-          { header: 'Price (RM)', value: (r: MedicineReportItem & { alertType: string }) => formatMoney(r.price) },
+          { header: 'Alert Type', value: (r: InventoryAlertReportItem) => r.alertType },
+          { header: 'Medicine', value: (r: InventoryAlertReportItem) => r.name },
+          { header: 'Batch', value: (r: InventoryAlertReportItem) => r.batchNumber },
+          { header: 'Quantity', value: (r: InventoryAlertReportItem) => r.quantity },
+          { header: 'Expiry Date', value: (r: InventoryAlertReportItem) => toDateInput(r.expiryDate) },
+          { header: 'Days To Expiry', value: (r: InventoryAlertReportItem) => daysUntil(r.expiryDate) },
+          { header: 'Price (RM)', value: (r: InventoryAlertReportItem) => formatMoney(r.price) },
         ],
       };
     }
@@ -668,8 +680,8 @@ export const ReportsPage = () => {
     paginated: paginatedExpiringItems,
   } = usePagination(expiringItems, 10, [reportType, generatedAt]);
 
-  const paymentReportItems = paymentSummary?.payments ?? [];
-  const salesReportItems = salesSummary?.sales ?? [];
+  const paymentReportItems = useMemo(() => paymentSummary?.payments ?? [], [paymentSummary]);
+  const salesReportItems = useMemo(() => salesSummary?.sales ?? [], [salesSummary]);
   const {
     page: salesPage,
     setPage: setSalesPage,
@@ -950,11 +962,11 @@ export const ReportsPage = () => {
             <span className="report-action-icon" aria-hidden="true">R</span>
             <span>Reset Filters</span>
           </Button>
-          <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions())} disabled={loading}>
+          <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
             <span className="report-action-icon" aria-hidden="true">PDF</span>
             <span>Export PDF</span>
           </Button>
-          <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions())} disabled={loading}>
+          <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
             <span className="report-action-icon" aria-hidden="true">XLS</span>
             <span>Export Excel</span>
           </Button>

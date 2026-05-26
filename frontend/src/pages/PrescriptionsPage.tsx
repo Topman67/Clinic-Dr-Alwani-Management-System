@@ -6,7 +6,8 @@ import { exportHtmlAsPdf } from '../lib/exportDocuments';
 import { useAuth } from '../context/AuthContext';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { PatientAutocomplete, type PatientAutocompleteOption } from '../components/PatientAutocomplete';
-import { DateRangeFilter, getDateRangeForPreset, type DateRangeValue } from '../components/DateRangeFilter';
+import { DateRangeFilter } from '../components/DateRangeFilter';
+import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { MedicineSelectorModal, type MedicineSelectorCategory } from '../components/shared/MedicineSelectorModal';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
@@ -153,6 +154,8 @@ const prescriptionPdfShell = (title: string, body: string) => `<!doctype html>
 </html>`;
 
 const createItemRowKey = () => `item-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const shouldShowLegacyMedicinePicker = () => false;
 
 const emptyItem = (): ItemForm => ({
   rowKey: createItemRowKey(),
@@ -831,7 +834,10 @@ export const PrescriptionsPage = () => {
 
     setSaving(true);
     try {
-      const prescriptionItems = form.items.map(({ rowKey: _rowKey, ...item }) => item);
+      const prescriptionItems = form.items.map(({ rowKey, ...item }) => {
+        void rowKey;
+        return item;
+      });
       const response = await api.post('/prescriptions', {
         patientId: form.patientId,
         doctorId,
@@ -1553,7 +1559,7 @@ export const PrescriptionsPage = () => {
         />
       )}
 
-      {false && medicinePickerIndex !== null && form.items[medicinePickerIndex ?? 0] && (
+      {shouldShowLegacyMedicinePicker() && medicinePickerIndex !== null && form.items[medicinePickerIndex ?? 0] && (
         <div className="medicine-picker-modal-layer" role="presentation">
           <button type="button" className="medicine-picker-modal-backdrop" aria-label="Close medicine picker" onClick={() => setMedicinePickerIndex(null)} />
           <section className="medicine-picker-modal prescription-select-modal" role="dialog" aria-modal="true" aria-labelledby="medicine-picker-title">
