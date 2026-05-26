@@ -947,13 +947,16 @@ export const ReportsPage = () => {
             }}
             disabled={loading}
           >
-            <span aria-hidden="true">R</span> Reset Filters
+            <span className="report-action-icon" aria-hidden="true">R</span>
+            <span>Reset Filters</span>
           </Button>
           <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions())} disabled={loading}>
-            <span aria-hidden="true">PDF</span> Export PDF
+            <span className="report-action-icon" aria-hidden="true">PDF</span>
+            <span>Export PDF</span>
           </Button>
           <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions())} disabled={loading}>
-            <span aria-hidden="true">XLS</span> Export Excel
+            <span className="report-action-icon" aria-hidden="true">XLS</span>
+            <span>Export Excel</span>
           </Button>
         </div>
       </form>
