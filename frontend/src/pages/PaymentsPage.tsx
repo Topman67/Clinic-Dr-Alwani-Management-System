@@ -679,8 +679,8 @@ export const PaymentsPage = () => {
                 <p className="muted">Payments appear here after prescription dispense, no-medicine send-to-payment, medical checkup send-to-payment, or appointment completion.</p>
               </div>
 
-              <div className="table-wrap">
-                <table className="data-table">
+              <div className="table-wrap payment-table-wrap">
+                <table className="data-table payment-table pending-payment-table">
                   <thead>
                     <tr>
                       <th>Patient Name</th>
@@ -698,11 +698,11 @@ export const PaymentsPage = () => {
                         <td>{p.patient?.name ?? `Patient #${p.patientId}`}</td>
                         <td>{p.patient?.icOrPassport || p.patientId}</td>
                         <td>{getReferenceLabel(p)}</td>
-                        <td><span className={`status-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
-                        <td><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
-                        <td>RM {formatMoney(p.type === 'MEDICAL_CHECKUP' ? MEDICAL_CHECKUP_FEE : p.amount)}</td>
+                        <td><span className={`status-badge payment-type-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
+                        <td><span className={`status-badge payment-status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
+                        <td className="payment-amount-cell">RM {formatMoney(p.type === 'MEDICAL_CHECKUP' ? MEDICAL_CHECKUP_FEE : p.amount)}</td>
                         <td>
-                          <div className="action-row">
+                          <div className="action-row payment-table-actions">
                             <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>View Details</button>
                             <button type="button" onClick={() => setSelectedPayment(p)}>Process Payment</button>
                           </div>
@@ -854,8 +854,8 @@ export const PaymentsPage = () => {
 
       {isDoctor && (
         <>
-          <div className="table-wrap">
-            <table className="data-table">
+          <div className="table-wrap payment-table-wrap">
+            <table className="data-table payment-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -873,10 +873,10 @@ export const PaymentsPage = () => {
                   <tr key={p.paymentId}>
                     <td>{new Date(p.date).toLocaleString()}</td>
                     <td>{p.patient?.name ?? `Patient #${p.patientId}`}</td>
-                    <td><span className={`status-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
-                    <td>{formatMoney(p.amount)}</td>
+                    <td><span className={`status-badge payment-type-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
+                    <td className="payment-amount-cell">{formatMoney(p.amount)}</td>
                     <td>{prettifyMethod(p.paymentMethod)}</td>
-                    <td><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
+                    <td><span className={`status-badge payment-status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
                     <td>{p.receipt?.receiptNo ?? '-'}</td>
                     <td>
                       <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>

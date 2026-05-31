@@ -4372,6 +4372,109 @@ body {
   gap: 12px;
 }
 
+.payment-table-wrap {
+  border-radius: 18px;
+}
+
+.payment-table {
+  min-width: 1040px;
+  table-layout: fixed;
+}
+
+.pending-payment-table th:nth-child(1),
+.pending-payment-table td:nth-child(1) {
+  width: 10%;
+}
+
+.pending-payment-table th:nth-child(2),
+.pending-payment-table td:nth-child(2) {
+  width: 11%;
+}
+
+.pending-payment-table th:nth-child(3),
+.pending-payment-table td:nth-child(3) {
+  width: 12%;
+}
+
+.pending-payment-table th:nth-child(4),
+.pending-payment-table td:nth-child(4) {
+  width: 20%;
+}
+
+.pending-payment-table th:nth-child(5),
+.pending-payment-table td:nth-child(5) {
+  width: 13%;
+}
+
+.pending-payment-table th:nth-child(6),
+.pending-payment-table td:nth-child(6) {
+  width: 10%;
+}
+
+.pending-payment-table th:nth-child(7),
+.pending-payment-table td:nth-child(7) {
+  width: 24%;
+}
+
+.payment-table th,
+.payment-table td {
+  padding: 12px 16px;
+}
+
+.payment-table td {
+  line-height: 1.35;
+}
+
+.payment-type-badge,
+.payment-status-badge {
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-start;
+  padding: 6px 12px;
+  border-radius: 999px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.payment-type-badge {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding-inline: 11px;
+  font-size: 0.78rem;
+  font-weight: 780;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payment-status-badge {
+  width: fit-content;
+  min-height: 32px;
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.payment-amount-cell {
+  font-weight: 780;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.payment-table-actions {
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.payment-table-actions button {
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
 .walkin-sale-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
