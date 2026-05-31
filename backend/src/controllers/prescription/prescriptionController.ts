@@ -148,21 +148,30 @@ export const createPrescription = async (req: Request, res: Response) => {
         throw createHttpError(409, 'This consultation already has a prescription.');
       }
 
-      const existingPayment = await tx.payment.findFirst({
+      const paidConsultationPayment = await tx.payment.findFirst({
         where: {
           consultationId: targetConsultationId,
-          status: { not: PaymentStatus.CANCELLED },
+          status: PaymentStatus.PAID,
         },
         select: {
           paymentId: true,
-          status: true,
-          prescriptionId: true,
         },
       });
 
-      if (existingPayment?.status === PaymentStatus.PAID) {
+      if (paidConsultationPayment) {
         throw createHttpError(409, 'This consultation has already been paid.');
       }
+
+      const pendingConsultationPayment = await tx.payment.findFirst({
+        where: {
+          consultationId: targetConsultationId,
+          status: PaymentStatus.PENDING_PAYMENT,
+          prescriptionId: null,
+        },
+        select: {
+          paymentId: true,
+        },
+      });
 
       const targetAppointmentId = appointmentId ?? consultation.appointmentId ?? undefined;
 
@@ -240,12 +249,12 @@ export const createPrescription = async (req: Request, res: Response) => {
         });
       }
 
-      if (existingPayment?.status === PaymentStatus.PENDING_PAYMENT && !existingPayment.prescriptionId) {
+      if (pendingConsultationPayment) {
         await tx.paymentMedicineItem.deleteMany({
-          where: { paymentId: existingPayment.paymentId },
+          where: { paymentId: pendingConsultationPayment.paymentId },
         });
         await tx.payment.delete({
-          where: { paymentId: existingPayment.paymentId },
+          where: { paymentId: pendingConsultationPayment.paymentId },
         });
       }
 

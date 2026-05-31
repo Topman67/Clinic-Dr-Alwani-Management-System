@@ -82,11 +82,14 @@ const findExistingClinicPayment = async (
   tx: Prisma.TransactionClient,
   refs: { consultationId?: number | null; prescriptionId?: number | null; appointmentId?: number | null },
 ) => {
-  const conditions = [
+  const consultationPaymentConditions = [
     refs.consultationId ? { consultationId: refs.consultationId } : null,
     refs.prescriptionId ? { prescriptionId: refs.prescriptionId } : null,
-    refs.appointmentId ? { appointmentId: refs.appointmentId } : null,
   ].filter(Boolean) as Prisma.PaymentWhereInput[];
+
+  const conditions = consultationPaymentConditions.length > 0
+    ? consultationPaymentConditions
+    : (refs.appointmentId ? [{ appointmentId: refs.appointmentId }] : []);
 
   if (conditions.length === 0) return null;
 
@@ -141,7 +144,6 @@ export const createPendingPaymentForDispensedPrescription = async (
   const existing = await findExistingClinicPayment(tx, {
     consultationId: prescription.consultationId,
     prescriptionId: prescription.prescriptionId,
-    appointmentId: prescription.appointmentId,
   });
   if (existing) {
     if (existing.status !== PaymentStatus.PENDING_PAYMENT) {
@@ -176,6 +178,47 @@ export const createPendingPaymentForDispensedPrescription = async (
     });
   }
 
+  const appointmentPayment = prescription.appointmentId
+    ? await tx.payment.findUnique({
+        where: { appointmentId: prescription.appointmentId },
+        select: {
+          paymentId: true,
+          status: true,
+          consultationId: true,
+          prescriptionId: true,
+        },
+      })
+    : null;
+
+  if (
+    appointmentPayment?.status === PaymentStatus.PENDING_PAYMENT &&
+    !appointmentPayment.consultationId &&
+    !appointmentPayment.prescriptionId
+  ) {
+    await tx.paymentMedicineItem.deleteMany({
+      where: { paymentId: appointmentPayment.paymentId },
+    });
+
+    return tx.payment.update({
+      where: { paymentId: appointmentPayment.paymentId },
+      data: {
+        type: PaymentType.CONSULTATION,
+        amount: totalAmount,
+        consultationId: prescription.consultationId,
+        prescriptionId: prescription.prescriptionId,
+        status: PaymentStatus.PENDING_PAYMENT,
+        dispensedAt: new Date(),
+        dispensedById: recordedById,
+        dispensedByUsername: recordedByUsername,
+        remarks: 'Auto-updated after prescription dispense',
+        medicineItems: {
+          create: medicineItems,
+        },
+      },
+      include: clinicPaymentInclude,
+    });
+  }
+
   return tx.payment.create({
     data: {
       patientId: prescription.patientId,
@@ -185,7 +228,7 @@ export const createPendingPaymentForDispensedPrescription = async (
       status: PaymentStatus.PENDING_PAYMENT,
       consultationId: prescription.consultationId,
       prescriptionId: prescription.prescriptionId,
-      appointmentId: prescription.appointmentId,
+      appointmentId: appointmentPayment ? undefined : prescription.appointmentId,
       dispensedAt: new Date(),
       dispensedById: recordedById,
       dispensedByUsername: recordedByUsername,
@@ -226,13 +269,42 @@ export const createPendingPaymentForCompletedConsultationWithoutPrescription = a
 
   const existing = await findExistingClinicPayment(tx, {
     consultationId: consultation.consultationId,
-    appointmentId: consultation.appointmentId,
   });
   if (existing) {
     if (existing.status === PaymentStatus.PAID) {
       throw Object.assign(new Error('This consultation has already been paid.'), { statusCode: 409 });
     }
     return existing;
+  }
+
+  const appointmentPayment = consultation.appointmentId
+    ? await tx.payment.findUnique({
+        where: { appointmentId: consultation.appointmentId },
+        select: {
+          paymentId: true,
+          status: true,
+          consultationId: true,
+          prescriptionId: true,
+        },
+      })
+    : null;
+
+  if (
+    appointmentPayment?.status === PaymentStatus.PENDING_PAYMENT &&
+    !appointmentPayment.consultationId &&
+    !appointmentPayment.prescriptionId
+  ) {
+    return tx.payment.update({
+      where: { paymentId: appointmentPayment.paymentId },
+      data: {
+        type: PaymentType.CONSULTATION,
+        amount: DEFAULT_CONSULTATION_FEE + (consultation.appointmentId ? APPOINTMENT_FEE : 0),
+        consultationId: consultation.consultationId,
+        status: PaymentStatus.PENDING_PAYMENT,
+        remarks: 'Auto-created after consultation completion',
+      },
+      include: clinicPaymentInclude,
+    });
   }
 
   return tx.payment.create({
@@ -243,7 +315,7 @@ export const createPendingPaymentForCompletedConsultationWithoutPrescription = a
       amount: DEFAULT_CONSULTATION_FEE + (consultation.appointmentId ? APPOINTMENT_FEE : 0),
       status: PaymentStatus.PENDING_PAYMENT,
       consultationId: consultation.consultationId,
-      appointmentId: consultation.appointmentId,
+      appointmentId: appointmentPayment ? undefined : consultation.appointmentId,
       remarks: 'Auto-created after consultation completion',
     },
     include: clinicPaymentInclude,
