@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { usePagination } from '../lib/pagination';
@@ -219,6 +219,13 @@ const getTypeClass = (type: PaymentType | string) => {
   return 'type-appointment';
 };
 
+const getPaymentMethodClass = (method: string | undefined) => {
+  if (method === 'CASH') return 'payment-method-cash';
+  if (method === 'CARD') return 'payment-method-card';
+  if (method === 'ONLINE_TRANSFER') return 'payment-method-online';
+  return 'payment-method-other';
+};
+
 const formatExpiryCountdown = (isoDate: string) => {
   const days = daysUntil(isoDate);
   if (days < 0) return `Expired ${Math.abs(days)} days ago`;
@@ -247,19 +254,20 @@ const MetricCard = ({ icon, label, value, tone = 'neutral' }: { icon: string; la
 
 const EmptyReportState = ({ message }: { message: string }) => (
   <div className="report-empty-state">
-    <span aria-hidden="true">--</span>
+    <span aria-hidden="true">∅</span>
     <strong>{message}</strong>
-    <p>Adjust filters or generate a broader date range to see records.</p>
+    <p>Adjust filters or broaden the date range to see records.</p>
   </div>
 );
 
-const ReportSection = ({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) => (
+const ReportSection = ({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: ReactNode; children: ReactNode }) => (
   <article className="report-card">
     <div className="report-section-head">
       <div>
         <h3>{title}</h3>
         {subtitle && <p>{subtitle}</p>}
       </div>
+      {actions && <div className="report-card-actions">{actions}</div>}
     </div>
     {children}
   </article>
@@ -283,7 +291,7 @@ const ReportChart = ({ data, mode }: { data: Array<{ label: string; value: numbe
     <div className="report-chart" role="img" aria-label={`${mode} sales chart`}>
       {data.map((item) => (
         <div key={item.label} className="report-chart-bar">
-          <span title={`${item.label}: RM ${formatMoney(item.value)}`} style={{ height: `${Math.max(8, (item.value / max) * 100)}%` }} />
+          <span data-tooltip={`${item.label}: RM ${formatMoney(item.value)}`} title={`${item.label}: RM ${formatMoney(item.value)}`} style={{ height: `${Math.max(8, (item.value / max) * 100)}%` }} />
           <small>{item.label}</small>
           <b>{formatShortMoney(item.value)}</b>
         </div>
@@ -307,7 +315,9 @@ export const ReportsPage = () => {
 
   const [reportType, setReportType] = useState<ReportType>('PAYMENT');
   const [salesChartMode, setSalesChartMode] = useState<ChartMode>('daily');
+  const [paymentChartMode, setPaymentChartMode] = useState<ChartMode>('daily');
   const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [debouncedFilters, setDebouncedFilters] = useState<Filters>(initialFilters);
   const [dateRange, setDateRange] = useState(() => getDateRangeForPreset('last7'));
 
   const [patients, setPatients] = useState<PatientOption[]>([]);
@@ -345,12 +355,12 @@ export const ReportsPage = () => {
   }, [canReadMedicine]);
 
   const validateFilters = useCallback(() => {
-    if (filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo) {
+    if (debouncedFilters.dateFrom && debouncedFilters.dateTo && debouncedFilters.dateFrom > debouncedFilters.dateTo) {
       setError('Date from cannot be later than date to.');
       return false;
     }
     return true;
-  }, [filters.dateFrom, filters.dateTo]);
+  }, [debouncedFilters.dateFrom, debouncedFilters.dateTo]);
 
   const generateReport = useCallback(async () => {
     if (!validateFilters()) return;
@@ -361,7 +371,7 @@ export const ReportsPage = () => {
       if (reportType === 'PATIENT') {
         const response = await api.get('/reports/patients', {
           params: {
-            query: filters.query || undefined,
+            query: debouncedFilters.query || undefined,
           },
         });
         setPatientItems(response.data as PatientReportItem[]);
@@ -370,10 +380,10 @@ export const ReportsPage = () => {
       if (reportType === 'PRESCRIPTION') {
         const response = await api.get('/reports/prescriptions', {
           params: {
-            patientId: filters.patientId || undefined,
-            medicineId: filters.medicineId || undefined,
-            dateFrom: filters.dateFrom || undefined,
-            dateTo: filters.dateTo || undefined,
+            patientId: debouncedFilters.patientId || undefined,
+            medicineId: debouncedFilters.medicineId || undefined,
+            dateFrom: debouncedFilters.dateFrom || undefined,
+            dateTo: debouncedFilters.dateTo || undefined,
           },
         });
         setPrescriptionItems(response.data as PrescriptionReportItem[]);
@@ -382,11 +392,11 @@ export const ReportsPage = () => {
       if (reportType === 'CONSULTATION') {
         const response = await api.get('/reports/consultations', {
           params: {
-            patientId: filters.patientId || undefined,
-            query: filters.query || undefined,
-            status: filters.consultationStatus || undefined,
-            dateFrom: filters.dateFrom || undefined,
-            dateTo: filters.dateTo || undefined,
+            patientId: debouncedFilters.patientId || undefined,
+            query: debouncedFilters.query || undefined,
+            status: debouncedFilters.consultationStatus || undefined,
+            dateFrom: debouncedFilters.dateFrom || undefined,
+            dateTo: debouncedFilters.dateTo || undefined,
           },
         });
         setConsultationItems(response.data as ConsultationReportItem[]);
@@ -397,7 +407,7 @@ export const ReportsPage = () => {
           api.get('/reports/inventory/low-stock'),
           api.get('/reports/inventory/expiring', {
             params: {
-              days: filters.expiringDays,
+              days: debouncedFilters.expiringDays,
             },
           }),
         ]);
@@ -409,9 +419,9 @@ export const ReportsPage = () => {
       if (reportType === 'PAYMENT') {
         const response = await api.get('/reports/payments', {
           params: {
-            type: filters.paymentType || undefined,
-            dateFrom: filters.dateFrom || undefined,
-            dateTo: filters.dateTo || undefined,
+            type: debouncedFilters.paymentType || undefined,
+            dateFrom: debouncedFilters.dateFrom || undefined,
+            dateTo: debouncedFilters.dateTo || undefined,
           },
         });
         setPaymentSummary(response.data as PaymentSummaryResponse);
@@ -420,11 +430,11 @@ export const ReportsPage = () => {
       if (reportType === 'SALES') {
         const response = await api.get('/reports/sales', {
           params: {
-            type: filters.paymentType || undefined,
-            status: filters.saleStatus || undefined,
-            query: filters.query || undefined,
-            dateFrom: filters.dateFrom || undefined,
-            dateTo: filters.dateTo || undefined,
+            type: debouncedFilters.paymentType || undefined,
+            status: debouncedFilters.saleStatus || undefined,
+            query: debouncedFilters.query || undefined,
+            dateFrom: debouncedFilters.dateFrom || undefined,
+            dateTo: debouncedFilters.dateTo || undefined,
           },
         });
         setSalesSummary(response.data as SalesSummaryResponse);
@@ -433,10 +443,10 @@ export const ReportsPage = () => {
       if (reportType === 'RECEIPT') {
         const response = await api.get('/reports/receipts', {
           params: {
-            type: filters.paymentType || undefined,
-            receiptNo: filters.receiptNo || undefined,
-            dateFrom: filters.dateFrom || undefined,
-            dateTo: filters.dateTo || undefined,
+            type: debouncedFilters.paymentType || undefined,
+            receiptNo: debouncedFilters.receiptNo || undefined,
+            dateFrom: debouncedFilters.dateFrom || undefined,
+            dateTo: debouncedFilters.dateTo || undefined,
           },
         });
         setReceiptItems(response.data as ReceiptReportItem[]);
@@ -448,18 +458,29 @@ export const ReportsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters, reportType, validateFilters]);
+  }, [debouncedFilters, reportType, validateFilters]);
 
   useEffect(() => {
     void (async () => {
       try {
         await loadLookups();
-        await generateReport();
       } catch {
         setError('Failed to load report module.');
       }
     })();
-  }, [generateReport, loadLookups]);
+  }, [loadLookups]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedFilters(filters);
+    }, 400);
+
+    return () => window.clearTimeout(timeout);
+  }, [filters]);
+
+  useEffect(() => {
+    void generateReport();
+  }, [generateReport]);
 
   useEffect(() => {
     return subscribeInAppDataSync(() => {
@@ -473,7 +494,7 @@ export const ReportsPage = () => {
       filename: `${reportType.toLowerCase()}-report-${new Date().toISOString().slice(0, 10)}`,
       logoUrl: clinicLogo,
       generatedAt: generatedAt ?? undefined,
-      filters: activeFilterTags,
+      filters: activeFilterTags.map((tag) => tag.label),
       footerNote: 'Generated by Clinic Dr Alwani for audit and record keeping.',
     };
 
@@ -623,27 +644,53 @@ export const ReportsPage = () => {
   }, [reportType]);
 
   const activeFilterTags = useMemo(() => {
-    const tags: string[] = [];
+    const tags: Array<{ key: keyof Filters | 'dateRange'; label: string; clearable: boolean }> = [];
 
-    if (filters.dateFrom) tags.push(`From: ${filters.dateFrom}`);
-    if (filters.dateTo) tags.push(`To: ${filters.dateTo}`);
-    if (filters.paymentType) tags.push(`Payment Type: ${prettifyPaymentType(filters.paymentType)}`);
-    if (filters.consultationStatus) tags.push(`Consultation Status: ${prettifyEnum(filters.consultationStatus)}`);
-    if (filters.saleStatus) tags.push(`Sale Status: ${prettifyEnum(filters.saleStatus)}`);
-    if (filters.receiptNo) tags.push(`Receipt No: ${filters.receiptNo}`);
-    if (filters.query) tags.push(`Keyword: ${filters.query}`);
+    if (filters.dateFrom || filters.dateTo) {
+      tags.push({ key: 'dateRange', label: `${filters.dateFrom || 'Start'} to ${filters.dateTo || 'Today'}`, clearable: true });
+    } else {
+      tags.push({ key: 'dateRange', label: 'All Dates', clearable: false });
+    }
+    if (filters.paymentType) tags.push({ key: 'paymentType', label: prettifyPaymentType(filters.paymentType), clearable: true });
+    if (filters.consultationStatus) tags.push({ key: 'consultationStatus', label: prettifyEnum(filters.consultationStatus), clearable: true });
+    if (filters.saleStatus) tags.push({ key: 'saleStatus', label: prettifyEnum(filters.saleStatus), clearable: true });
+    if (filters.receiptNo) tags.push({ key: 'receiptNo', label: `Receipt ${filters.receiptNo}`, clearable: true });
+    if (filters.query) tags.push({ key: 'query', label: filters.query, clearable: true });
     if (filters.patientId) {
       const patient = patients.find((p) => p.patientId === filters.patientId);
-      tags.push(`Patient: ${patient?.name ?? `#${filters.patientId}`}`);
+      tags.push({ key: 'patientId', label: patient?.name ?? `Patient #${filters.patientId}`, clearable: true });
     }
     if (filters.medicineId) {
       const medicine = medicines.find((m) => m.medicineId === filters.medicineId);
-      tags.push(`Medicine: ${medicine ? `${medicine.name} (${medicine.batchNumber})` : `#${filters.medicineId}`}`);
+      tags.push({ key: 'medicineId', label: medicine ? `${medicine.name} (${medicine.batchNumber})` : `Medicine #${filters.medicineId}`, clearable: true });
     }
-    if (reportType === 'INVENTORY') tags.push(`Expiring Days: ${filters.expiringDays}`);
+    if (reportType === 'INVENTORY') tags.push({ key: 'expiringDays', label: `Expiring ${filters.expiringDays} days`, clearable: filters.expiringDays !== initialFilters.expiringDays });
 
     return tags;
   }, [filters, medicines, patients, reportType]);
+
+  const clearFilterChip = (key: keyof Filters | 'dateRange') => {
+    if (key === 'dateRange') {
+      setDateRange({ preset: 'all', dateFrom: '', dateTo: '' });
+      setFilters((prev) => ({ ...prev, dateFrom: '', dateTo: '' }));
+      return;
+    }
+
+    setFilters((prev) => ({ ...prev, [key]: initialFilters[key] }));
+  };
+
+  const exportActions = (
+    <>
+      <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
+        <span className="report-action-icon" aria-hidden="true">PDF</span>
+        <span>Export PDF</span>
+      </Button>
+      <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
+        <span className="report-action-icon" aria-hidden="true">XLS</span>
+        <span>Export Excel</span>
+      </Button>
+    </>
+  );
 
   const {
     page: patientPage,
@@ -708,9 +755,9 @@ export const ReportsPage = () => {
   const prescriptionMedicineCount = prescriptionItems.reduce((sum, item) => sum + item.items.reduce((itemSum, med) => itemSum + med.qty, 0), 0);
   const consultationFeeTotal = consultationItems.reduce((sum, item) => sum + Number(item.payment?.amount ?? 0), 0);
   const salesMedicineTotal = salesReportItems.filter((item) => item.type === 'MEDICINE').reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0);
-  const salesConsultationTotal = salesReportItems.filter((item) => item.type === 'CONSULTATION' || item.type === 'MEDICAL_CHECKUP').reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0);
-  const salesAppointmentTotal = salesReportItems.filter((item) => item.type === 'APPOINTMENT').reduce((sum, item) => sum + Number(item.receipt?.totalAmount ?? item.amount), 0);
+  const averageSale = salesReportItems.length ? Number(salesSummary?.total ?? 0) / salesReportItems.length : 0;
   const paymentMedicineTotal = paymentReportItems.filter((item) => item.type === 'MEDICINE').reduce((sum, item) => sum + Number(item.amount), 0);
+  const expiredInventoryCount = expiringItems.filter((item) => daysUntil(item.expiryDate) < 0).length;
 
   const salesChartData = useMemo(() => {
     const source = salesReportItems.length ? salesReportItems : [];
@@ -760,6 +807,54 @@ export const ReportsPage = () => {
     });
   }, [salesChartMode, salesReportItems]);
 
+  const paymentChartData = useMemo(() => {
+    const source = paymentReportItems.length ? paymentReportItems : [];
+    const buckets = paymentChartMode === 'daily' ? 7 : 6;
+    const now = new Date();
+
+    return Array.from({ length: buckets }, (_, index) => {
+      const offset = buckets - 1 - index;
+      const date = new Date(now);
+
+      if (paymentChartMode === 'monthly') {
+        date.setMonth(now.getMonth() - offset, 1);
+        const key = `${date.getFullYear()}-${date.getMonth()}`;
+        return {
+          label: date.toLocaleString(undefined, { month: 'short' }),
+          value: source.filter((item) => {
+            const itemDate = new Date(item.date);
+            return `${itemDate.getFullYear()}-${itemDate.getMonth()}` === key;
+          }).reduce((sum, item) => sum + Number(item.amount), 0),
+        };
+      }
+
+      if (paymentChartMode === 'weekly') {
+        date.setDate(now.getDate() - (offset * 7));
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - weekStart.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+
+        return {
+          label: weekStart.toLocaleDateString(undefined, { month: 'short', day: '2-digit' }),
+          value: source.filter((item) => {
+            const itemDate = new Date(item.date);
+            return itemDate >= weekStart && itemDate <= weekEnd;
+          }).reduce((sum, item) => sum + Number(item.amount), 0),
+        };
+      }
+
+      date.setDate(now.getDate() - offset);
+      const key = toDateInput(date.toISOString());
+      return {
+        label: date.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }),
+        value: source.filter((item) => toDateInput(item.date) === key).reduce((sum, item) => sum + Number(item.amount), 0),
+      };
+    });
+  }, [paymentChartMode, paymentReportItems]);
+
   const exportReceiptRecord = (receipt: ReceiptReportItem) => {
     exportReceiptPdf({
       filename: `receipt-${receipt.receiptNo}`,
@@ -793,26 +888,28 @@ export const ReportsPage = () => {
           <p>Generate operational, financial, inventory, and receipt reports for Clinic Dr Alwani.</p>
         </div>
         <div className="report-hero-meta">
-          <span>{generatedAt ? `Generated ${new Date(generatedAt).toLocaleString()}` : 'Not generated yet'}</span>
-          <strong>{reportLabel}</strong>
+          <span>{loading ? 'Refreshing reports...' : generatedAt ? `Generated ${new Date(generatedAt).toLocaleString()}` : 'Preparing report data'}</span>
         </div>
       </div>
 
-      <form
-        className="report-filter-controls"
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault();
-          void generateReport();
-        }}
-      >
+      <div className="report-filter-controls">
         <div className="report-controls-head">
           <div>
-            <h3>{reportLabel}</h3>
             <p>{reportTypeDescription(reportType)}</p>
           </div>
           <div className="report-filter-chips">
-            {(activeFilterTags.length > 0 ? activeFilterTags : ['No filters']).map((tag) => (
-              <span key={tag}>{tag}</span>
+            {activeFilterTags.map((tag) => (
+              <button
+                key={`${tag.key}-${tag.label}`}
+                type="button"
+                className={tag.clearable ? 'is-clearable' : undefined}
+                onClick={() => tag.clearable && clearFilterChip(tag.key)}
+                disabled={!tag.clearable}
+                title={tag.clearable ? `Clear ${tag.label}` : tag.label}
+              >
+                {tag.label}
+                {tag.clearable && <span aria-hidden="true">×</span>}
+              </button>
             ))}
           </div>
         </div>
@@ -853,9 +950,17 @@ export const ReportsPage = () => {
             />
           </div>
 
-          <Button className="report-generate-btn" type="submit" disabled={loading}>
-            {loading && <span className="report-spinner" aria-hidden="true" />}
-            {loading ? 'Generating...' : 'Generate'}
+          <Button
+            className="report-reset-btn"
+            variant="secondary"
+            onClick={() => {
+              const nextRange = getDateRangeForPreset('last7');
+              setDateRange(nextRange);
+              setFilters({ ...initialFilters, dateFrom: nextRange.dateFrom, dateTo: nextRange.dateTo });
+            }}
+            disabled={loading}
+          >
+            Reset Filters
           </Button>
         </div>
 
@@ -949,34 +1054,12 @@ export const ReportsPage = () => {
           )}
         </div>
 
-        <div className="report-print-actions">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              const nextRange = getDateRangeForPreset('last7');
-              setDateRange(nextRange);
-              setFilters({ ...initialFilters, dateFrom: nextRange.dateFrom, dateTo: nextRange.dateTo });
-            }}
-            disabled={loading}
-          >
-            <span className="report-action-icon" aria-hidden="true">R</span>
-            <span>Reset Filters</span>
-          </Button>
-          <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
-            <span className="report-action-icon" aria-hidden="true">PDF</span>
-            <span>Export PDF</span>
-          </Button>
-          <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
-            <span className="report-action-icon" aria-hidden="true">XLS</span>
-            <span>Export Excel</span>
-          </Button>
-        </div>
-      </form>
+      </div>
 
       {error && <p className="error report-feedback">{error}</p>}
 
       {!loading && reportType === 'PATIENT' && (
-        <ReportSection title="Patient Report" subtitle="Patient list with registration status, activity, and paid contribution.">
+        <ReportSection title="Patient Report" subtitle="Patient list with registration status, activity, and paid contribution." actions={exportActions}>
           <div className="metrics-grid report-metrics-grid">
             <MetricCard icon="PT" label="Total Patients" value={patientItems.length} />
             <MetricCard icon="WI" label="Walk-in Count" value={walkInPatientCount} tone="warning" />
@@ -1018,7 +1101,7 @@ export const ReportsPage = () => {
       )}
 
       {!loading && reportType === 'PRESCRIPTION' && (
-        <ReportSection title="Prescription Report" subtitle="Medicine tags, status, and dispensing readiness by prescription.">
+        <ReportSection title="Prescription Report" subtitle="Medicine tags, status, and dispensing readiness by prescription." actions={exportActions}>
           <div className="metrics-grid report-metrics-grid">
             <MetricCard icon="RX" label="Prescriptions" value={prescriptionItems.length} />
             <MetricCard icon="MD" label="Total Medicines" value={prescriptionMedicineCount} />
@@ -1060,7 +1143,7 @@ export const ReportsPage = () => {
       )}
 
       {!loading && reportType === 'CONSULTATION' && (
-        <ReportSection title="Consultation Report" subtitle="Consultation workload, follow-ups, fees, and clinical status at a glance.">
+        <ReportSection title="Consultation Report" subtitle="Consultation workload, follow-ups, fees, and clinical status at a glance." actions={exportActions}>
           <div className="metrics-grid report-metrics-grid">
             <MetricCard icon="DR" label="Consultations" value={consultationItems.length} />
             <MetricCard icon="OK" label="Completed" value={consultationItems.filter((item) => item.status === 'COMPLETED').length} tone="good" />
@@ -1112,10 +1195,11 @@ export const ReportsPage = () => {
       )}
 
       {!loading && reportType === 'INVENTORY' && (
-        <ReportSection title="Inventory Report" subtitle="Low stock and expiry risk split into compact operational queues.">
+        <ReportSection title="Inventory Report" subtitle="Low stock and expiry risk split into compact operational queues." actions={exportActions}>
           <div className="metrics-grid report-metrics-grid">
             <MetricCard icon="LS" label="Low Stock (<10)" value={lowStockItems.length} tone="danger" />
             <MetricCard icon="EX" label={`Expiring <= ${filters.expiringDays} days`} value={expiringItems.length} tone="warning" />
+            <MetricCard icon="XP" label="Expired" value={expiredInventoryCount} tone={expiredInventoryCount > 0 ? 'danger' : 'good'} />
             <MetricCard icon="AL" label="Total Alerts" value={lowStockItems.length + expiringItems.length} tone="warning" />
           </div>
 
@@ -1206,12 +1290,34 @@ export const ReportsPage = () => {
       )}
 
       {!loading && reportType === 'PAYMENT' && (
-        <ReportSection title="Payment Report" subtitle="Revenue breakdown by payment type, method, receipt, and patient.">
+        <ReportSection title="Payment Report" subtitle="Revenue breakdown by payment type, method, receipt, and patient." actions={exportActions}>
           <div className="metrics-grid report-metrics-grid">
             <MetricCard icon="TX" label="Total Payments" value={paymentSummary?.count ?? 0} />
             <MetricCard icon="DR" label="Consultation Revenue" value={`RM ${formatMoney(paymentConsultationTotal)}`} />
             <MetricCard icon="AP" label="Appointment Revenue" value={`RM ${formatMoney(paymentAppointmentTotal)}`} />
             <MetricCard icon="MD" label="Medicine Revenue" value={`RM ${formatMoney(paymentMedicineTotal)}`} tone="good" />
+          </div>
+
+          <div className="report-chart-panel">
+            <div className="report-chart-toolbar">
+              <div>
+                <h3>Collection Trend</h3>
+                <p className="muted">Total {formatShortMoney(paymentSummary?.total ?? 0)} across {paymentSummary?.count ?? 0} payments</p>
+              </div>
+              <div className="report-chart-controls" aria-label="Payment chart grouping">
+                {(['daily', 'weekly', 'monthly'] as ChartMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={paymentChartMode === mode ? 'is-active' : ''}
+                    onClick={() => setPaymentChartMode(mode)}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ReportChart data={paymentChartData} mode={paymentChartMode} />
           </div>
 
           <div className="table-wrap report-table-wrap">
@@ -1231,10 +1337,23 @@ export const ReportsPage = () => {
                   <tr key={item.paymentId}>
                     <td>{new Date(item.date).toLocaleString()}</td>
                     <td><span className={`status-badge ${getTypeClass(item.type)}`}>{prettifyPaymentType(item.type)}</span></td>
-                    <td><ReportBadge tone="neutral">{item.paymentMethod ? prettifyEnum(item.paymentMethod) : '-'}</ReportBadge></td>
+                    <td><span className={`status-badge ${getPaymentMethodClass(item.paymentMethod)}`}>{item.paymentMethod ? prettifyEnum(item.paymentMethod) : '-'}</span></td>
                     <td>{item.patient?.name ?? '-'}</td>
                     <td>{formatMoney(item.amount)}</td>
-                    <td>{item.receipt?.receiptNo ?? '-'}</td>
+                    <td>
+                      {item.receipt?.receiptNo ? (
+                        <button
+                          type="button"
+                          className="report-link-button"
+                          onClick={() => {
+                            setReportType('RECEIPT');
+                            setFilters((prev) => ({ ...prev, receiptNo: item.receipt?.receiptNo ?? '' }));
+                          }}
+                        >
+                          {item.receipt.receiptNo}
+                        </button>
+                      ) : '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1248,12 +1367,12 @@ export const ReportsPage = () => {
       )}
 
       {!loading && reportType === 'SALES' && (
-        <ReportSection title="Sales Report" subtitle="Sales trend, receipt status, and medicine items in one readable view.">
+        <ReportSection title="Sales Report" subtitle="Sales trend, receipt status, and medicine items in one readable view." actions={exportActions}>
           <div className="metrics-grid report-metrics-grid">
-            <MetricCard icon="RM" label="Total Revenue" value={`RM ${formatMoney(salesSummary?.total ?? 0)}`} tone="good" />
+            <MetricCard icon="TX" label="Total Sales" value={salesSummary?.count ?? 0} />
+            <MetricCard icon="RM" label="Revenue" value={`RM ${formatMoney(salesSummary?.total ?? 0)}`} tone="good" />
+            <MetricCard icon="AV" label="Average Sale" value={`RM ${formatMoney(averageSale)}`} />
             <MetricCard icon="MD" label="Medicine Sales" value={`RM ${formatMoney(salesMedicineTotal)}`} />
-            <MetricCard icon="DR" label="Consultation Fees" value={`RM ${formatMoney(salesConsultationTotal)}`} />
-            <MetricCard icon="AP" label="Appointment Fees" value={`RM ${formatMoney(salesAppointmentTotal)}`} />
           </div>
 
           <div className="report-chart-panel">
@@ -1297,7 +1416,20 @@ export const ReportsPage = () => {
                     <td>{new Date(item.date).toLocaleString()}</td>
                     <td><span className={`status-badge ${getTypeClass(item.type)}`}>{prettifyPaymentType(item.type)}</span></td>
                     <td>{item.patient?.name ?? '-'}</td>
-                    <td>{item.receipt?.receiptNo ?? '-'}</td>
+                    <td>
+                      {item.receipt?.receiptNo ? (
+                        <button
+                          type="button"
+                          className="report-link-button"
+                          onClick={() => {
+                            setReportType('RECEIPT');
+                            setFilters((prev) => ({ ...prev, receiptNo: item.receipt?.receiptNo ?? '' }));
+                          }}
+                        >
+                          {item.receipt.receiptNo}
+                        </button>
+                      ) : '-'}
+                    </td>
                     <td><MedicineTags items={item.medicineItems} /></td>
                     <td><ReportBadge tone={getStatusTone(item.status)}>{prettifyEnum(item.status)}</ReportBadge></td>
                     <td>{formatMoney(item.receipt?.totalAmount ?? item.amount)}</td>
@@ -1313,7 +1445,7 @@ export const ReportsPage = () => {
       )}
 
       {!loading && reportType === 'RECEIPT' && (
-        <ReportSection title="Receipt Report" subtitle="Receipt lookup with compact actions for viewing, printing, and PDF export.">
+        <ReportSection title="Receipt Report" subtitle="Receipt lookup with compact actions for viewing, printing, and PDF export." actions={exportActions}>
           {previewReceipt && (
             <div className="report-receipt-preview" role="region" aria-label="Receipt preview">
               <div>
@@ -1346,7 +1478,7 @@ export const ReportsPage = () => {
                 {paginatedReceiptItems.map((item) => (
                   <tr key={item.receiptId}>
                     <td>{new Date(item.date).toLocaleString()}</td>
-                    <td>{item.receiptNo}</td>
+                    <td><button type="button" className="report-link-button" onClick={() => setPreviewReceipt(item)}>{item.receiptNo}</button></td>
                     <td>{item.payment?.patient?.name ?? '-'}</td>
                     <td>{item.payment ? <span className={`status-badge ${getTypeClass(item.payment.type)}`}>{prettifyPaymentType(item.payment.type)}</span> : '-'}</td>
                     <td>{formatMoney(item.totalAmount)}</td>

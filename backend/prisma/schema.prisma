@@ -179,6 +179,9 @@ model Medicine {
   rejectedByUsername  String?
   rejectedAt          DateTime?
   rejectionReason     String?
+  isActive            Boolean                @default(true)
+  archivedAt          DateTime?
+  archivedBy          String?
   createdAt           DateTime               @default(now())
   prescriptionItems PrescriptionMedicine[]
   saleItems           PaymentMedicineItem[]
@@ -187,6 +190,7 @@ model Medicine {
   @@unique([name, batchNumber])
   @@index([category])
   @@index([availableForPrescription])
+  @@index([isActive])
 }
 
 model InventoryStockLog {

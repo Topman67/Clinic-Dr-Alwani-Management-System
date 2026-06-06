@@ -312,6 +312,7 @@ export const inventoryLowStock = async (_req: Request, res: Response) => {
   const items = await prisma.medicine.findMany({
     where: {
       approvalStatus: MedicineApprovalStatus.APPROVED,
+      isActive: true,
       quantity: { lt: 10 },
     },
     orderBy: { quantity: 'asc' },
@@ -326,6 +327,7 @@ export const inventoryExpiring = async (req: Request, res: Response) => {
   const items = await prisma.medicine.findMany({
     where: {
       approvalStatus: MedicineApprovalStatus.APPROVED,
+      isActive: true,
       expiryDate: { lte: cutoff },
     },
     orderBy: { expiryDate: 'asc' },

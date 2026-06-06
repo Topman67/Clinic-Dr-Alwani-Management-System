@@ -206,6 +206,7 @@ export const createPrescription = async (req: Request, res: Response) => {
           expiryDate: true,
           approvalStatus: true,
           availableForPrescription: true,
+          isActive: true,
         },
       });
 
@@ -216,6 +217,10 @@ export const createPrescription = async (req: Request, res: Response) => {
       for (const medicine of medicines) {
         if (medicine.approvalStatus !== MedicineApprovalStatus.APPROVED) {
           throw createHttpError(400, `${medicine.name} is not approved for prescribing.`);
+        }
+
+        if (!medicine.isActive) {
+          throw createHttpError(400, `${medicine.name} is archived and cannot be prescribed.`);
         }
 
         if (!medicine.availableForPrescription) {
@@ -351,6 +356,7 @@ const validatePrescriptionInventory = async (
       expiryDate: true,
       approvalStatus: true,
       availableForPrescription: true,
+      isActive: true,
       batchNumber: true,
     },
   });
@@ -363,6 +369,10 @@ const validatePrescriptionInventory = async (
 
     if (medicine.approvalStatus !== MedicineApprovalStatus.APPROVED) {
       throw createHttpError(400, `${medicine.name} is not approved for dispensing.`);
+    }
+
+    if (!medicine.isActive) {
+      throw createHttpError(400, `${medicine.name} is archived and cannot be dispensed.`);
     }
 
     if (!medicine.availableForPrescription) {
@@ -444,6 +454,7 @@ export const dispensePrescription = async (req: Request, res: Response) => {
             medicineId,
             approvalStatus: MedicineApprovalStatus.APPROVED,
             availableForPrescription: true,
+            isActive: true,
             quantity: { gte: requestedQty },
           },
           data: {

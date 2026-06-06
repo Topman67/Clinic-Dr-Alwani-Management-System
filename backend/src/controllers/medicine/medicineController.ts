@@ -111,6 +111,10 @@ const parseMedicineId = (value: unknown) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 };
 
+const getMedicineArchiveWhere = (includeArchived: unknown) => {
+  return includeArchived === 'true' ? {} : { isActive: true };
+};
+
 const normalizeOptionalReason = (value: unknown) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -186,6 +190,7 @@ export const listMedicine = async (req: Request, res: Response) => {
   const approvalStatus = Object.values(MedicineApprovalStatus).includes(approvalStatusRaw as MedicineApprovalStatus)
     ? (approvalStatusRaw as MedicineApprovalStatus)
     : undefined;
+  const archiveWhere = getMedicineArchiveWhere(req.query.includeArchived);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -212,6 +217,7 @@ export const listMedicine = async (req: Request, res: Response) => {
       category,
       approvalStatus: approvalStatus ?? (includePending ? undefined : MedicineApprovalStatus.APPROVED),
       availableForPrescription,
+      ...archiveWhere,
       quantity: lowStock ? { lte: 10 } : undefined,
       ...expiryWhere,
     },
@@ -477,16 +483,33 @@ export const deleteMedicine = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Missing or invalid fields.' });
   }
 
-  const existing = await prisma.medicine.findUnique({ where: { medicineId: id } });
+  const existing = await prisma.medicine.findUnique({
+    where: { medicineId: id },
+    include: {
+      _count: {
+        select: {
+          prescriptionItems: true,
+          saleItems: true,
+        },
+      },
+    },
+  });
   if (!existing) {
     return res.status(404).json({ message: 'Medicine not found.' });
+  }
+
+  if (!existing.isActive) {
+    return res.status(400).json({ message: 'Medicine is already archived.' });
   }
 
   if (existing.approvalStatus === MedicineApprovalStatus.REJECTED) {
     return res.status(400).json({ message: 'Rejected medicines are retained for audit and cannot be deleted.' });
   }
 
-  await prisma.$transaction(async (tx) => {
+  const hasRelatedRecords = existing._count.prescriptionItems > 0 || existing._count.saleItems > 0;
+  const archivedBy = req.user?.username ?? (req.user?.userId ? String(req.user.userId) : null);
+
+  const medicine = await prisma.$transaction(async (tx) => {
     await createInventoryLog(tx, {
       medicineId: existing.medicineId,
       itemName: existing.name,
@@ -496,12 +519,30 @@ export const deleteMedicine = async (req: Request, res: Response) => {
       performedById: req.user?.userId,
       performedByUsername: req.user?.username,
     });
+
+    if (hasRelatedRecords) {
+      return tx.medicine.update({
+        where: { medicineId: id },
+        data: {
+          isActive: false,
+          archivedAt: new Date(),
+          archivedBy,
+          availableForPrescription: false,
+          quantity: 0,
+        },
+      });
+    }
+
     await tx.medicine.delete({ where: { medicineId: id } });
+    return null;
   });
   try {
     await logActivity(req.user?.userId, `delete_medicine:${id}`);
   } catch (_) {}
-  res.json({ message: 'Medicine Deleted Successfully' });
+  res.json({
+    message: hasRelatedRecords ? 'Medicine archived successfully.' : 'Medicine Deleted Successfully',
+    medicine,
+  });
 };
 
 export const listInventoryHistory = async (_req: Request, res: Response) => {

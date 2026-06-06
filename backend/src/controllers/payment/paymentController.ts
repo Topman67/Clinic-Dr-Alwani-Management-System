@@ -169,6 +169,7 @@ export const listWalkInMedicines = async (_req: Request, res: Response) => {
   const medicines = await prisma.medicine.findMany({
     where: {
       approvalStatus: MedicineApprovalStatus.APPROVED,
+      isActive: true,
       quantity: { gt: 0 },
       expiryDate: { gte: today },
     },
@@ -266,6 +267,7 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
     where: {
       medicineId: { in: medicineIds },
       approvalStatus: MedicineApprovalStatus.APPROVED,
+      isActive: true,
     },
     select: {
       medicineId: true,
@@ -428,6 +430,7 @@ export const dispenseWalkInSale = async (req: Request, res: Response) => {
           where: {
             medicineId: item.medicineId,
             approvalStatus: MedicineApprovalStatus.APPROVED,
+            isActive: true,
             quantity: { gte: item.qty },
           },
           data: {
