@@ -242,6 +242,11 @@ export const createPrescription = async (req: Request, res: Response) => {
         if (isExpiredMedicine(medicine.expiryDate)) {
           throw createHttpError(400, `${medicine.name} is expired and cannot be prescribed.`);
         }
+
+        const requestedQty = requestedTotals.get(medicine.medicineId) ?? 0;
+        if (medicine.quantity < requestedQty) {
+          throw createHttpError(400, `Insufficient stock for ${medicine.name}. Available: ${medicine.quantity} ${medicine.stockUnit}.`);
+        }
       }
 
       const created = await tx.prescription.create({
