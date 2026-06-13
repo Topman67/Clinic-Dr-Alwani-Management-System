@@ -2,6 +2,7 @@
   --bg: #eef3f8;
   --surface: #ffffff;
   --surface-soft: #f6f8fb;
+  --surface-2: var(--surface-soft);
   --surface-raised: #fbfdff;
   --border: #dde5ef;
   --border-strong: #cbd7e6;
@@ -25,6 +26,7 @@
   --bg: #080d16;
   --surface: #111827;
   --surface-soft: #172033;
+  --surface-2: var(--surface-soft);
   --surface-raised: #0f1724;
   --border: #233047;
   --border-strong: #334155;
@@ -8502,6 +8504,242 @@ button:disabled {
 .logout-btn:hover:not(:disabled) {
   background: var(--danger-strong);
   box-shadow: 0 10px 20px rgba(220, 38, 38, 0.2);
+}
+
+/* Shared consistency layer for operational clinic pages. */
+.card,
+.report-card,
+.report-page .report-card,
+.inventory-filter-card,
+.inventory-table-card,
+.inventory-history-card,
+.inventory-approval-section,
+.prescription-filter-card,
+.prescription-patient-card,
+.prescription-create-card,
+.prescription-medicine-card,
+.prescription-list-card,
+.payment-table-wrap,
+.pending-payment-workflow,
+.appointment-toolbar,
+.appointment-summary-row,
+.appointment-table-wrap {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.card,
+.report-card,
+.report-page .report-card,
+.inventory-filter-card,
+.inventory-table-card,
+.inventory-history-card,
+.inventory-approval-section,
+.prescription-filter-card,
+.prescription-patient-card,
+.prescription-create-card,
+.prescription-medicine-card,
+.prescription-list-card {
+  padding: 20px;
+}
+
+.report-page,
+.inventory-page,
+.prescription-page,
+.appointments-page {
+  gap: 16px;
+}
+
+.inventory-dashboard-grid,
+.payments-grid,
+.prescription-create-form,
+.prescription-summary-grid,
+.appointment-toolbar,
+.report-filter-grid,
+.report-metrics-grid {
+  gap: 12px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px 14px;
+}
+
+.data-table td:last-child {
+  white-space: nowrap;
+}
+
+.data-table td button,
+.data-table td .btn,
+.payment-table-actions button,
+.prescription-row-actions button,
+.inventory-action-row button,
+.inventory-table-actions button,
+.appointment-action-menu summary,
+.report-row-actions button,
+.sales-actions button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
+.payment-table-actions,
+.prescription-row-actions,
+.inventory-action-row,
+.inventory-table-actions,
+.report-row-actions,
+.sales-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-secondary,
+.data-table td .btn-secondary,
+.report-reset-btn,
+.report-card-actions .btn,
+.report-print-actions .btn,
+.inventory-details-link {
+  background: color-mix(in srgb, var(--surface-soft) 92%, var(--surface));
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, var(--text));
+}
+
+:root[data-theme='dark'] .btn-secondary,
+:root[data-theme='dark'] .data-table td .btn-secondary,
+:root[data-theme='dark'] .report-reset-btn,
+:root[data-theme='dark'] .report-card-actions .btn,
+:root[data-theme='dark'] .report-print-actions .btn,
+:root[data-theme='dark'] .inventory-details-link {
+  background: color-mix(in srgb, var(--surface-soft) 84%, #020617);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 78%, #94a3b8);
+}
+
+:root[data-theme='dark'] button {
+  box-shadow: none;
+}
+
+:root[data-theme='dark'] button:hover:not(:disabled) {
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+}
+
+input,
+select,
+textarea {
+  min-height: 44px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+select {
+  background-color: var(--surface-raised);
+}
+
+.field-block,
+.report-filter-controls label,
+.history-type-select,
+.pending-confirm-box .field-inline,
+.login-field {
+  gap: 7px;
+}
+
+.field-block > span:first-child,
+.report-filter-controls label > span,
+.history-type-select span,
+.pending-confirm-box .field-inline span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 780;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.appointment-modal,
+.inventory-modal,
+.medicine-picker-modal,
+.users-modal,
+.patient-drawer,
+.inventory-drawer,
+.prescription-details-drawer {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.patient-drawer,
+.inventory-drawer,
+.prescription-details-drawer {
+  border-radius: 0;
+}
+
+.appointment-modal-actions,
+.inventory-modal-footer,
+.users-modal-footer,
+.patient-drawer-footer,
+.inventory-drawer-footer {
+  gap: 10px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border-top: 1px solid var(--border);
+}
+
+.appointment-modal-actions button,
+.inventory-modal-footer button,
+.users-modal-footer button,
+.patient-drawer-footer button,
+.inventory-drawer-footer button {
+  min-height: 38px;
+}
+
+.prescription-patient-grid div,
+.prescription-details-grid div,
+.inventory-detail-grid div,
+.inventory-review-grid div,
+.inventory-detail-modal-grid div,
+.history-detail-grid div,
+.sales-detail-kv div {
+  border-radius: 10px;
+  border-color: color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 55%, transparent);
+  box-shadow: none;
+}
+
+:root[data-theme='dark'] .card,
+:root[data-theme='dark'] .report-card,
+:root[data-theme='dark'] .report-page .report-card,
+:root[data-theme='dark'] .inventory-filter-card,
+:root[data-theme='dark'] .inventory-table-card,
+:root[data-theme='dark'] .inventory-history-card,
+:root[data-theme='dark'] .inventory-approval-section,
+:root[data-theme='dark'] .prescription-filter-card,
+:root[data-theme='dark'] .prescription-patient-card,
+:root[data-theme='dark'] .prescription-create-card,
+:root[data-theme='dark'] .prescription-medicine-card,
+:root[data-theme='dark'] .prescription-list-card,
+:root[data-theme='dark'] .payment-table-wrap,
+:root[data-theme='dark'] .pending-payment-workflow,
+:root[data-theme='dark'] .appointment-toolbar,
+:root[data-theme='dark'] .appointment-summary-row,
+:root[data-theme='dark'] .appointment-table-wrap {
+  background: color-mix(in srgb, var(--surface) 92%, #020617);
+  border-color: var(--border);
+}
+
+:root[data-theme='dark'] .data-table thead {
+  background: color-mix(in srgb, var(--surface-soft) 82%, #020617);
+}
+
+:root[data-theme='dark'] input,
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] textarea {
+  background: color-mix(in srgb, var(--surface-raised) 88%, #020617);
+  border-color: color-mix(in srgb, var(--border) 86%, #94a3b8);
 }
 
 .logout-btn {
