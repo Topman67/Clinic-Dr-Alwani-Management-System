@@ -8742,6 +8742,161 @@ select {
   border-color: color-mix(in srgb, var(--border) 86%, #94a3b8);
 }
 
+.report-page {
+  gap: 16px;
+}
+
+.report-hero,
+.report-filter-controls,
+.report-page .report-card {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.report-hero {
+  padding: 18px 20px;
+}
+
+.report-hero h1 {
+  font-size: clamp(1.5rem, 2vw, 1.9rem);
+}
+
+.report-hero p,
+.report-controls-head p,
+.report-section-head p {
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.report-filter-controls {
+  gap: 14px;
+  padding: 16px;
+}
+
+.report-controls-head {
+  align-items: center;
+  padding-bottom: 12px;
+}
+
+.report-controls-head h3,
+.report-section-head h3 {
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 780;
+}
+
+.report-filter-grid {
+  gap: 12px;
+}
+
+.report-filter-grid-primary {
+  grid-template-columns: minmax(170px, 0.85fr) minmax(220px, 1fr) minmax(300px, 1.4fr) minmax(128px, auto);
+}
+
+.report-filter-grid-secondary {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.report-date-field .date-range-filter {
+  gap: 8px;
+}
+
+.report-filter-chips {
+  gap: 7px;
+}
+
+.report-filter-chips button {
+  min-height: 30px;
+  color: var(--text);
+}
+
+.report-page .report-card {
+  padding: 18px;
+}
+
+.report-section-head {
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.report-card-actions {
+  gap: 8px;
+}
+
+.report-card-actions .report-export-btn {
+  min-height: 40px;
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--text);
+  box-shadow: none;
+}
+
+.report-card-actions .report-export-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--border));
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface));
+  color: var(--text);
+}
+
+.report-card-actions .report-export-btn .report-action-icon {
+  background: var(--primary);
+  color: #fff;
+}
+
+.report-card-actions .report-export-btn:nth-child(2) .report-action-icon {
+  background: var(--success);
+}
+
+.report-metrics-grid {
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.report-metric-card {
+  min-height: 68px;
+  padding: 12px;
+}
+
+.report-chart-panel,
+.report-receipt-preview,
+.report-page .report-table-wrap {
+  margin-top: 14px;
+}
+
+.report-page .report-table-wrap:has(tbody:empty) {
+  display: none;
+}
+
+.report-page .data-table th,
+.report-page .data-table td {
+  padding: 10px 12px;
+}
+
+.report-empty-state {
+  min-height: 132px;
+  margin-top: 14px;
+  padding: 18px;
+  border-color: color-mix(in srgb, var(--border) 78%, var(--primary));
+  background: color-mix(in srgb, var(--surface-soft) 68%, transparent);
+}
+
+.report-empty-state span {
+  width: 38px;
+  height: 38px;
+  font-size: 0.9rem;
+}
+
+:root[data-theme='dark'] .report-card-actions .report-export-btn {
+  background: color-mix(in srgb, var(--primary) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--text);
+}
+
+:root[data-theme='dark'] .report-card-actions .report-export-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 24%, var(--surface));
+}
+
 .logout-btn {
   position: relative;
   margin-top: 6px;

@@ -8,7 +8,7 @@ import { DateRangeFilter } from '../components/DateRangeFilter';
 import { getDateRangeForPreset } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
 import { Button, Input, Select } from '../components/ui';
-import { exportReceiptPdf, exportReportExcel, exportReportPdf, type DocumentExportOptions } from '../lib/exportDocuments';
+import { exportReceiptPdf, exportReportCsv, exportReportPdf, type DocumentExportOptions } from '../lib/exportDocuments';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'CONSULTATION' | 'INVENTORY' | 'SALES' | 'PAYMENT' | 'RECEIPT';
@@ -254,7 +254,7 @@ const MetricCard = ({ icon, label, value, tone = 'neutral' }: { icon: string; la
 
 const EmptyReportState = ({ message }: { message: string }) => (
   <div className="report-empty-state">
-    <span aria-hidden="true">∅</span>
+    <span aria-hidden="true">0</span>
     <strong>{message}</strong>
     <p>Adjust filters or broaden the date range to see records.</p>
   </div>
@@ -681,13 +681,13 @@ export const ReportsPage = () => {
 
   const exportActions = (
     <>
-      <Button variant="secondary" onClick={() => exportReportPdf(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
+      <Button className="report-export-btn" variant="secondary" onClick={() => exportReportPdf(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
         <span className="report-action-icon" aria-hidden="true">PDF</span>
         <span>Export PDF</span>
       </Button>
-      <Button variant="secondary" onClick={() => exportReportExcel(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
-        <span className="report-action-icon" aria-hidden="true">XLS</span>
-        <span>Export Excel</span>
+      <Button className="report-export-btn" variant="secondary" onClick={() => exportReportCsv(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
+        <span className="report-action-icon" aria-hidden="true">CSV</span>
+        <span>Export CSV</span>
       </Button>
     </>
   );
@@ -895,6 +895,7 @@ export const ReportsPage = () => {
       <div className="report-filter-controls">
         <div className="report-controls-head">
           <div>
+            <h3>Report Filters</h3>
             <p>{reportTypeDescription(reportType)}</p>
           </div>
           <div className="report-filter-chips">
@@ -908,7 +909,7 @@ export const ReportsPage = () => {
                 title={tag.clearable ? `Clear ${tag.label}` : tag.label}
               >
                 {tag.label}
-                {tag.clearable && <span aria-hidden="true">×</span>}
+                {tag.clearable && <span aria-hidden="true">x</span>}
               </button>
             ))}
           </div>
@@ -1503,3 +1504,4 @@ export const ReportsPage = () => {
     </section>
   );
 };
+
