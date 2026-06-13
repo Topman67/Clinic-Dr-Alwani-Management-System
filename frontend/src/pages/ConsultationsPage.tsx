@@ -588,6 +588,7 @@ export const ConsultationsPage = () => {
   const activeFollowUp = active?.followUpAppointments?.[0] ?? null;
   const latestMedicalCertificate = active?.medicalCertificates?.[0] ?? null;
   const activePayment = active?.payment ?? null;
+  const hasPaidPayment = activePayment?.status === 'PAID';
   const calculatedBmi = useMemo(() => calculateBmi(form.weight, form.height), [form.height, form.weight]);
   const displayedBmi = calculatedBmi || form.bmi;
   const isMedicalCheckup = form.consultationType === 'MEDICAL_CHECKUP';
@@ -1421,7 +1422,7 @@ export const ConsultationsPage = () => {
                     type="button"
                     className="btn-secondary"
                     onClick={createPrescription}
-                    disabled={active.status !== 'COMPLETED' || Boolean(active.prescription) || Boolean(activePayment)}
+                    disabled={active.status !== 'COMPLETED' || Boolean(active.prescription) || hasPaidPayment}
                   >
                     {active.prescription ? 'Prescription Created' : 'Create Prescription'}
                   </button>

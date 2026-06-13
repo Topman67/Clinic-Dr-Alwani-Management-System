@@ -81,6 +81,7 @@ type ConsultationOption = {
   symptoms?: string | null;
   diagnosis?: string | null;
   prescription?: { prescriptionId: number; date: string } | null;
+  payment?: { paymentId: number; status: string } | null;
 };
 
 type ItemForm = {
@@ -277,7 +278,8 @@ const reindexRecordAfterRemoval = <T,>(record: Record<number, T>, removedIndex: 
 const getConsultationOptionLabel = (consultation: ConsultationOption) => {
   const summary = truncateText(consultation.diagnosis || consultation.symptoms || 'No diagnosis recorded', 42);
   const suffix = consultation.prescription ? ' - Prescription Created' : '';
-  return `#${consultation.consultationId} - Completed - ${summary}${suffix}`;
+  const paymentSuffix = consultation.payment?.status === 'PAID' ? ' - Paid' : '';
+  return `#${consultation.consultationId} - Completed - ${summary}${suffix}${paymentSuffix}`;
 };
 
 const getPrescriptionStatusLabel = (status: PrescriptionStatus | undefined) => {
@@ -484,7 +486,11 @@ export const PrescriptionsPage = () => {
         return;
       }
 
-      const nextConsultation = consultations.find((consultation) => !consultation.prescription) ?? consultations[0] ?? null;
+      const nextConsultation =
+        consultations.find((consultation) => !consultation.prescription && consultation.payment?.status !== 'PAID')
+        ?? consultations.find((consultation) => !consultation.prescription)
+        ?? consultations[0]
+        ?? null;
       setLinkedConsultationId(nextConsultation?.consultationId ?? null);
       setLinkedAppointmentId(nextConsultation?.appointmentId ?? null);
     } catch {
@@ -816,6 +822,11 @@ export const PrescriptionsPage = () => {
 
     if (selectedConsultationPrescriptionId) {
       setError('This consultation already has a prescription.');
+      return;
+    }
+
+    if (selectedConsultation?.payment?.status === 'PAID') {
+      setError('This consultation has already been paid. Prescription cannot be created after payment is completed.');
       return;
     }
 

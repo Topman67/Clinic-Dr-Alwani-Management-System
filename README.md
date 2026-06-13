@@ -117,7 +117,18 @@ npm install
 ```
 
 ### 4. Set Up Environment Variables
-Create a `.env` file inside the `backend` folder and configure the required backend variables.
+Copy the backend environment template and replace the placeholder values with your local configuration.
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+If you are using PowerShell on Windows, you can use:
+
+```powershell
+Copy-Item .env.example .env
+```
 
 For the frontend, create a `.env` file inside the `frontend` folder if you want to override the default API base URL.
 
@@ -158,9 +169,11 @@ http://localhost:5173
 
 ### Backend `.env`
 ```env
+DATABASE_URL="postgresql://username:password@localhost:5432/clinic_dr_alwani"
+JWT_SECRET="replace_with_a_secure_random_secret"
+JWT_EXPIRES_IN="1d"
 PORT=4000
-DATABASE_URL="postgresql://postgres:password@localhost:5432/clinic_dr_alwani"
-JWT_SECRET="your_jwt_secret_key"
+FRONTEND_URL="http://localhost:5173"
 ```
 
 ### Frontend `.env`

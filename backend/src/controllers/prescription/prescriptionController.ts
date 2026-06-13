@@ -58,6 +58,30 @@ const isUniqueConsultationPrescriptionConflict = (error: unknown) => {
   return typeof target === 'string' && target.includes('consultationId');
 };
 
+const assertPrescriptionPaymentIsNotPaid = async (
+  tx: Prisma.TransactionClient,
+  refs: { consultationId?: number | null; prescriptionId?: number | null },
+) => {
+  const conditions = [
+    refs.consultationId ? { consultationId: refs.consultationId } : null,
+    refs.prescriptionId ? { prescriptionId: refs.prescriptionId } : null,
+  ].filter(Boolean) as Prisma.PaymentWhereInput[];
+
+  if (conditions.length === 0) return;
+
+  const paidPayment = await tx.payment.findFirst({
+    where: {
+      status: PaymentStatus.PAID,
+      OR: conditions,
+    },
+    select: { paymentId: true },
+  });
+
+  if (paidPayment) {
+    throw createHttpError(409, 'This consultation has already been paid. Prescription cannot be created or modified after payment is completed.');
+  }
+};
+
 export const createPrescription = async (req: Request, res: Response) => {
   const { patientId, doctorId, consultationId, appointmentId, notes, items } = req.body as {
     patientId: number;
@@ -148,19 +172,7 @@ export const createPrescription = async (req: Request, res: Response) => {
         throw createHttpError(409, 'This consultation already has a prescription.');
       }
 
-      const paidConsultationPayment = await tx.payment.findFirst({
-        where: {
-          consultationId: targetConsultationId,
-          status: PaymentStatus.PAID,
-        },
-        select: {
-          paymentId: true,
-        },
-      });
-
-      if (paidConsultationPayment) {
-        throw createHttpError(409, 'This consultation has already been paid.');
-      }
+      await assertPrescriptionPaymentIsNotPaid(tx, { consultationId: targetConsultationId });
 
       const pendingConsultationPayment = await tx.payment.findFirst({
         where: {
@@ -403,6 +415,10 @@ export const verifyPrescription = async (req: Request, res: Response) => {
       });
 
       if (!existing) throw createHttpError(404, 'Prescription not found.');
+      await assertPrescriptionPaymentIsNotPaid(tx, {
+        consultationId: existing.consultationId,
+        prescriptionId: existing.prescriptionId,
+      });
       if (existing.status === PrescriptionStatus.REJECTED) throw createHttpError(400, 'Rejected prescriptions cannot be verified.');
       if (existing.status === PrescriptionStatus.DISPENSED) throw createHttpError(400, 'Dispensed prescriptions cannot be verified again.');
 
@@ -442,6 +458,10 @@ export const dispensePrescription = async (req: Request, res: Response) => {
       });
 
       if (!existing) throw createHttpError(404, 'Prescription not found.');
+      await assertPrescriptionPaymentIsNotPaid(tx, {
+        consultationId: existing.consultationId,
+        prescriptionId: existing.prescriptionId,
+      });
       if (existing.status === PrescriptionStatus.DISPENSED) throw createHttpError(409, 'This prescription has already been dispensed.');
       if (existing.status === PrescriptionStatus.REJECTED) throw createHttpError(400, 'Rejected prescriptions cannot be dispensed.');
       if (existing.status !== PrescriptionStatus.VERIFIED) throw createHttpError(400, 'Verify prescription before dispensing.');
@@ -520,18 +540,39 @@ export const rejectPrescription = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid prescription reference.' });
 
-  const existing = await prisma.prescription.findUnique({ where: { prescriptionId: id } });
-  if (!existing) return res.status(404).json({ message: 'Prescription not found.' });
-  if (existing.status === PrescriptionStatus.DISPENSED) return res.status(400).json({ message: 'Dispensed prescriptions cannot be rejected.' });
-
-  const prescription = await prisma.prescription.update({
-    where: { prescriptionId: id },
-    data: { status: PrescriptionStatus.REJECTED },
-    include: prescriptionInclude,
-  });
-
   try {
-    await logActivity(req.user?.userId, `reject_prescription:${prescription.prescriptionId}`);
-  } catch (_) {}
-  res.json(prescription);
+    const prescription = await prisma.$transaction(async (tx) => {
+      const existing = await tx.prescription.findUnique({ where: { prescriptionId: id } });
+      if (!existing) throw createHttpError(404, 'Prescription not found.');
+
+      await assertPrescriptionPaymentIsNotPaid(tx, {
+        consultationId: existing.consultationId,
+        prescriptionId: existing.prescriptionId,
+      });
+
+      if (existing.status === PrescriptionStatus.DISPENSED) throw createHttpError(400, 'Dispensed prescriptions cannot be rejected.');
+
+      return tx.prescription.update({
+        where: { prescriptionId: id },
+        data: { status: PrescriptionStatus.REJECTED },
+        include: prescriptionInclude,
+      });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+
+    try {
+      await logActivity(req.user?.userId, `reject_prescription:${prescription.prescriptionId}`);
+    } catch (_) {}
+    res.json(prescription);
+  } catch (error: unknown) {
+    const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
+    if (error instanceof Error && typeof httpStatus === 'number') {
+      return res.status(httpStatus).json({ message: error.message });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({ message: 'Prescription rejection conflicted. Please retry.' });
+    }
+    throw error;
+  }
 };
