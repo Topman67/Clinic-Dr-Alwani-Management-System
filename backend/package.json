@@ -4,13 +4,15 @@
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
-  "dev": "ts-node-dev --respawn --transpile-only --prefer-ts-exts src/index.ts",
+    "dev": "ts-node-dev --respawn --transpile-only --prefer-ts-exts src/index.ts",
     "build": "tsc",
     "test": "tsx --test src/test/**/*.test.ts",
     "start": "node dist/index.js",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev",
-  "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.11.0",
