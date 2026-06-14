@@ -176,6 +176,14 @@ PORT=4000
 FRONTEND_URL="http://localhost:5173"
 ```
 
+For Supabase, use the Dashboard's Supavisor/Pooler URI instead of the direct `db.<project-ref>.supabase.co` host if your network does not support IPv6. A typical local backend URL is:
+
+```env
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<region>.pooler.supabase.com:5432/postgres?sslmode=require"
+```
+
+If the Supabase database is new, run Prisma migrations first, then import your old PostgreSQL data or run the backend seed script so login users exist.
+
 ### Frontend `.env`
 ```env
 VITE_API_BASE_URL="http://localhost:4000/api"

@@ -27,6 +27,34 @@ npx ts-node prisma/seed.ts
 npm run dev
 ```
 
+## Supabase database
+For Supabase, do not use the direct `db.<project-ref>.supabase.co:5432` URL unless your network supports IPv6 or your Supabase project has the IPv4 add-on enabled. Prisma will fail before it can query data if that host cannot be reached.
+
+Use the Supabase pooler connection string instead:
+
+1. Open Supabase Dashboard.
+2. Go to Project Settings -> Database -> Connection string.
+3. Copy the Supavisor/Pooler URI.
+4. For this backend, prefer the Session pooler URL on port `5432`.
+5. Paste it into `backend/.env` as `DATABASE_URL`.
+
+The format should look like this:
+
+```env
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<region>.pooler.supabase.com:5432/postgres?sslmode=require"
+```
+
+If you are deploying to a serverless/autoscaling host, use the Transaction pooler URL instead, usually port `6543`.
+
+After changing the URL, run:
+
+```powershell
+npm run prisma:migrate
+npm run prisma:generate
+```
+
+If this is a fresh Supabase database, migrations only create the tables. You still need to import old pgAdmin/PostgreSQL data or run the seed script to create login users.
+
 ## API Base
 `/api`
 
