@@ -10,3 +10,4 @@ Run a full end-to-end test of the system and identify:
 
 - setup problems
 - frontend errors
+-
