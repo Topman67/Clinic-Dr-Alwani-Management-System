@@ -11,6 +11,7 @@ import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
 import { exportReceiptPdf } from '../lib/exportDocuments';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import PageHeader from '../components/common/PageHeader';
 
 type SaleType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICINE';
 
@@ -228,17 +229,18 @@ export const SalesPage = () => {
   };
 
   return (
-    <section className="card">
-      <div className="section-head">
-        <h1>Sales</h1>
-        <p className="muted">
-          {isReceptionist
+    <section className="sales-page">
+      <PageHeader
+        eyebrow="Sales Management"
+        title="Sales"
+        subtitle={
+          isReceptionist
             ? 'Create sales, handle payment, and review all standard and walk-in sales.'
-            : 'View standard and walk-in sales, check medicine sold, and monitor stock usage.'}
-        </p>
-      </div>
+            : 'View walk-in medicine sales, paid transactions, and dispensing records.'
+        }
+      />
 
-      <form onSubmit={onSearch} className="filters-grid">
+      <form onSubmit={onSearch} className="filter-card filters-grid">
         <input
           value={queryCustomerId}
           onChange={(e) => setQueryCustomerId(e.target.value)}
@@ -253,7 +255,7 @@ export const SalesPage = () => {
         <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
         <button
           type="button"
-          className="btn-secondary"
+          className="btn btn-outline"
           onClick={() => {
             const today = getDateRangeForPreset('today');
             setDateRange(today);
@@ -264,7 +266,7 @@ export const SalesPage = () => {
         >
           Reset
         </button>
-        <button type="submit" className="btn-secondary">Search</button>
+        <button type="submit" className="btn btn-secondary">Search</button>
       </form>
 
       <div className="stats-row" style={{ marginTop: 12 }}>
@@ -275,7 +277,7 @@ export const SalesPage = () => {
 
       {isReceptionist && (
         <div className="action-row" style={{ marginTop: 12 }}>
-          <button type="button" onClick={() => navigate(`${basePath}/payments`)}>
+          <button type="button" className="btn btn-primary" onClick={() => navigate(`${basePath}/payments`)}>
             Create Sale & Handle Payment
           </button>
         </div>
@@ -284,7 +286,7 @@ export const SalesPage = () => {
       {error && <p className="error">{error}</p>}
       {loading && <p className="muted">Loading...</p>}
 
-      <div className="table-wrap" style={{ marginTop: 12 }}>
+      <div className="table-wrap table-card" style={{ marginTop: 12 }}>
         <table className="data-table">
           <thead>
             <tr>

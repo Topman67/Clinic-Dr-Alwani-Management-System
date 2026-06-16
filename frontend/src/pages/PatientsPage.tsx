@@ -9,6 +9,7 @@ import { PatientAutocomplete, type PatientAutocompleteOption } from '../componen
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
+import PageHeader from '../components/common/PageHeader';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -759,14 +760,20 @@ export const PatientsPage = () => {
 
   return (
     <section className="patients-page">
-      <div className="section-head">
-        <h1>Manage Patient</h1>
-        <p className="muted">
-          {canManage
+      <PageHeader
+        eyebrow="Patient Records"
+        title="Manage Patient"
+        subtitle={
+          canManage
             ? 'Receptionist can register, validate, search, and update patient records.'
-            : 'View and search patient records by IC/ID or phone. Registration is receptionist-only.'}
-        </p>
-      </div>
+            : 'View and search patient records by IC/ID or phone. Registration is receptionist-only.'
+        }
+        actions={canManage ? (
+          <button type="button" className="btn btn-primary patient-register-button" onClick={onOpenRegistrationDrawer}>
+            + Register Patient
+          </button>
+        ) : undefined}
+      />
 
       <div className="stats-row patient-summary-row">
         <div className="stat-chip patient-stat-chip"><span>Total</span><strong>{visitedStats.total}</strong></div>
@@ -774,15 +781,7 @@ export const PatientsPage = () => {
         <div className="stat-chip patient-stat-chip warning"><span>Not visited</span><strong>{visitedStats.neverVisited}</strong></div>
       </div>
 
-      {canManage && (
-        <div className="patient-page-actions">
-          <button type="button" className="patient-register-button" onClick={onOpenRegistrationDrawer}>
-            + Register Patient
-          </button>
-        </div>
-      )}
-
-      <div className="patient-toolbar">
+      <div className="patient-toolbar filter-card">
         <form onSubmit={onSearch} className="patient-search-form">
           <div className="patient-search-field">
             <PatientAutocomplete
@@ -818,7 +817,7 @@ export const PatientsPage = () => {
             <option value="archived">Archived</option>
             <option value="all">All</option>
           </select>
-          <button type="submit" className="btn-secondary patient-compact-button">Search</button>
+          <button type="submit" className="btn btn-secondary patient-compact-button">Search</button>
         </form>
       </div>
 
@@ -826,7 +825,7 @@ export const PatientsPage = () => {
       {success && <p className="muted" style={{ color: 'var(--primary)' }}>{success}</p>}
       {loading && <p className="muted">Loading...</p>}
 
-      <div className="table-wrap patient-table-wrap">
+      <div className="table-wrap table-card patient-table-wrap">
         <table className="data-table patient-table">
           <thead>
             <tr>

@@ -10,6 +10,7 @@ import { DateRangeFilter } from '../components/DateRangeFilter';
 import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { MedicineSelectorModal, type MedicineSelectorCategory } from '../components/shared/MedicineSelectorModal';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import PageHeader from '../components/common/PageHeader';
 
 type Patient = {
   patientId: number;
@@ -950,12 +951,11 @@ export const PrescriptionsPage = () => {
 
   return (
     <section className="prescription-page">
-      <div className="section-head prescription-page-head">
-        <div>
-          <h1>Manage Prescription</h1>
-          <p className="muted">Create one prescription per completed consultation and keep medicine stock accurate.</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Prescription Management"
+        title="Manage Prescriptions"
+        subtitle="Create, review, verify, dispense, or reject patient prescriptions."
+      />
 
       {error && <p className="error">{error}</p>}
       {success && <p className="success-text">{success}</p>}
@@ -968,14 +968,14 @@ export const PrescriptionsPage = () => {
             <small>{linkedAppointmentId ? `Appointment #${linkedAppointmentId}` : 'No appointment linked'}</small>
           </div>
           {selectedConsultationPrescriptionId && (
-            <button type="button" className="btn-secondary" onClick={() => void onViewDetails(selectedConsultationPrescriptionId)}>
+            <button type="button" className="btn btn-secondary" onClick={() => void onViewDetails(selectedConsultationPrescriptionId)}>
               View Prescription
             </button>
           )}
         </section>
       )}
 
-      <section className="card prescription-filter-card">
+      <section className="filter-card prescription-filter-card">
         <form onSubmit={onSearch} className="prescription-filter-bar">
           <PatientAutocomplete
             selectedPatient={selectedFilterPatient}
@@ -998,7 +998,7 @@ export const PrescriptionsPage = () => {
           </select>
           <button
             type="button"
-            className="btn-secondary consultation-clear-button"
+            className="btn btn-outline consultation-clear-button"
             onClick={() => {
               setSelectedFilterPatient(null);
               setSelectedFormPatient(null);
@@ -1014,7 +1014,7 @@ export const PrescriptionsPage = () => {
           >
             Reset
           </button>
-          <button type="submit" className="btn-secondary consultation-refresh-button">Search</button>
+          <button type="submit" className="btn btn-secondary consultation-refresh-button">Search</button>
         </form>
       </section>
 

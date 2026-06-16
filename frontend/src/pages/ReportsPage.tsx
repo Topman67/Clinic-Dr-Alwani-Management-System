@@ -10,6 +10,7 @@ import { Pagination } from '../components/Pagination';
 import { Button, Input, Select } from '../components/ui';
 import { exportReceiptPdf, exportReportCsv, exportReportPdf, type DocumentExportOptions } from '../lib/exportDocuments';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import PageHeader from '../components/common/PageHeader';
 
 type ReportType = 'PATIENT' | 'PRESCRIPTION' | 'CONSULTATION' | 'INVENTORY' | 'SALES' | 'PAYMENT' | 'RECEIPT';
 type ChartMode = 'daily' | 'weekly' | 'monthly';
@@ -261,13 +262,13 @@ const EmptyReportState = ({ message }: { message: string }) => (
 );
 
 const ReportSection = ({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: ReactNode; children: ReactNode }) => (
-  <article className="report-card">
-    <div className="report-section-head">
+  <article className="content-card report-card">
+    <div className="card-header-row report-section-head">
       <div>
-        <h3>{title}</h3>
-        {subtitle && <p>{subtitle}</p>}
+        <h3 className="section-title">{title}</h3>
+        {subtitle && <p className="section-subtitle">{subtitle}</p>}
       </div>
-      {actions && <div className="report-card-actions">{actions}</div>}
+      {actions && <div className="card-actions report-card-actions">{actions}</div>}
     </div>
     {children}
   </article>
@@ -681,11 +682,11 @@ export const ReportsPage = () => {
 
   const exportActions = (
     <>
-      <Button className="report-export-btn" variant="secondary" onClick={() => exportReportPdf(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
+      <Button className="btn btn-secondary btn-sm report-export-btn" variant="secondary" onClick={() => exportReportPdf(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
         <span className="report-action-icon" aria-hidden="true">PDF</span>
         <span>Export PDF</span>
       </Button>
-      <Button className="report-export-btn" variant="secondary" onClick={() => exportReportCsv(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
+      <Button className="btn btn-secondary btn-sm report-export-btn" variant="secondary" onClick={() => exportReportCsv(buildExportOptions() as unknown as DocumentExportOptions<unknown>)} disabled={loading}>
         <span className="report-action-icon" aria-hidden="true">CSV</span>
         <span>Export CSV</span>
       </Button>
@@ -881,22 +882,18 @@ export const ReportsPage = () => {
 
   return (
     <section className="report-page report-print-area">
-      <div className="report-hero">
-        <div className="section-head">
-          <span className="report-eyebrow">Clinic Analytics</span>
-          <h1>Reports</h1>
-          <p>Generate operational, financial, inventory, and receipt reports for Clinic Dr Alwani.</p>
-        </div>
-        <div className="report-hero-meta">
-          <span>{loading ? 'Refreshing reports...' : generatedAt ? `Generated ${new Date(generatedAt).toLocaleString()}` : 'Preparing report data'}</span>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Clinic Analytics"
+        title="Reports"
+        subtitle="Generate operational, financial, inventory, and receipt reports for Clinic Dr Alwani."
+        meta={loading ? 'Refreshing reports...' : generatedAt ? `Generated ${new Date(generatedAt).toLocaleString()}` : 'Preparing report data'}
+      />
 
-      <div className="report-filter-controls">
-        <div className="report-controls-head">
+      <div className="filter-card report-filter-controls">
+        <div className="card-header-row report-controls-head">
           <div>
-            <h3>Report Filters</h3>
-            <p>{reportTypeDescription(reportType)}</p>
+            <h3 className="section-title">Report Filters</h3>
+            <p className="section-subtitle">{reportTypeDescription(reportType)}</p>
           </div>
           <div className="report-filter-chips">
             {activeFilterTags.map((tag) => (
@@ -952,7 +949,7 @@ export const ReportsPage = () => {
           </div>
 
           <Button
-            className="report-reset-btn"
+            className="btn btn-outline report-reset-btn"
             variant="secondary"
             onClick={() => {
               const nextRange = getDateRangeForPreset('last7');

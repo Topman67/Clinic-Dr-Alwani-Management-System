@@ -1,0 +1,122 @@
+.btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-strong);
+  border-color: var(--primary-strong);
+}
+
+.btn-secondary {
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-soft));
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 20%, var(--surface-soft));
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+
+.btn-danger {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+.btn-success {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+}
+
+.btn-success:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--success) 22%, transparent);
+}
+
+.btn-sm {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+
+.btn-lg {
+  min-height: 46px;
+  padding: 0 20px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+
+.btn-icon {
+  width: 40px;
+  padding: 0;
+}
+
+.btn-icon.btn-sm {
+  width: 34px;
+}
+
+.btn-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .page-actions,
+  .card-actions,
+  .btn-group {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .btn {
+    min-height: 38px;
+  }
+}

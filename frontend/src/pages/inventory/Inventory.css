@@ -671,8 +671,9 @@
 .inventory-table-wrap {
   margin-top: 10px;
   max-height: min(620px, calc(100vh - 340px));
-  overflow: auto;
-  scrollbar-gutter: stable;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-gutter: auto;
 }
 
 .inventory-table-wrap:has(.inventory-action-menu[open]) {
@@ -744,8 +745,10 @@
 
 .inventory-table th:last-child,
 .inventory-table td:last-child {
-  width: 78px;
-  text-align: center;
+  width: 56px;
+  padding-left: 4px;
+  padding-right: 8px;
+  text-align: right;
 }
 
 .inventory-name-cell {
@@ -813,7 +816,7 @@
 
 .inventory-table-actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   min-width: 0;
 }
 

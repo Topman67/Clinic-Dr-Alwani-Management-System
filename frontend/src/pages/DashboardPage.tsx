@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import { roleBasePath } from '../config/rbac';
+import PageHeader from '../components/common/PageHeader';
 
 type Patient = {
   patientId: number;
@@ -667,18 +668,25 @@ export const DashboardPage = () => {
 
   return (
     <section className="dashboard-page">
-      <div className="dashboard-hero">
-        <div>
-          <span>{role ? prettify(role) : 'Clinic'} Dashboard</span>
-          <h1>Welcome, {username ?? 'team'}.</h1>
-          <p>Today&apos;s clinic flow, revenue, prescriptions, and inventory health at a glance.</p>
-        </div>
-        <div className="dashboard-quick-actions">
+      <PageHeader
+        eyebrow={`${role ? prettify(role) : 'Clinic'} Dashboard`}
+        title={`Welcome, ${username ?? 'team'}.`}
+        subtitle="Today's clinic flow, revenue, prescriptions, and inventory health at a glance."
+        actions={(
+          <div className="dashboard-quick-actions">
           {quickActions.map(([label, path]) => (
-            <button key={label} type="button" onClick={() => navigate(path)}>{label}</button>
+            <button
+              key={label}
+              type="button"
+              className={label === 'Add Patient' ? 'btn btn-primary' : 'btn btn-secondary'}
+              onClick={() => navigate(path)}
+            >
+              {label}
+            </button>
           ))}
-        </div>
-      </div>
+          </div>
+        )}
+      />
 
       {error && <p className="error">{error}</p>}
       {loading && <p className="muted">Loading dashboard...</p>}

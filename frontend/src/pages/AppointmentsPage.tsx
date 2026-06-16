@@ -9,6 +9,7 @@ import { PatientAutocomplete, type PatientAutocompleteOption } from '../componen
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
+import PageHeader from '../components/common/PageHeader';
 
 type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 type AppointmentType = 'NEW' | 'FOLLOW_UP';
@@ -540,21 +541,20 @@ export const AppointmentsPage = () => {
 
   return (
     <section className="appointments-page">
-      <div className="section-head appointment-page-head">
-        <div>
-          <h1>Appointments</h1>
-          <p className="muted">
-            {isReceptionist
-              ? 'Create and manage doctor appointments for eligible patients.'
-              : 'Review appointment queue, start consultation, and create follow-up appointments.'}
-          </p>
-        </div>
-        {isReceptionist && (
-          <button type="button" className="appointment-create-button" onClick={() => setIsCreateDrawerOpen(true)}>
+      <PageHeader
+        eyebrow="Appointment Schedule"
+        title="Manage Appointments"
+        subtitle={
+          isReceptionist
+            ? 'Create, reschedule, monitor, and update patient appointment status.'
+            : 'Review appointment queue, start consultation, and create follow-up appointments.'
+        }
+        actions={isReceptionist ? (
+          <button type="button" className="btn btn-primary appointment-create-button" onClick={() => setIsCreateDrawerOpen(true)}>
             + Create Appointment
           </button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       <div className="stats-row appointment-summary-row">
         <div className="stat-chip patient-stat-chip"><span>Total</span><strong>{stats.total}</strong></div>
@@ -568,7 +568,7 @@ export const AppointmentsPage = () => {
           e.preventDefault();
           void loadAppointments();
         }}
-        className="appointment-toolbar"
+        className="appointment-toolbar filter-card"
       >
         <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -591,7 +591,7 @@ export const AppointmentsPage = () => {
         />
         <button
           type="button"
-          className="btn-secondary patient-compact-button"
+          className="btn btn-outline patient-compact-button"
           onClick={() => {
             setDateRange(getDateRangeForPreset('today'));
             setStatusFilter('');
@@ -601,7 +601,7 @@ export const AppointmentsPage = () => {
         >
           Reset
         </button>
-        <button type="submit" className="btn-secondary patient-compact-button" disabled={loading}>
+        <button type="submit" className="btn btn-secondary patient-compact-button" disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </form>
@@ -609,7 +609,7 @@ export const AppointmentsPage = () => {
       {error && <p className="error">{error}</p>}
       {success && <p className="muted" style={{ color: 'var(--primary)' }}>{success}</p>}
 
-      <div className="table-wrap appointment-table-wrap">
+      <div className="table-wrap table-card appointment-table-wrap">
         <table className="data-table appointment-table">
           <thead>
             <tr>

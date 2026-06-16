@@ -5,6 +5,7 @@ import { exportReportCsv, exportReportExcel, exportReportPdf } from '../lib/expo
 import { subscribeInAppDataSync } from '../lib/sync';
 import { useAuth } from '../context/AuthContext';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import PageHeader from '../components/common/PageHeader';
 
 type MedicineApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 type InventoryCategory = 'MEDICINE' | 'SUPPLEMENT' | 'VITAMIN' | 'CONTROLLED_MEDICINE';
@@ -763,17 +764,16 @@ export const InventoryPage = () => {
 
   return (
     <section className="inventory-page">
-      <div className="section-head inventory-page-head">
-        <div>
-          <h1>Manage Inventory</h1>
-          <p className="muted">
-            {canManage
-              ? 'Submit medicine, supplement, and vitamin stock for doctor approval.'
-              : 'Review pharmacist inventory requests and monitor approved stock.'}
-          </p>
-        </div>
-        {canManage && <button type="button" onClick={openCreateDrawer}>+ Add Inventory Request</button>}
-      </div>
+      <PageHeader
+        eyebrow="Inventory Management"
+        title="Manage Inventory"
+        subtitle={
+          canManage
+            ? 'Submit medicine, supplement, and vitamin stock for doctor approval.'
+            : 'Review pharmacist inventory requests and monitor approved stock.'
+        }
+        actions={canManage ? <button type="button" className="btn btn-primary" onClick={openCreateDrawer}>+ Add Inventory Request</button> : undefined}
+      />
 
       <section className="inventory-summary-grid">
         <div className="stat-chip">Approved: {approvedMedicines.length}</div>
@@ -798,7 +798,7 @@ export const InventoryPage = () => {
 
       {activeTab === 'ITEMS' && (
         <>
-          <section className="card inventory-filter-card">
+          <section className="filter-card inventory-filter-card">
             <form onSubmit={onSearch} className="inventory-filter-grid">
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search medicine / batch / brand / supplier" />
               <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value as 'ALL' | InventoryCategory)}>
@@ -825,16 +825,16 @@ export const InventoryPage = () => {
                 <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
                 Show expired
               </label>
-              <button type="submit" className="btn-secondary">Search</button>
+              <button type="submit" className="btn btn-secondary">Search</button>
             </form>
           </section>
 
           {canApprove && (
-            <section className="card inventory-approval-section">
-              <div className="section-head compact-section-head">
+            <section className="content-card inventory-approval-section">
+              <div className="card-header-row compact-section-head">
                 <div>
-                  <h3>Pending Inventory Requests</h3>
-                  <p className="muted">Review pharmacist submissions before they enter active stock.</p>
+                  <h3 className="section-title">Pending Inventory Requests</h3>
+                  <p className="section-subtitle">Review pharmacist submissions before they enter active stock.</p>
                 </div>
               </div>
               {pendingMedicines.length > 0 ? (
@@ -916,7 +916,7 @@ export const InventoryPage = () => {
 
                   {pendingMedicines.length > pendingRequestPreviewSize && (
                     <div className="inventory-pending-footer">
-                      <button type="button" className="btn-secondary" onClick={() => setShowAllPendingRequests((value) => !value)}>
+                      <button type="button" className="btn btn-secondary" onClick={() => setShowAllPendingRequests((value) => !value)}>
                         {showAllPendingRequests ? 'Show Fewer Pending Requests' : `View All Pending Requests (${pendingMedicines.length})`}
                       </button>
                     </div>
@@ -928,22 +928,22 @@ export const InventoryPage = () => {
             </section>
           )}
 
-          <section className="card inventory-table-card">
-            <div className="section-head compact-section-head">
+          <section className="table-card inventory-table-card">
+            <div className="card-header-row compact-section-head">
               <div>
-                <h3>Inventory Table</h3>
-                <p className="muted">Showing {paginatedInventoryMedicines.length} of {visibleInventoryMedicines.length} records.</p>
+                <h3 className="section-title">Inventory Table</h3>
+                <p className="section-subtitle">Showing {paginatedInventoryMedicines.length} of {visibleInventoryMedicines.length} records.</p>
               </div>
-              <div className="inventory-export-actions" aria-label="Export filtered inventory">
-                <button type="button" className="btn-secondary inventory-export-btn" onClick={exportInventoryPdf}>
+              <div className="card-actions inventory-export-actions" aria-label="Export filtered inventory">
+                <button type="button" className="btn btn-secondary btn-sm inventory-export-btn" onClick={exportInventoryPdf}>
                   <span aria-hidden="true">PDF</span>
                   Export PDF
                 </button>
-                <button type="button" className="btn-secondary inventory-export-btn" onClick={exportInventoryExcel}>
+                <button type="button" className="btn btn-secondary btn-sm inventory-export-btn" onClick={exportInventoryExcel}>
                   <span aria-hidden="true">XLSX</span>
                   Export Excel
                 </button>
-                <button type="button" className="btn-secondary inventory-export-btn" onClick={exportInventoryCsv}>
+                <button type="button" className="btn btn-secondary btn-sm inventory-export-btn" onClick={exportInventoryCsv}>
                   <span aria-hidden="true">CSV</span>
                   Raw CSV
                 </button>
@@ -1046,9 +1046,9 @@ export const InventoryPage = () => {
             </div>
 
             <div className="inventory-pagination">
-              <button type="button" className="btn-secondary" disabled={currentInventoryPage <= 1} onClick={() => setInventoryPage((page) => Math.max(1, page - 1))}>Previous</button>
+              <button type="button" className="btn btn-outline btn-sm" disabled={currentInventoryPage <= 1} onClick={() => setInventoryPage((page) => Math.max(1, page - 1))}>Previous</button>
               <span>Page {currentInventoryPage} of {inventoryPageCount}</span>
-              <button type="button" className="btn-secondary" disabled={currentInventoryPage >= inventoryPageCount} onClick={() => setInventoryPage((page) => Math.min(inventoryPageCount, page + 1))}>Next</button>
+              <button type="button" className="btn btn-outline btn-sm" disabled={currentInventoryPage >= inventoryPageCount} onClick={() => setInventoryPage((page) => Math.min(inventoryPageCount, page + 1))}>Next</button>
             </div>
 
             {!loading && visibleInventoryMedicines.length === 0 && <p className="muted">No inventory records found.</p>}
@@ -1057,22 +1057,22 @@ export const InventoryPage = () => {
       )}
 
       {activeTab === 'MOVEMENT' && (
-        <section className="card inventory-history-card">
-          <div className="section-head compact-section-head">
+        <section className="content-card inventory-history-card">
+          <div className="card-header-row compact-section-head">
             <div>
-              <h3>Stock Movement</h3>
-              <p className="muted">Audit stock changes, approvals, rejections, edits, deletions, and dispensing deductions.</p>
+              <h3 className="section-title">Stock Movement</h3>
+              <p className="section-subtitle">Audit stock changes, approvals, rejections, edits, deletions, and dispensing deductions.</p>
             </div>
-            <div className="inventory-export-actions" aria-label="Export filtered stock movement">
-              <button type="button" className="btn-secondary inventory-export-btn" onClick={exportMovementPdf}>
+            <div className="card-actions inventory-export-actions" aria-label="Export filtered stock movement">
+              <button type="button" className="btn btn-secondary btn-sm inventory-export-btn" onClick={exportMovementPdf}>
                 <span aria-hidden="true">PDF</span>
                 Export PDF
               </button>
-              <button type="button" className="btn-secondary inventory-export-btn" onClick={exportMovementExcel}>
+              <button type="button" className="btn btn-secondary btn-sm inventory-export-btn" onClick={exportMovementExcel}>
                 <span aria-hidden="true">XLSX</span>
                 Export Excel
               </button>
-              <button type="button" className="btn-secondary inventory-export-btn" onClick={exportMovementCsv}>
+              <button type="button" className="btn btn-secondary btn-sm inventory-export-btn" onClick={exportMovementCsv}>
                 <span aria-hidden="true">CSV</span>
                 Raw CSV
               </button>

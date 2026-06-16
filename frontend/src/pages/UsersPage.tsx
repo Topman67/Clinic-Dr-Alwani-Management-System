@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { subscribeInAppDataSync } from '../lib/sync';
 import { usePagination } from '../lib/pagination';
 import { Pagination } from '../components/Pagination';
+import PageHeader from '../components/common/PageHeader';
 
 type Role = 'DOCTOR' | 'RECEPTIONIST' | 'PHARMACIST';
 type StaffRole = Extract<Role, 'RECEPTIONIST' | 'PHARMACIST'>;
@@ -517,19 +518,18 @@ export const UsersPage = () => {
 
   return (
     <section className="users-page">
-      <div className="card users-hero-card">
-        <div className="users-hero-content">
-          <div className="section-head">
-            <h1>Manage User Account</h1>
-            <p className="muted">Manage small-clinic staff access without changing authentication or role permissions.</p>
-          </div>
-          <button type="button" onClick={() => setCreateDrawerOpen(true)}>+ Create Staff</button>
-        </div>
-        <div className="users-rule-strip">
+      <PageHeader
+        eyebrow="Staff Management"
+        title="Manage User Account"
+        subtitle="Manage small-clinic staff access without changing authentication or role permissions."
+        actions={<button type="button" className="btn btn-primary" onClick={() => setCreateDrawerOpen(true)}>+ Create Staff</button>}
+        notice={(
+          <div className="users-rule-strip">
           <span className="status-badge users-doctor-badge">Primary Doctor Account</span>
           <p>Primary Doctor Account is protected.</p>
-        </div>
-      </div>
+          </div>
+        )}
+      />
 
       {toast && (
         <div className={`users-toast users-toast--${toast.type}`} role="status">
@@ -540,11 +540,11 @@ export const UsersPage = () => {
         </div>
       )}
 
-      <section className="card users-table-card">
-        <div className="section-head users-table-head">
+      <section className="table-card users-table-card">
+        <div className="card-header-row users-table-head">
           <div>
-            <h3>Staff Directory</h3>
-            <p className="muted">Showing {pageStart}-{pageEnd} of {filteredUsers.length} users</p>
+            <h3 className="section-title">Staff Directory</h3>
+            <p className="section-subtitle">Showing {pageStart}-{pageEnd} of {filteredUsers.length} users</p>
           </div>
           <div className="users-filters">
             <input
@@ -562,7 +562,7 @@ export const UsersPage = () => {
               <option value="ACTIVE">Active</option>
               <option value="INACTIVE">Inactive</option>
             </select>
-            <button type="button" className="btn-secondary" onClick={resetFilters}>Reset</button>
+            <button type="button" className="btn btn-outline" onClick={resetFilters}>Reset</button>
           </div>
         </div>
 

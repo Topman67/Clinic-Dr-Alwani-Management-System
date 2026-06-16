@@ -10,6 +10,7 @@ import { DateRangeFilter } from '../components/DateRangeFilter';
 import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import PageHeader from '../components/common/PageHeader';
 
 type ConsultationStatus = 'WAITING' | 'IN_PROGRESS' | 'COMPLETED';
 type AppointmentStatus = 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
@@ -1006,12 +1007,11 @@ export const ConsultationsPage = () => {
 
   return (
     <section className="consultation-page">
-      <div className="section-head consultation-page-head">
-        <div>
-          <h1>Consultation</h1>
-          <p className="muted">Doctor queue, clinical notes, vital signs, follow-ups, and prescription handoff.</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Consultation Workflow"
+        title="Manage Consultations"
+        subtitle="Manage waiting patients, consultation notes, diagnosis, medical checkup, and follow-up visits."
+      />
 
       <div className="stats-row appointment-summary-row">
         <div className="stat-chip patient-stat-chip warning"><span>Waiting</span><strong>{stats.waiting}</strong></div>
@@ -1024,7 +1024,7 @@ export const ConsultationsPage = () => {
           e.preventDefault();
           void loadConsultations();
         }}
-        className="consultation-toolbar"
+        className="consultation-toolbar filter-card"
       >
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as ConsultationStatusFilter)} aria-label="Consultation status">
           <option value="ACTIVE">Active Queue</option>
@@ -1041,7 +1041,7 @@ export const ConsultationsPage = () => {
         />
         <button
           type="button"
-          className="btn-secondary consultation-clear-button"
+          className="btn btn-outline consultation-clear-button"
           onClick={() => {
             setStatusFilter('ACTIVE');
             setDateRange(getDateRangeForPreset('today'));
@@ -1050,7 +1050,7 @@ export const ConsultationsPage = () => {
         >
           Clear Filters
         </button>
-        <button type="submit" className="btn-secondary patient-compact-button consultation-refresh-button" disabled={loading}>
+        <button type="submit" className="btn btn-secondary patient-compact-button consultation-refresh-button" disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </form>
@@ -1058,7 +1058,7 @@ export const ConsultationsPage = () => {
       {error && <p className="error">{error}</p>}
       {success && <p className="muted" style={{ color: 'var(--primary)' }}>{success}</p>}
 
-      <div className="table-wrap consultation-table-wrap">
+      <div className="table-wrap table-card consultation-table-wrap">
         <table className="data-table consultation-table">
           <thead>
             <tr>

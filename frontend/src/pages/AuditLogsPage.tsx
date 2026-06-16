@@ -6,10 +6,11 @@ import { usePagination } from '../lib/pagination';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { getDateRangeForPreset, type DateRangeValue } from '../lib/dateRange';
 import { Pagination } from '../components/Pagination';
-import { Button, Card, Input, Table, TableHead, TableWrap, Td, Th } from '../components/ui';
+import { Button, Input, Table, TableHead, TableWrap, Td, Th } from '../components/ui';
 import { ui } from '../styles/ui';
 import { exportReportExcel, exportReportPdf } from '../lib/exportDocuments';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import PageHeader from '../components/common/PageHeader';
 
 type AuditLog = {
   logId: number;
@@ -134,13 +135,14 @@ export const AuditLogsPage = () => {
   };
 
   return (
-    <Card>
-      <div className={ui.sectionHead}>
-        <h1 className={ui.sectionTitle}>Audit Logs</h1>
-        <p className={ui.sectionSubtitle}>Monitor recent system activity (latest 200 records from server).</p>
-      </div>
+    <section className="audit-page">
+      <PageHeader
+        eyebrow="System Audit"
+        title="Audit Logs"
+        subtitle="Track user activities, system changes, and important clinic workflow actions."
+      />
 
-      <form onSubmit={onFilterSubmit} className="grid grid-cols-[1.4fr_1.4fr_1fr_1fr_auto] items-center gap-2.5 max-[1080px]:grid-cols-2 max-[640px]:grid-cols-1">
+      <form onSubmit={onFilterSubmit} className="filter-card grid grid-cols-[1.4fr_1.4fr_1fr_1fr_auto] items-center gap-2.5 max-[1080px]:grid-cols-2 max-[640px]:grid-cols-1">
         <Input
           value={queryUser}
           onChange={(e) => setQueryUser(e.target.value)}
@@ -152,17 +154,17 @@ export const AuditLogsPage = () => {
           placeholder="Activity keyword"
         />
         <DateRangeFilter value={dateRange} onChange={setDateRange} includeAll />
-        <Button variant="secondary" onClick={onReset}>Reset</Button>
+        <Button className="btn btn-outline" variant="secondary" onClick={onReset}>Reset</Button>
       </form>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-        <Button variant="secondary" onClick={() => void loadLogs()}>
+        <Button className="btn btn-secondary" variant="secondary" onClick={() => void loadLogs()}>
           Refresh
         </Button>
-        <Button variant="secondary" onClick={onExportPdf} disabled={filteredLogs.length === 0}>
+        <Button className="btn btn-secondary" variant="secondary" onClick={onExportPdf} disabled={filteredLogs.length === 0}>
           Export PDF
         </Button>
-        <Button onClick={onExportExcel} disabled={filteredLogs.length === 0}>
+        <Button className="btn btn-secondary" onClick={onExportExcel} disabled={filteredLogs.length === 0}>
           Export Excel (.xlsx)
         </Button>
       </div>
@@ -170,7 +172,7 @@ export const AuditLogsPage = () => {
       {error && <p className={ui.error}>{error}</p>}
       {loading && <p className={ui.muted}>Loading...</p>}
 
-      <TableWrap className="max-[640px]:hidden">
+      <TableWrap className="table-card max-[640px]:hidden">
         <Table>
           <TableHead>
             <tr>
@@ -226,6 +228,6 @@ export const AuditLogsPage = () => {
       </div>
 
       {!loading && filteredLogs.length === 0 && <p className={ui.muted}>No audit logs match the current filters.</p>}
-    </Card>
+    </section>
   );
 };

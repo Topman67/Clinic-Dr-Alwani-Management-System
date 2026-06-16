@@ -13,6 +13,7 @@ import { roleBasePath } from '../config/rbac';
 import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
 import { exportReceiptPdf } from '../lib/exportDocuments';
 import { MedicineSelectorModal } from '../components/shared/MedicineSelectorModal';
+import PageHeader from '../components/common/PageHeader';
 
 type Patient = {
   patientId: number;
@@ -593,18 +594,19 @@ export const PaymentsPage = () => {
   };
 
   return (
-    <section className="card">
-      <div className="section-head">
-        <h1>Manage Payment</h1>
-        <p className="muted">
-          {isDoctor
+    <section className="payments-page">
+      <PageHeader
+        eyebrow="Payment Management"
+        title="Payments"
+        subtitle={
+          isDoctor
             ? 'Doctor can search and view payment history and receipt records.'
-            : 'Receptionist can record payments and generate receipts.'}
-        </p>
-      </div>
+            : 'Manage pending payments, consultation charges, appointment fees, medicine charges, and receipts.'
+        }
+      />
 
       {isDoctor && (
-        <form onSubmit={onSearch} className="filters-grid">
+        <form onSubmit={onSearch} className="filter-card filters-grid">
           <PatientAutocomplete
             selectedPatient={selectedFilterPatient}
             onSelect={(patient) => {
@@ -630,7 +632,7 @@ export const PaymentsPage = () => {
 
           <button
             type="button"
-            className="btn-secondary"
+            className="btn btn-outline"
             onClick={() => {
               setSelectedFilterPatient(null);
               setQueryType('');
@@ -641,7 +643,7 @@ export const PaymentsPage = () => {
             Reset
           </button>
 
-          <button type="submit" className="btn-secondary">Search</button>
+          <button type="submit" className="btn btn-secondary">Search</button>
         </form>
       )}
 
@@ -650,7 +652,7 @@ export const PaymentsPage = () => {
           <div className="action-row" style={{ marginTop: 14 }}>
             <button
               type="button"
-              className={receptionMode === 'PENDING' ? '' : 'btn-secondary'}
+              className={receptionMode === 'PENDING' ? 'btn btn-primary' : 'btn btn-secondary'}
               onClick={() => {
                 setReceptionMode('PENDING');
                 setError(null);
@@ -661,7 +663,7 @@ export const PaymentsPage = () => {
             </button>
             <button
               type="button"
-              className={receptionMode === 'WALKIN' ? '' : 'btn-secondary'}
+              className={receptionMode === 'WALKIN' ? 'btn btn-primary' : 'btn btn-secondary'}
               onClick={() => {
                 setReceptionMode('WALKIN');
                 setError(null);
@@ -673,10 +675,12 @@ export const PaymentsPage = () => {
           </div>
 
           {receptionMode === 'PENDING' && (
-            <section className="pending-payment-workflow" style={{ marginTop: 14 }}>
-              <div className="section-head">
-                <h3>Pending Payment List</h3>
-                <p className="muted">Payments appear here after prescription dispense, no-medicine send-to-payment, medical checkup send-to-payment, or appointment completion.</p>
+            <section className="table-card pending-payment-workflow" style={{ marginTop: 14 }}>
+              <div className="card-header-row">
+                <div>
+                  <h3 className="section-title">Pending Payment List</h3>
+                  <p className="section-subtitle">Payments appear here after prescription dispense, no-medicine send-to-payment, medical checkup send-to-payment, or appointment completion.</p>
+                </div>
               </div>
 
               <div className="table-wrap payment-table-wrap">
