@@ -1,0 +1,507 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.section-head {
+  margin-bottom: 20px;
+}
+
+.section-head h1,
+.section-head h3 {
+  margin: 0;
+  letter-spacing: 0;
+  line-height: 1.18;
+}
+
+.section-head h1 {
+  font-size: 1.65rem;
+  font-weight: 760;
+}
+
+.section-head h3 {
+  font-size: 1.08rem;
+  font-weight: 720;
+}
+
+.section-head p {
+  margin: 7px 0 0;
+  max-width: 780px;
+  font-size: 0.94rem;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.form-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.shared-medicine-selector .walkin-picker-results {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.medicine-selector-card {
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 14px;
+  padding: 12px;
+}
+
+.medicine-selector-main {
+  gap: 8px;
+}
+
+.medicine-selector-title-row {
+  gap: 10px;
+}
+
+.medicine-selector-meta-row {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
+.medicine-selector-meta-row span {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.medicine-selector-actions {
+  justify-self: end;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-items: center;
+}
+
+.medicine-selector-actions button {
+  width: 78px;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.medicine-selector-badge {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.medicine-selector-badge.is-available {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--success) 28%, transparent);
+}
+
+.medicine-selector-badge.is-near-expiry {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.medicine-selector-badge.is-low-stock {
+  color: #c2410c;
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.34);
+}
+
+.medicine-selector-badge.is-expired {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* Shared consistency layer for operational clinic pages. */
+.card,
+.report-card,
+.report-page .report-card,
+.inventory-filter-card,
+.inventory-table-card,
+.inventory-history-card,
+.inventory-approval-section,
+.prescription-filter-card,
+.prescription-patient-card,
+.prescription-create-card,
+.prescription-medicine-card,
+.prescription-list-card,
+.payment-table-wrap,
+.pending-payment-workflow,
+.appointment-toolbar,
+.appointment-summary-row,
+.appointment-table-wrap {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.card,
+.report-card,
+.report-page .report-card,
+.inventory-filter-card,
+.inventory-table-card,
+.inventory-history-card,
+.inventory-approval-section,
+.prescription-filter-card,
+.prescription-patient-card,
+.prescription-create-card,
+.prescription-medicine-card,
+.prescription-list-card {
+  padding: 20px;
+}
+
+.report-page,
+.inventory-page,
+.prescription-page,
+.appointments-page {
+  gap: 16px;
+}
+
+.inventory-dashboard-grid,
+.payments-grid,
+.prescription-create-form,
+.prescription-summary-grid,
+.appointment-toolbar,
+.report-filter-grid,
+.report-metrics-grid {
+  gap: 12px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px 14px;
+}
+
+.data-table td:last-child {
+  white-space: nowrap;
+}
+
+.data-table td button,
+.data-table td .btn,
+.payment-table-actions button,
+.prescription-row-actions button,
+.inventory-action-row button,
+.inventory-table-actions button,
+.appointment-action-menu summary,
+.report-row-actions button,
+.sales-actions button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
+.payment-table-actions,
+.prescription-row-actions,
+.inventory-action-row,
+.inventory-table-actions,
+.report-row-actions,
+.sales-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-secondary,
+.data-table td .btn-secondary,
+.report-reset-btn,
+.report-card-actions .btn,
+.report-print-actions .btn,
+.inventory-details-link {
+  background: color-mix(in srgb, var(--surface-soft) 92%, var(--surface));
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, var(--text));
+}
+
+:root[data-theme='dark'] .btn-secondary,
+:root[data-theme='dark'] .data-table td .btn-secondary,
+:root[data-theme='dark'] .report-reset-btn,
+:root[data-theme='dark'] .report-card-actions .btn,
+:root[data-theme='dark'] .report-print-actions .btn,
+:root[data-theme='dark'] .inventory-details-link {
+  background: color-mix(in srgb, var(--surface-soft) 84%, #020617);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 78%, #94a3b8);
+}
+
+:root[data-theme='dark'] button {
+  box-shadow: none;
+}
+
+:root[data-theme='dark'] button:hover:not(:disabled) {
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+}
+
+input,
+select,
+textarea {
+  min-height: 44px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+select {
+  background-color: var(--surface-raised);
+}
+
+.field-block,
+.report-filter-controls label,
+.history-type-select,
+.pending-confirm-box .field-inline,
+.login-field {
+  gap: 7px;
+}
+
+.field-block > span:first-child,
+.report-filter-controls label > span,
+.history-type-select span,
+.pending-confirm-box .field-inline span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 780;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.appointment-modal,
+.inventory-modal,
+.medicine-picker-modal,
+.users-modal,
+.patient-drawer,
+.inventory-drawer,
+.prescription-details-drawer {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.patient-drawer,
+.inventory-drawer,
+.prescription-details-drawer {
+  border-radius: 0;
+}
+
+.appointment-modal-actions,
+.inventory-modal-footer,
+.users-modal-footer,
+.patient-drawer-footer,
+.inventory-drawer-footer {
+  gap: 10px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border-top: 1px solid var(--border);
+}
+
+.appointment-modal-actions button,
+.inventory-modal-footer button,
+.users-modal-footer button,
+.patient-drawer-footer button,
+.inventory-drawer-footer button {
+  min-height: 38px;
+}
+
+.prescription-patient-grid div,
+.prescription-details-grid div,
+.inventory-detail-grid div,
+.inventory-review-grid div,
+.inventory-detail-modal-grid div,
+.history-detail-grid div,
+.sales-detail-kv div {
+  border-radius: 10px;
+  border-color: color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 55%, transparent);
+  box-shadow: none;
+}
+
+:root[data-theme='dark'] .card,
+:root[data-theme='dark'] .report-card,
+:root[data-theme='dark'] .report-page .report-card,
+:root[data-theme='dark'] .inventory-filter-card,
+:root[data-theme='dark'] .inventory-table-card,
+:root[data-theme='dark'] .inventory-history-card,
+:root[data-theme='dark'] .inventory-approval-section,
+:root[data-theme='dark'] .prescription-filter-card,
+:root[data-theme='dark'] .prescription-patient-card,
+:root[data-theme='dark'] .prescription-create-card,
+:root[data-theme='dark'] .prescription-medicine-card,
+:root[data-theme='dark'] .prescription-list-card,
+:root[data-theme='dark'] .payment-table-wrap,
+:root[data-theme='dark'] .pending-payment-workflow,
+:root[data-theme='dark'] .appointment-toolbar,
+:root[data-theme='dark'] .appointment-summary-row,
+:root[data-theme='dark'] .appointment-table-wrap {
+  background: color-mix(in srgb, var(--surface) 92%, #020617);
+  border-color: var(--border);
+}
+
+:root[data-theme='dark'] .data-table thead {
+  background: color-mix(in srgb, var(--surface-soft) 82%, #020617);
+}
+
+:root[data-theme='dark'] input,
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] textarea {
+  background: color-mix(in srgb, var(--surface-raised) 88%, #020617);
+  border-color: color-mix(in srgb, var(--border) 86%, #94a3b8);
+}
+
+.action-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.action-menu__trigger {
+  cursor: pointer;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 650;
+  transition: background-color 170ms ease, border-color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
+}
+
+.action-menu__trigger::after {
+  content: "v";
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin-left: 7px;
+}
+
+.action-menu--open .action-menu__trigger,
+.action-menu__trigger:hover {
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-soft));
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  box-shadow: var(--shadow-soft);
+}
+
+.action-menu__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 174px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(14px);
+  animation: menu-enter 140ms ease;
+}
+
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.action-menu__item {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 34px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.action-menu__item:hover:not(:disabled) {
+  transform: none;
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.action-menu__item--danger {
+  color: var(--danger);
+}
+
+.action-menu__item--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.mobile-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.mobile-cards {
+  display: none;
+  margin-top: 14px;
+  gap: 12px;
+}
+
+.mobile-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.mobile-card h4 {
+  margin: 0 0 8px;
+}
+
+.kv {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.kv div {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.mobile-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.prescription-details .table-wrap {
+  margin-top: 6px;
+}

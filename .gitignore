@@ -4,7 +4,11 @@ node_modules/
 
 # Environment files
 .env
+.env.*
+*.env
+*.env.*
 !.env.example
+!.env.*.example
 
 # Build outputs
 dist/
@@ -13,5 +17,6 @@ dist/
 # Explicit workspace folders
 backend/.env
 !backend/.env.example
+!backend/.env.supabase.example
 backend/dist/
 frontend/dist/

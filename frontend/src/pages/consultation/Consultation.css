@@ -1,0 +1,858 @@
+.consultation-page {
+  display: grid;
+  gap: 14px;
+}
+
+.consultation-page-head {
+  margin-bottom: 0;
+}
+
+.consultation-toolbar {
+  display: grid;
+  grid-template-columns: 150px 170px minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--surface-soft));
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+}
+
+.consultation-toolbar select,
+.consultation-toolbar input,
+.consultation-toolbar button {
+  min-height: 38px;
+}
+
+.consultation-clear-button {
+  padding-inline: 11px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.consultation-refresh-button {
+  min-width: 78px;
+}
+
+.consultation-table-wrap {
+  margin-top: 0;
+}
+
+.consultation-table {
+  min-width: 820px;
+  table-layout: fixed;
+}
+
+.consultation-table th:first-child,
+.consultation-table td:first-child {
+  width: 16%;
+}
+
+.consultation-table th:nth-child(2),
+.consultation-table td:nth-child(2) {
+  width: 24%;
+}
+
+.consultation-table th:nth-child(4),
+.consultation-table td:nth-child(4) {
+  width: 22%;
+}
+
+.consultation-table th:last-child,
+.consultation-table td:last-child {
+  width: 150px;
+}
+
+.consultation-table td > strong,
+.consultation-table td > small {
+  display: block;
+}
+
+.consultation-table td > small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 620;
+}
+
+.consultation-linked-records {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.consultation-row-actions {
+  flex-wrap: nowrap;
+}
+
+.consultation-workspace {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--surface-soft));
+  box-shadow: var(--shadow-soft);
+}
+
+.consultation-workspace-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.consultation-workspace-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.12rem;
+  font-weight: 780;
+}
+
+.consultation-workspace-head p {
+  margin: 4px 0 0;
+}
+
+.consultation-head-actions {
+  justify-content: flex-end;
+}
+
+.consultation-head-actions .btn-secondary {
+  padding-inline: 12px;
+}
+
+.consultation-section-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.consultation-card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+.consultation-kv {
+  display: grid;
+  gap: 8px;
+}
+
+.consultation-kv div {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+}
+
+.consultation-vitals-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.consultation-type-summary {
+  margin-top: 10px;
+}
+
+.medical-checkup-card {
+  display: grid;
+  gap: 12px;
+}
+
+.medical-checkup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.medical-checkup-wide {
+  grid-column: 1 / -1;
+}
+
+.consultation-form-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.consultation-action-bar {
+  position: sticky;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
+}
+
+.consultation-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.consultation-print-summary {
+  display: none;
+}
+
+.consultation-print-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.consultation-print-header img {
+  width: 84px;
+  height: auto;
+}
+
+.consultation-print-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.mc-drawer {
+  width: min(720px, 100vw);
+}
+
+.mc-autofill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.mc-autofill-grid > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 76%, transparent);
+}
+
+.mc-autofill-grid span,
+.mc-autofill-grid small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.mc-autofill-grid strong {
+  display: block;
+  margin: 4px 0 2px;
+  color: var(--text);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-form {
+  display: grid;
+  gap: 14px;
+}
+
+.mc-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mc-form-wide {
+  grid-column: 1 / -1;
+}
+
+.mc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.mc-preview {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-soft));
+  box-shadow: var(--shadow-soft);
+}
+
+.mc-preview-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mc-preview-header img {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+}
+
+.mc-preview-header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.22rem;
+  letter-spacing: 0;
+}
+
+.mc-preview-header p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.76rem;
+}
+
+.mc-preview-reference {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.mc-preview-reference span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.mc-certificate-copy {
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: 0.98rem;
+  line-height: 1.7;
+}
+
+.mc-preview-kv {
+  margin-top: 0;
+}
+
+.mc-signature-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  margin-top: 36px;
+}
+
+.mc-signature-row > div {
+  display: grid;
+  gap: 5px;
+}
+
+.mc-signature-row span {
+  display: block;
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 72%, transparent);
+}
+
+.mc-signature-row strong {
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.mc-signature-row small {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.mc-history-card {
+  margin-top: 14px;
+}
+
+.mc-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mc-history-item {
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 74%, transparent);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.mc-history-item:hover {
+  background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+}
+
+.mc-history-item strong,
+.mc-history-item small {
+  display: block;
+}
+
+.mc-history-item small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.consultation-history-drawer {
+  width: min(860px, 100vw);
+}
+
+.consultation-history-body {
+  display: grid;
+  gap: 14px;
+}
+
+.history-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.history-summary-grid > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 76%, transparent);
+}
+
+.history-summary-grid span,
+.history-summary-grid strong {
+  display: block;
+}
+
+.history-summary-grid span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.history-summary-grid strong {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-alert-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) 160px minmax(130px, 0.8fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-filter-grid input,
+.history-filter-grid select,
+.history-filter-grid button {
+  min-height: 38px;
+}
+
+.history-timeline {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding-left: 14px;
+}
+
+.history-timeline::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 84%, transparent);
+}
+
+.history-timeline-card {
+  position: relative;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-soft));
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.07);
+}
+
+.history-timeline-marker {
+  position: absolute;
+  left: -15px;
+  top: 18px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+.history-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.history-card-head > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.history-card-head time {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.history-timeline-card h4 {
+  margin: 9px 0 4px;
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.history-timeline-card p {
+  margin: 0 0 10px;
+}
+
+.history-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.history-detail-grid div {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-soft) 66%, transparent);
+}
+
+.history-detail-grid dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.history-detail-grid dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+:root[data-theme='dark'] .appointment-toolbar,
+:root[data-theme='dark'] .appointment-modal,
+:root[data-theme='dark'] .consultation-toolbar,
+:root[data-theme='dark'] .consultation-workspace,
+:root[data-theme='dark'] .consultation-card,
+:root[data-theme='dark'] .mc-preview,
+:root[data-theme='dark'] .mc-autofill-grid > div,
+:root[data-theme='dark'] .mc-history-item,
+:root[data-theme='dark'] .history-summary-grid > div,
+:root[data-theme='dark'] .history-timeline-card,
+:root[data-theme='dark'] .history-detail-grid div {
+  background: color-mix(in srgb, var(--surface) 90%, #020617);
+}
+
+:root[data-theme='dark'] .appointment-modal {
+  box-shadow: 0 24px 76px rgba(0, 0, 0, 0.42);
+}
+
+.consultation-history-layer .patient-drawer-backdrop {
+  background: rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(1.5px);
+}
+
+.consultation-history-drawer {
+  width: clamp(460px, 46vw, 680px);
+  max-width: 100vw;
+}
+
+.consultation-history-drawer .patient-drawer-head {
+  min-height: 68px;
+  padding: 14px 16px 12px;
+}
+
+.consultation-history-drawer .patient-drawer-body {
+  padding: 14px 16px 18px;
+  overflow: hidden;
+}
+
+.consultation-history-body {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 10px;
+  align-content: start;
+}
+
+.history-summary-strip {
+  grid-row: 1;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-height: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+}
+
+.history-summary-strip div {
+  min-width: 0;
+}
+
+.history-summary-strip span,
+.history-summary-strip strong {
+  display: block;
+}
+
+.history-summary-strip span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 780;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.history-summary-strip strong {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-visit-badge {
+  position: absolute;
+  top: -10px;
+  right: 10px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+  text-transform: none;
+}
+
+.history-quick-filter {
+  --history-type-width: 244px;
+  --history-filter-button-width: 76px;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--history-type-width) var(--history-filter-button-width);
+  gap: 8px;
+  align-items: end;
+  padding-top: 16px;
+  height: 70px;
+  min-height: 70px;
+}
+
+.history-quick-filter input,
+.history-quick-filter select,
+.history-quick-filter button {
+  box-sizing: border-box;
+  width: 100%;
+  height: 54px;
+  min-height: 54px;
+}
+
+.history-type-select {
+  position: relative;
+  display: block;
+  min-width: 0;
+  width: var(--history-type-width);
+  height: 54px;
+}
+
+.history-type-select span {
+  position: absolute;
+  left: 4px;
+  top: -16px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+  line-height: 12px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.history-type-select select {
+  width: 100%;
+  height: 54px;
+  min-height: 54px;
+}
+
+.history-filter-panel {
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
+}
+
+.history-filter-panel select,
+.history-filter-panel input,
+.history-filter-panel button {
+  min-height: 34px;
+}
+
+.history-results-area {
+  grid-row: 4;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 4px 0 0;
+  scrollbar-gutter: stable;
+}
+
+.history-timeline {
+  gap: 8px;
+  padding-left: 10px;
+}
+
+.history-timeline::before {
+  left: 2px;
+}
+
+.history-timeline-card {
+  padding: 10px 11px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.history-timeline-marker {
+  left: -12px;
+  top: 16px;
+  width: 8px;
+  height: 8px;
+}
+
+.history-card-head {
+  gap: 8px;
+}
+
+.history-card-head time {
+  font-size: 0.72rem;
+}
+
+.history-timeline-card h4 {
+  margin: 7px 0 3px;
+  font-size: 0.9rem;
+}
+
+.history-timeline-card p {
+  display: -webkit-box;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.history-empty-state {
+  margin: 0;
+  padding: 22px 10px;
+}
+
+.history-details-toggle {
+  min-height: 28px;
+  margin-top: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  box-shadow: none;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.history-details-toggle:hover:not(:disabled) {
+  transform: none;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: underline;
+}
+
+.history-detail-grid {
+  grid-template-columns: 1fr;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.history-detail-grid div {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.history-detail-grid dt {
+  font-size: 0.66rem;
+}
+
+.history-detail-grid dd {
+  margin-top: 2px;
+  font-size: 0.8rem;
+}
+
+:root[data-theme='dark'] .history-summary-strip,
+:root[data-theme='dark'] .history-filter-panel {
+  background: color-mix(in srgb, var(--surface) 88%, #020617);
+}
+
+:root[data-theme='dark'] .history-visit-badge {
+  background: color-mix(in srgb, var(--surface) 92%, #020617);
+}

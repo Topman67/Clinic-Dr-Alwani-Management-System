@@ -1,0 +1,1014 @@
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .prescription-print-area,
+  .prescription-print-area *,
+  .consultation-print-area,
+  .consultation-print-area *,
+  .mc-print-area,
+  .mc-print-area *,
+  .report-print-area,
+  .report-print-area *,
+  .receipt-print-area,
+  .receipt-print-area * {
+    visibility: visible;
+  }
+
+  body.mc-printing .prescription-print-area,
+  body.mc-printing .prescription-print-area *,
+  body.mc-printing .consultation-print-area,
+  body.mc-printing .consultation-print-area *,
+  body.mc-printing .report-print-area,
+  body.mc-printing .report-print-area * {
+    visibility: hidden !important;
+  }
+
+  body.mc-printing .mc-print-area,
+  body.mc-printing .mc-print-area * {
+    visibility: visible !important;
+  }
+
+  .prescription-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    color: #fff;
+  }
+
+  .consultation-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+  }
+
+  .report-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+  }
+
+  .receipt-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 22px;
+    border: none;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+  }
+
+  .receipt-print-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #000;
+  }
+
+  .receipt-print-header img {
+    width: 92px;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .receipt-print-header h2,
+  .receipt-print-header p {
+    margin: 0;
+    color: #000 !important;
+  }
+
+  .mc-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 22px;
+    border: none;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+  }
+
+  .report-print-area .report-filter-controls,
+  .report-print-area .report-print-actions {
+    display: none !important;
+  }
+
+  .report-print-area .muted,
+  .receipt-print-area .muted,
+  .report-print-area dt,
+  .receipt-print-area dt,
+  .report-print-area dd,
+  .receipt-print-area dd,
+  .report-print-area p,
+  .receipt-print-area p,
+  .report-print-area h1,
+  .receipt-print-area h1,
+  .report-print-area h3,
+  .receipt-print-area h3,
+  .report-print-area h4,
+  .receipt-print-area h4,
+  .report-print-area td,
+  .receipt-print-area td,
+  .report-print-area th,
+  .receipt-print-area th,
+  .report-print-area li,
+  .receipt-print-area li,
+  .report-print-area strong {
+    color: #000 !important;
+  }
+
+  .receipt-print-area strong,
+  .receipt-print-area span,
+  .receipt-print-area small {
+    color: #000 !important;
+  }
+
+  .report-print-area .report-card,
+  .report-print-area .metric-card,
+  .receipt-print-area .sales-detail-card {
+    border: 1px solid #000;
+    background: #fff;
+    box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-print-area .table-wrap {
+    overflow: visible;
+    border: none;
+  }
+
+  .receipt-print-area .table-wrap {
+    display: block;
+    overflow: visible;
+    border: none;
+  }
+
+  .report-print-area .data-table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .receipt-print-area .data-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .report-print-area .data-table th,
+  .report-print-area .data-table td,
+  .receipt-print-area .data-table th,
+  .receipt-print-area .data-table td {
+    border: 1px solid #000;
+    padding: 6px;
+  }
+
+  .receipt-print-area .sales-detail-actions,
+  .receipt-print-area .pending-confirm-box {
+    display: none !important;
+  }
+
+  .prescription-print-area .muted,
+  .prescription-print-area dt,
+  .prescription-print-area dd,
+  .prescription-print-area p,
+  .prescription-print-area h3,
+  .prescription-print-area td,
+  .prescription-print-area th,
+  .prescription-print-area li {
+    color: #fff !important;
+  }
+
+  .consultation-print-area .muted,
+  .consultation-print-area dt,
+  .consultation-print-area dd,
+  .consultation-print-area p,
+  .consultation-print-area h2,
+  .consultation-print-area h3,
+  .consultation-print-area strong {
+    color: #000 !important;
+  }
+
+  .mc-print-area,
+  .mc-print-area .muted,
+  .mc-print-area dt,
+  .mc-print-area dd,
+  .mc-print-area p,
+  .mc-print-area h2,
+  .mc-print-area strong,
+  .mc-print-area small,
+  .mc-print-area span {
+    color: #000 !important;
+  }
+
+  .consultation-print-area .consultation-card,
+  .consultation-print-area .consultation-print-summary {
+    border: 1px solid #000;
+    background: #fff;
+    box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .mc-print-area .status-badge {
+    border: 1px solid #000;
+    background: #fff;
+  }
+
+  .prescription-print-actions,
+  .prescription-print-button,
+  .consultation-workspace-head,
+  .consultation-action-bar {
+    display: none !important;
+  }
+
+  .consultation-print-summary {
+    display: block !important;
+  }
+
+  .prescription-print-area .data-table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .prescription-print-area .data-table th,
+  .prescription-print-area .data-table td {
+    border: 1px solid #fff;
+    padding: 6px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .content {
+    padding: 26px 22px;
+  }
+
+  .items-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .inventory-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .inventory-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-summary-grid,
+  .inventory-filter-grid,
+  .inventory-approval-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-check-filter {
+    justify-content: center;
+  }
+
+  .payments-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .walkin-sale-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .walkin-customer-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .walkin-item-row {
+    grid-template-columns: minmax(220px, 1fr) 90px minmax(142px, 0.7fr) minmax(120px, 0.6fr) 92px;
+  }
+
+  .walkin-medicine-card {
+    grid-template-columns: minmax(180px, 1fr) 76px 100px 78px 92px 66px;
+  }
+
+  .prescription-picker-medicine-card {
+    grid-template-columns: minmax(180px, 1fr) 76px 100px 78px 92px 66px;
+  }
+
+  .sales-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pending-confirm-box {
+    grid-template-columns: minmax(170px, 0.9fr) minmax(180px, 0.9fr) minmax(220px, 1.3fr) minmax(160px, auto);
+    gap: 12px;
+  }
+
+  .patient-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .patient-search-form {
+    grid-template-columns: 1fr 150px auto;
+  }
+
+  .users-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .alerts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filters-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .items-grid > * {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    --sidebar-width: 280px;
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    width: min(280px, calc(100vw - 34px));
+    min-height: 100vh;
+    padding: 16px 12px;
+    border-right: 1px solid var(--border);
+    border-bottom: 0;
+    transform: translateX(-105%);
+    box-shadow: 24px 0 60px rgba(15, 23, 42, 0.24);
+    transition: transform 240ms ease, background-color 190ms ease, border-color 190ms ease;
+  }
+
+  .sidebar-mobile-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-head {
+    flex-direction: row;
+    justify-items: stretch;
+  }
+
+  .sidebar nav {
+    display: flex;
+  }
+
+  .sidebar-logo {
+    width: 108px;
+  }
+
+  .sidebar-collapsed .sidebar-logo {
+    width: 108px;
+  }
+
+  .sidebar-collapsed .profile-copy,
+  .sidebar-collapsed .nav-label,
+  .sidebar-collapsed .logout-label {
+    max-width: none;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .sidebar-collapsed .sidebar nav a:hover::after,
+  .sidebar-collapsed .logout-btn:hover::after {
+    display: none;
+  }
+
+  .sidebar-collapsed .sidebar-head {
+    flex-direction: row;
+    justify-items: stretch;
+  }
+
+  .sidebar-collapsed .sidebar-meta {
+    grid-template-columns: 1fr;
+    min-height: 40px;
+    padding: 0;
+    place-items: center;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .sidebar-collapsed .profile-avatar {
+    width: 34px;
+    height: 34px;
+  }
+
+  .sidebar-collapsed .sidebar nav a,
+  .sidebar-collapsed .logout-btn {
+    justify-content: flex-start;
+    padding-inline: 10px;
+  }
+
+  .sidebar-collapsed .theme-toggle {
+    width: auto;
+    min-width: auto;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+
+  .sidebar-collapsed .theme-toggle::after {
+    content: none;
+  }
+
+  .mobile-sidebar-toggle {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 45;
+    display: inline-flex;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .sidebar-mobile-open .mobile-sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(2px);
+    cursor: default;
+  }
+
+  .sidebar-backdrop:hover:not(:disabled) {
+    transform: none;
+    box-shadow: none;
+    background: rgba(15, 23, 42, 0.42);
+  }
+
+  .content {
+    padding-top: 74px;
+    padding-bottom: 90px;
+  }
+
+  .bottom-nav {
+    display: none;
+  }
+
+  .bottom-nav a {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 54px;
+    padding: 6px 6px;
+    border-radius: 10px;
+    color: var(--muted);
+    border: 1px solid transparent;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    transition: background-color 170ms ease, border-color 170ms ease, color 170ms ease;
+  }
+
+  .bottom-nav a:hover {
+    color: var(--text);
+    background: var(--surface-soft);
+  }
+
+  .bottom-nav a.active {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+    border-color: color-mix(in srgb, var(--primary) 36%, var(--border));
+  }
+
+  .bottom-nav a span:first-child {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .content {
+    padding: 16px;
+    padding-top: 74px;
+    padding-bottom: 88px;
+  }
+
+  .login-wrap {
+    padding: 16px;
+  }
+
+  .login-card {
+    gap: 16px;
+    padding: 26px 18px 20px;
+    border-radius: 20px;
+  }
+
+  .login-logo {
+    max-width: 195px;
+  }
+
+  .login-head h1 {
+    font-size: 1.6rem;
+  }
+
+  .card {
+    padding: 18px;
+    border-radius: 14px;
+  }
+
+  .form-row,
+  .action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-page-head,
+  .inventory-card-head,
+  .inventory-linked-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-summary-grid,
+  .inventory-filter-grid,
+  .inventory-movement-filters,
+  .inventory-approval-grid,
+  .inventory-review-grid,
+  .inventory-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-tabs,
+  .inventory-pagination {
+    width: 100%;
+  }
+
+  .inventory-tabs button,
+  .inventory-pagination button {
+    flex: 1;
+  }
+
+  .inventory-pagination {
+    justify-content: stretch;
+  }
+
+  .inventory-dashboard-grid,
+  .inventory-list-card,
+  .inventory-list-head {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-table-card .compact-section-head,
+  .inventory-history-card .compact-section-head,
+  .inventory-export-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inventory-export-actions {
+    width: 100%;
+  }
+
+  .inventory-export-btn {
+    justify-content: center;
+  }
+
+  .inventory-list-head {
+    display: grid;
+  }
+
+  .inventory-approval-card {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-approval-card .inventory-card-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: stretch;
+    min-width: 0;
+  }
+
+  .inventory-approval-card .inventory-card-head {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-request-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-details-link {
+    grid-column: 1;
+  }
+
+  .inventory-pending-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .inventory-pending-actions .inventory-details-link {
+    justify-self: start;
+  }
+
+  .inventory-pending-actions .inventory-action-row {
+    width: 100%;
+  }
+
+  .inventory-history-item {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .inventory-history-item small {
+    grid-column: 2;
+    max-width: none;
+    text-align: left;
+  }
+
+  .inventory-detail-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-modal-layer {
+    padding: 12px;
+  }
+
+  .inventory-modal {
+    max-height: calc(100vh - 24px);
+    border-radius: 14px;
+  }
+
+  .inventory-filter-card {
+    position: static;
+  }
+
+  .inventory-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .inventory-drawer-body {
+    padding-inline: 16px;
+  }
+
+  .inventory-action-row {
+    flex-wrap: wrap;
+  }
+
+  .inventory-action-btn {
+    width: 100%;
+  }
+
+  .payments-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .walkin-customer-grid,
+  .walkin-item-row,
+  .walkin-picker-body,
+  .walkin-medicine-card,
+  .prescription-picker-body,
+  .prescription-picker-medicine-card,
+  .medicine-selector-card,
+  .sales-summary-strip,
+  .sales-detail-kv {
+    grid-template-columns: 1fr;
+  }
+
+  .medicine-selector-actions {
+    justify-self: stretch;
+    grid-template-columns: minmax(0, 1fr) auto;
+    justify-items: stretch;
+  }
+
+  .medicine-selector-actions button {
+    width: auto;
+  }
+
+  .sales-detail-head,
+  .sales-detail-actions,
+  .sales-grand-total,
+  .pending-confirm-box {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pending-confirm-box {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-detail-actions button {
+    width: 100%;
+  }
+
+  .walkin-picker-categories {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .walkin-medicine-card {
+    align-items: stretch;
+  }
+
+  .patient-registration-form {
+    padding: 14px;
+  }
+
+  .patient-page-actions {
+    justify-content: stretch;
+  }
+
+  .patient-register-button {
+    width: 100%;
+  }
+
+  .patient-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .patient-drawer-head,
+  .patient-drawer-body,
+  .patient-drawer-footer {
+    padding-inline: 16px;
+  }
+
+  .patient-drawer-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .patient-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-page-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .appointment-create-button {
+    width: 100%;
+  }
+
+  .appointment-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .consultation-toolbar,
+  .consultation-section-grid,
+  .consultation-vitals-grid,
+  .medical-checkup-grid,
+  .prescription-filter-bar,
+  .prescription-summary-grid,
+  .prescription-create-form,
+  .prescription-context-grid,
+  .prescription-context-summary,
+  .prescription-patient-grid,
+  .prescription-item-row,
+  .prescription-details-grid,
+  .history-quick-filter,
+  .history-filter-panel,
+  .history-summary-grid,
+  .history-filter-grid,
+  .history-detail-grid,
+  .mc-autofill-grid,
+  .mc-form-grid,
+  .mc-signature-row {
+    grid-template-columns: 1fr;
+  }
+
+  .consultation-workspace-head,
+  .consultation-action-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .consultation-head-actions {
+    justify-content: stretch;
+  }
+
+  .appointment-modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prescription-linked-banner,
+  .prescription-consultation-card,
+  .prescription-duplicate-notice,
+  .prescription-items-head,
+  .prescription-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prescription-filter-card {
+    position: static;
+  }
+
+  .prescription-consultation-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .medicine-picker-modal-layer {
+    padding: 12px;
+  }
+
+  .medicine-picker-modal {
+    max-height: calc(100vh - 24px);
+    border-radius: 14px;
+  }
+
+  .medicine-picker-modal-filters,
+  .medicine-picker-modal-results button {
+    grid-template-columns: 1fr;
+  }
+
+  .medicine-picker-modal-results button {
+    align-items: stretch;
+  }
+
+  .medicine-picker-modal-meta {
+    justify-content: flex-start;
+  }
+
+  .prescription-address-cell,
+  .prescription-details-wide {
+    grid-column: auto;
+  }
+
+  .prescription-remove-item {
+    width: 100%;
+  }
+
+  .patient-search-form,
+  .patient-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-toolbar,
+  .patient-info-card {
+    padding: 14px;
+  }
+
+  .patient-panel-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .patient-panel-close {
+    width: 100%;
+  }
+
+  .patient-row-actions {
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+
+  .patient-row-actions .patient-compact-button {
+    flex: 1 1 auto;
+  }
+
+  .patient-action-menu {
+    right: auto;
+    left: 0;
+  }
+
+  .users-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .history-quick-filter {
+    --history-type-width: 100%;
+    --history-filter-button-width: 100%;
+    padding-top: 0;
+  }
+
+  .history-type-select {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    height: auto;
+  }
+
+  .history-type-select span {
+    position: static;
+    line-height: 1;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-table {
+    min-width: 560px;
+  }
+
+  .table-wrap {
+    display: none;
+  }
+
+  .prescription-details .table-wrap {
+    display: block;
+  }
+
+  .mobile-cards {
+    display: grid;
+    gap: 10px;
+  }
+
+  .kv div {
+    grid-template-columns: 82px 1fr;
+  }
+
+  .section-head {
+    margin-bottom: 16px;
+  }
+
+  .section-head h1 {
+    font-size: 1.38rem;
+  }
+
+  .section-head p {
+    font-size: 0.9rem;
+  }
+
+  .action-menu {
+    width: 100%;
+  }
+
+  .action-menu__trigger {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .action-menu__panel {
+    left: 0;
+    right: 0;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition,
+  .action-menu__panel {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}

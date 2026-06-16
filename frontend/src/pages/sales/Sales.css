@@ -1,0 +1,438 @@
+.walkin-sale-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: 12px;
+}
+
+.walkin-sale-card {
+  padding: 14px;
+}
+
+.walkin-items-card {
+  grid-column: 1 / -1;
+}
+
+.walkin-customer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.walkin-items-list {
+  display: grid;
+  gap: 8px;
+}
+
+.walkin-item-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.5fr) 92px minmax(150px, 0.7fr) minmax(132px, 0.6fr) 92px;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+  min-height: 72px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
+}
+
+.walkin-item-row label,
+.walkin-item-name {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.walkin-item-name {
+  align-content: center;
+  padding-block: 2px;
+}
+
+.walkin-item-row label {
+  align-content: center;
+}
+
+.walkin-item-row label > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.walkin-item-row input {
+  min-height: 38px;
+  height: 38px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+}
+
+.walkin-item-row .prescription-remove-item {
+  min-height: 38px;
+  height: 38px;
+  align-self: center;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.walkin-item-name strong,
+.walkin-item-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.walkin-item-name strong {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.15;
+}
+
+.walkin-item-name small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.walkin-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  text-align: center;
+  background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
+}
+
+.walkin-picker-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+}
+
+.walkin-picker-categories {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 14px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-soft) 54%, transparent);
+}
+
+.walkin-picker-categories button {
+  justify-content: flex-start;
+  min-height: 34px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.walkin-picker-categories button.is-active,
+.walkin-picker-categories button:hover:not(:disabled) {
+  transform: none;
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+
+.walkin-picker-results {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px;
+}
+
+.walkin-medicine-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.walkin-medicine-card {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) 86px 110px 86px 96px 70px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-soft));
+}
+
+.walkin-medicine-card div,
+.walkin-medicine-card strong,
+.walkin-medicine-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.walkin-medicine-card small,
+.walkin-medicine-card span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.status-paid {
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.34);
+}
+
+.status-pending-dispense {
+  color: #c2410c;
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.34);
+}
+
+.sales-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.sales-actions button {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 0.74rem;
+}
+
+.sales-detail-panel {
+  margin-top: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.receipt-print-header {
+  display: none;
+}
+
+.sales-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sales-detail-head h3,
+.sales-detail-card h4 {
+  margin: 0;
+}
+
+.sales-detail-head p {
+  margin: 4px 0 0;
+}
+
+.sales-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sales-detail-wide {
+  grid-column: 1 / -1;
+}
+
+.sales-detail-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 92%, var(--surface-soft));
+}
+
+.sales-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sales-summary-strip div,
+.sales-detail-kv div {
+  min-width: 0;
+}
+
+.sales-summary-strip span,
+.sales-detail-kv dt {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.sales-summary-strip strong,
+.sales-detail-kv dd {
+  color: var(--text);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pending-confirm-box {
+  --payment-control-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(200px, 0.95fr) minmax(240px, 1.5fr) minmax(170px, auto);
+  gap: 16px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+
+.pending-confirm-box .field-inline {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pending-confirm-box .field-inline span,
+.readonly-fee-pill {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.readonly-fee-pill {
+  min-height: var(--payment-control-height);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-strong) 82%, transparent);
+  color: var(--text);
+  font-size: 0.88rem;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.pending-confirm-box select,
+.pending-confirm-box input,
+.pending-confirm-box button {
+  width: 100%;
+  min-height: var(--payment-control-height);
+  height: var(--payment-control-height);
+  margin: 0;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.pending-confirm-box select,
+.pending-confirm-box input {
+  border: 1px solid var(--border);
+  background-color: color-mix(in srgb, var(--surface) 94%, var(--surface-soft));
+  color: var(--text);
+}
+
+.pending-confirm-box input {
+  min-width: 0;
+}
+
+.pending-confirm-box button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.sales-detail-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sales-detail-kv dd {
+  margin: 0;
+}
+
+.sales-detail-table-wrap {
+  max-width: 100%;
+}
+
+.sales-detail-table {
+  min-width: 680px;
+  table-layout: fixed;
+}
+
+.sales-detail-table th,
+.sales-detail-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-grand-total {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding-top: 4px;
+  color: var(--text);
+}
+
+.sales-grand-total span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.receipt-breakdown {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.receipt-breakdown div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.receipt-breakdown dt,
+.receipt-breakdown dd {
+  margin: 0;
+}
+
+.receipt-breakdown dt {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.receipt-breakdown dd {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.receipt-breakdown .receipt-breakdown-total {
+  padding-top: 12px;
+  border-bottom: 0;
+}
+
+.receipt-breakdown-total dt,
+.receipt-breakdown-total dd {
+  color: var(--text);
+  font-size: 1.04rem;
+}
