@@ -34,6 +34,8 @@ type PaymentType = 'CONSULTATION' | 'APPOINTMENT' | 'MEDICAL_CHECKUP' | 'MEDICIN
 type PaymentMethod = 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET' | 'QR';
 
 type PaymentStatus = 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
+type PaymentWorkflowStatus = 'PENDING_PAYMENT' | 'PAID' | 'CANCELLED';
+type DispenseWorkflowStatus = 'NOT_REQUIRED' | 'PENDING_DISPENSE' | 'DISPENSED';
 
 type Payment = {
   paymentId: number;
@@ -45,6 +47,9 @@ type Payment = {
   remarks?: string | null;
   date: string;
   status: PaymentStatus;
+  paymentStatus?: PaymentWorkflowStatus;
+  dispenseStatus?: DispenseWorkflowStatus;
+  displayStatus?: string;
   dispensedAt?: string | null;
   dispensedById?: number | null;
   dispensedByUsername?: string | null;
@@ -138,16 +143,42 @@ const isSelectablePaymentMethod = (method: PaymentMethod): method is 'CASH' | 'O
   return method === 'CASH' || method === 'ONLINE_TRANSFER' || method === 'QR';
 };
 
-const statusLabel = (status: PaymentStatus) => {
-  if (status === 'PENDING_PAYMENT') return 'Pending Payment';
-  if (status === 'PENDING_DISPENSE') return 'Pending Dispense';
-  return status.charAt(0) + status.slice(1).toLowerCase();
+const getPaymentStatus = (payment: Pick<Payment, 'type' | 'status' | 'paymentStatus'>): PaymentWorkflowStatus => {
+  if (payment.paymentStatus) return payment.paymentStatus;
+  if (payment.status === 'CANCELLED') return 'CANCELLED';
+  if (payment.status === 'PAID' || payment.status === 'PENDING_DISPENSE' || payment.status === 'DISPENSED') return 'PAID';
+  return 'PENDING_PAYMENT';
 };
 
-const statusClass = (status: PaymentStatus) => {
-  if (status === 'DISPENSED' || status === 'PAID') return 'status-good';
-  if (status === 'PENDING_DISPENSE') return 'status-pending-dispense';
+const getDispenseStatus = (payment: Pick<Payment, 'type' | 'status' | 'dispenseStatus'>): DispenseWorkflowStatus => {
+  if (payment.dispenseStatus) return payment.dispenseStatus;
+  if (payment.type !== 'MEDICINE') return 'NOT_REQUIRED';
+  if (payment.status === 'DISPENSED') return 'DISPENSED';
+  if (payment.status === 'PENDING_DISPENSE') return 'PENDING_DISPENSE';
+  return 'NOT_REQUIRED';
+};
+
+const paymentStatusLabel = (status: PaymentWorkflowStatus) => {
+  if (status === 'PENDING_PAYMENT') return 'Pending Payment';
+  if (status === 'CANCELLED') return 'Cancelled';
+  return 'Paid';
+};
+
+const dispenseStatusLabel = (status: DispenseWorkflowStatus) => {
+  if (status === 'PENDING_DISPENSE') return 'Pending Dispense';
+  if (status === 'DISPENSED') return 'Dispensed';
+  return 'Not Required';
+};
+
+const paymentStatusClass = (status: PaymentWorkflowStatus) => {
+  if (status === 'PAID') return 'status-good';
   if (status === 'CANCELLED') return 'status-critical';
+  return 'status-warning';
+};
+
+const dispenseStatusClass = (status: DispenseWorkflowStatus) => {
+  if (status === 'DISPENSED') return 'status-good';
+  if (status === 'PENDING_DISPENSE') return 'status-pending-dispense';
   return 'status-warning';
 };
 
@@ -379,6 +410,27 @@ export const PaymentsPage = () => {
     }, 0);
   }, [walkInItems, walkInMedicines]);
 
+  const walkInValidationError = useMemo(() => {
+    if (!walkInCustomerName.trim()) return 'Please enter customer name.';
+    if (!walkInCustomerPhone.trim()) return 'Please enter customer phone.';
+    if (!walkInCustomerId.trim()) return 'Please enter customer IC / identity card number.';
+    if (walkInItems.length === 0) return 'Please add at least one medicine item.';
+    if (!isSelectablePaymentMethod(walkInMethod)) return 'Please select a valid payment method.';
+
+    for (const item of walkInItems) {
+      const selectedMedicine = walkInMedicines.find((medicine) => medicine.medicineId === item.medicineId);
+      if (!selectedMedicine) return 'Please select a valid medicine item.';
+      if (!Number.isInteger(item.qty) || item.qty <= 0) return 'Quantity dispensed must be more than 0.';
+      if (item.qty > selectedMedicine.quantity) {
+        return `${selectedMedicine.name} only has ${selectedMedicine.quantity} ${formatStockUnit(selectedMedicine.stockUnit, selectedMedicine.quantity)} in stock.`;
+      }
+    }
+
+    return null;
+  }, [walkInCustomerId, walkInCustomerName, walkInCustomerPhone, walkInItems, walkInMethod, walkInMedicines]);
+
+  const canConfirmWalkInSale = !walkInSaving && !walkInValidationError;
+
   const getMedicineTotal = useCallback((payment: Payment) => {
     return payment.medicineItems?.reduce((sum, item) => sum + Number(item.subtotal), 0) ?? 0;
   }, []);
@@ -483,6 +535,11 @@ export const PaymentsPage = () => {
     setError(null);
     setSuccess(null);
 
+    if (walkInValidationError) {
+      setError(walkInValidationError);
+      return;
+    }
+
     const normalizedItems = walkInItems
       .map((item) => ({
         medicineId: Number(item.medicineId),
@@ -490,22 +547,12 @@ export const PaymentsPage = () => {
       }))
       .filter((item) => Number.isInteger(item.medicineId) && item.medicineId > 0 && Number.isInteger(item.qty) && item.qty > 0);
 
-    if (normalizedItems.length === 0) {
-      setError('Please add at least one medicine item.');
-      return;
-    }
-
-    if (!walkInCustomerId.trim()) {
-      setError('Please enter customer IC / identity card number.');
-      return;
-    }
-
     setWalkInSaving(true);
     try {
       const response = await api.post('/payments/walkin-medicine', {
-        customerName: walkInCustomerName.trim() || undefined,
-        customerPhone: walkInCustomerPhone.trim() || undefined,
-        customerId: walkInCustomerId.trim() || undefined,
+        customerName: walkInCustomerName.trim(),
+        customerPhone: walkInCustomerPhone.trim(),
+        customerId: walkInCustomerId.trim(),
         paymentMethod: walkInMethod,
         remarks: walkInRemarks.trim() || undefined,
         items: normalizedItems,
@@ -531,7 +578,7 @@ export const PaymentsPage = () => {
         medicineItems: data.items,
       };
 
-      setSuccess(`${data.message || 'Walk-in Medicine Sale Successful'} (IC / ID: ${data.patient.icOrPassport || '-'})`);
+      setSuccess(`${data.message || 'Walk-in medicine sale paid. Pending pharmacist dispense.'} (IC / ID: ${data.patient.icOrPassport || '-'})`);
       setSelectedPayment(createdPayment);
       setWalkInItems([]);
       setWalkInRemarks('');
@@ -539,6 +586,7 @@ export const PaymentsPage = () => {
       setWalkInCustomerName('');
       setWalkInCustomerPhone('');
       setWalkInCustomerId('');
+      await loadPendingPayments();
       await loadWalkInMedicines();
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to record walk-in medicine sale'));
@@ -571,7 +619,8 @@ export const PaymentsPage = () => {
         { label: 'Payment Date', value: new Date(payment.date).toLocaleString() },
         { label: 'Payment Method', value: prettifyMethod(getDisplayedPaymentMethod(payment)) },
         { label: 'Payment Type', value: getPaymentTypeLabel(payment) },
-        { label: 'Paid Status', value: statusLabel(payment.status) },
+        { label: 'Payment Status', value: paymentStatusLabel(getPaymentStatus(payment)) },
+        ...(payment.type === 'MEDICINE' ? [{ label: 'Dispense Status', value: dispenseStatusLabel(getDispenseStatus(payment)) }] : []),
       ],
       medicineItems: payment.medicineItems?.map((item) => ({
         Medicine: item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`,
@@ -588,7 +637,7 @@ export const PaymentsPage = () => {
         { label: 'Medicine Total', value: `RM ${formatMoney(getMedicineTotal(payment))}` },
       ],
       grandTotal: formatMoney(getDisplayTotal(payment)),
-      paidStatus: statusLabel(payment.status),
+      paidStatus: paymentStatusLabel(getPaymentStatus(payment)),
       footerNote: 'Thank you for your payment. Please keep this receipt for your records.',
     });
   };
@@ -655,6 +704,7 @@ export const PaymentsPage = () => {
               className={receptionMode === 'PENDING' ? 'btn btn-primary' : 'btn btn-secondary'}
               onClick={() => {
                 setReceptionMode('PENDING');
+                setSelectedPayment(null);
                 setError(null);
                 setSuccess(null);
               }}
@@ -666,6 +716,7 @@ export const PaymentsPage = () => {
               className={receptionMode === 'WALKIN' ? 'btn btn-primary' : 'btn btn-secondary'}
               onClick={() => {
                 setReceptionMode('WALKIN');
+                setSelectedPayment(null);
                 setError(null);
                 setSuccess(null);
               }}
@@ -703,7 +754,7 @@ export const PaymentsPage = () => {
                         <td>{p.patient?.icOrPassport || p.patientId}</td>
                         <td>{getReferenceLabel(p)}</td>
                         <td><span className={`status-badge payment-type-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
-                        <td><span className={`status-badge payment-status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
+                        <td><span className={`status-badge payment-status-badge ${paymentStatusClass(getPaymentStatus(p))}`}>{paymentStatusLabel(getPaymentStatus(p))}</span></td>
                         <td className="payment-amount-cell">RM {formatMoney(p.type === 'MEDICAL_CHECKUP' ? MEDICAL_CHECKUP_FEE : p.amount)}</td>
                         <td>
                           <div className="action-row payment-table-actions">
@@ -727,7 +778,7 @@ export const PaymentsPage = () => {
                       <div><dt>Patient ID</dt><dd>{p.patient?.icOrPassport || p.patientId}</dd></div>
                       <div><dt>Reference</dt><dd>{getReferenceLabel(p)}</dd></div>
                       <div><dt>Type</dt><dd>{getPaymentTypeLabel(p)}</dd></div>
-                      <div><dt>Status</dt><dd><span className={`status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></dd></div>
+                      <div><dt>Payment Status</dt><dd><span className={`status-badge ${paymentStatusClass(getPaymentStatus(p))}`}>{paymentStatusLabel(getPaymentStatus(p))}</span></dd></div>
                       <div><dt>Total</dt><dd>RM {formatMoney(p.type === 'MEDICAL_CHECKUP' ? MEDICAL_CHECKUP_FEE : p.amount)}</dd></div>
                     </dl>
                     <div className="action-row" style={{ marginTop: 10 }}>
@@ -784,7 +835,7 @@ export const PaymentsPage = () => {
                           </div>
                           <label>
                             <span>Qty Dispensed</span>
-                            <input type="number" min={1} value={item.qty} onChange={(e) => updateWalkInItem(index, { qty: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })} required />
+                            <input type="number" min={1} max={selectedMedicine?.quantity ?? undefined} value={item.qty} onChange={(e) => updateWalkInItem(index, { qty: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })} required />
                           </label>
                           <label>
                             <span>Price Per Unit</span>
@@ -821,9 +872,10 @@ export const PaymentsPage = () => {
                   <dl className="kv">
                     <div><dt>Items</dt><dd>{walkInItems.length}</dd></div>
                     <div><dt>Total</dt><dd>RM {formatMoney(walkInTotal)}</dd></div>
-                    <div><dt>Status After Payment</dt><dd><span className="status-badge status-pending-dispense">Pending Dispense</span></dd></div>
+                    <div><dt>Payment Status</dt><dd><span className="status-badge status-warning">{walkInItems.length > 0 ? 'Ready for Payment' : 'Not Paid'}</span></dd></div>
                   </dl>
-                  <button type="submit" disabled={walkInSaving}>{walkInSaving ? 'Processing...' : 'Confirm Payment'}</button>
+                  {walkInValidationError && <p className="muted">{walkInValidationError}</p>}
+                  <button type="submit" disabled={!canConfirmWalkInSale}>{walkInSaving ? 'Processing...' : 'Confirm Payment'}</button>
                 </div>
               </section>
 
@@ -880,7 +932,7 @@ export const PaymentsPage = () => {
                     <td><span className={`status-badge payment-type-badge ${p.type === 'MEDICAL_CHECKUP' ? 'type-medical' : p.type === 'CONSULTATION' ? 'type-consultation' : 'type-appointment'}`}>{getPaymentTypeLabel(p)}</span></td>
                     <td className="payment-amount-cell">{formatMoney(p.amount)}</td>
                     <td>{prettifyMethod(p.paymentMethod)}</td>
-                    <td><span className={`status-badge payment-status-badge ${statusClass(p.status)}`}>{statusLabel(p.status)}</span></td>
+                    <td><span className={`status-badge payment-status-badge ${paymentStatusClass(getPaymentStatus(p))}`}>{paymentStatusLabel(getPaymentStatus(p))}</span></td>
                     <td>{p.receipt?.receiptNo ?? '-'}</td>
                     <td>
                       <button type="button" className="btn-secondary" onClick={() => setSelectedPayment(p)}>
@@ -945,10 +997,15 @@ export const PaymentsPage = () => {
           </div>
           <div className="sales-detail-head">
             <div>
-              <h3>{selectedPayment.status === 'PAID' ? 'Payment Successful' : 'Payment Summary'}</h3>
+              <h3>{getPaymentStatus(selectedPayment) === 'PAID' ? 'Payment Successful' : 'Payment Summary'}</h3>
               <p className="muted">{getReferenceLabel(selectedPayment)} · Payment #{selectedPayment.paymentId}</p>
             </div>
-            <span className={`status-badge ${statusClass(selectedPayment.status)}`}>{statusLabel(selectedPayment.status)}</span>
+            <div className="action-row">
+              <span className={`status-badge ${paymentStatusClass(getPaymentStatus(selectedPayment))}`}>{paymentStatusLabel(getPaymentStatus(selectedPayment))}</span>
+              {selectedPayment.type === 'MEDICINE' && (
+                <span className={`status-badge ${dispenseStatusClass(getDispenseStatus(selectedPayment))}`}>{dispenseStatusLabel(getDispenseStatus(selectedPayment))}</span>
+              )}
+            </div>
           </div>
 
           <div className="sales-detail-grid">
@@ -996,7 +1053,10 @@ export const PaymentsPage = () => {
                 <div><dt>Patient ID</dt><dd>{selectedPayment.patient?.icOrPassport || '-'}</dd></div>
                 <div><dt>Phone Number</dt><dd>{selectedPayment.patient?.phone || 'Not provided'}</dd></div>
                 <div><dt>Payment Method</dt><dd>{prettifyMethod(getDisplayedPaymentMethod(selectedPayment))}</dd></div>
-                <div><dt>Paid Status</dt><dd>{statusLabel(selectedPayment.status)}</dd></div>
+                <div><dt>Payment Status</dt><dd><span className={`status-badge ${paymentStatusClass(getPaymentStatus(selectedPayment))}`}>{paymentStatusLabel(getPaymentStatus(selectedPayment))}</span></dd></div>
+                {selectedPayment.type === 'MEDICINE' && (
+                  <div><dt>Dispense Status</dt><dd><span className={`status-badge ${dispenseStatusClass(getDispenseStatus(selectedPayment))}`}>{dispenseStatusLabel(getDispenseStatus(selectedPayment))}</span></dd></div>
+                )}
               </dl>
             </section>
 

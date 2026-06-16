@@ -27,6 +27,9 @@ type WalkInSale = {
   date: string;
   type: SaleType;
   status: 'PENDING_PAYMENT' | 'PAID' | 'PENDING_DISPENSE' | 'DISPENSED' | 'CANCELLED';
+  paymentStatus?: 'PENDING_PAYMENT' | 'PAID' | 'CANCELLED';
+  dispenseStatus?: 'NOT_REQUIRED' | 'PENDING_DISPENSE' | 'DISPENSED';
+  displayStatus?: string;
   paymentMethod: 'CASH' | 'CARD' | 'ONLINE_TRANSFER' | 'E_WALLET' | 'QR';
   amount: number | string;
   dispensedAt?: string | null;
@@ -70,10 +73,28 @@ const prettifyMethod = (method: WalkInSale['paymentMethod']) => {
   return method.charAt(0) + method.slice(1).toLowerCase();
 };
 
-const statusLabel = (status: WalkInSale['status']) => {
+type PaymentWorkflowStatus = NonNullable<WalkInSale['paymentStatus']>;
+type DispenseWorkflowStatus = NonNullable<WalkInSale['dispenseStatus']>;
+
+const getPaymentStatus = (sale: WalkInSale): PaymentWorkflowStatus => {
+  if (sale.paymentStatus) return sale.paymentStatus;
+  if (sale.status === 'CANCELLED') return 'CANCELLED';
+  if (sale.status === 'PAID' || sale.status === 'PENDING_DISPENSE' || sale.status === 'DISPENSED') return 'PAID';
+  return 'PENDING_PAYMENT';
+};
+
+const getDispenseStatus = (sale: WalkInSale): DispenseWorkflowStatus => {
+  if (sale.dispenseStatus) return sale.dispenseStatus;
+  if (sale.type !== 'MEDICINE') return 'NOT_REQUIRED';
+  if (sale.status === 'DISPENSED') return 'DISPENSED';
+  if (sale.status === 'PENDING_DISPENSE') return 'PENDING_DISPENSE';
+  return 'NOT_REQUIRED';
+};
+
+const paymentStatusLabel = (status: PaymentWorkflowStatus) => {
   if (status === 'PENDING_PAYMENT') return 'Pending Payment';
-  if (status === 'PENDING_DISPENSE') return 'Pending Dispense';
-  return status.charAt(0) + status.slice(1).toLowerCase();
+  if (status === 'CANCELLED') return 'Cancelled';
+  return 'Paid';
 };
 
 const formatStockUnit = (unit: string | null | undefined, qty?: number) => {
@@ -81,11 +102,21 @@ const formatStockUnit = (unit: string | null | undefined, qty?: number) => {
   return qty === 1 ? normalized : `${normalized}s`;
 };
 
-const statusClass = (status: WalkInSale['status']) => {
-  if (status === 'DISPENSED') return 'status-good';
+const dispenseStatusLabel = (status: DispenseWorkflowStatus) => {
+  if (status === 'PENDING_DISPENSE') return 'Pending Dispense';
+  if (status === 'DISPENSED') return 'Dispensed';
+  return 'Not Required';
+};
+
+const paymentStatusClass = (status: PaymentWorkflowStatus) => {
   if (status === 'PAID') return 'status-paid';
-  if (status === 'PENDING_DISPENSE') return 'status-pending-dispense';
   if (status === 'CANCELLED') return 'status-critical';
+  return 'status-warning';
+};
+
+const dispenseStatusClass = (status: DispenseWorkflowStatus) => {
+  if (status === 'DISPENSED') return 'status-good';
+  if (status === 'PENDING_DISPENSE') return 'status-pending-dispense';
   return 'status-warning';
 };
 
@@ -188,6 +219,12 @@ export const SalesPage = () => {
       setSales((current) => current.map((sale) => (sale.paymentId === updated.paymentId ? updated : sale)));
       setSelectedSale((current) => (current?.paymentId === updated.paymentId ? updated : current));
       setDispenseSale(null);
+      await loadSales({
+        dateFrom: dateRange.dateFrom || undefined,
+        dateTo: dateRange.dateTo || undefined,
+        customerId: queryCustomerId.trim() || undefined,
+        type: queryType || undefined,
+      });
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'Failed to dispense sale'));
     } finally {
@@ -210,7 +247,8 @@ export const SalesPage = () => {
         { label: 'Payment Date', value: new Date(sale.date).toLocaleString() },
         { label: 'Payment Method', value: prettifyMethod(sale.paymentMethod) },
         { label: 'Payment Type', value: SALE_TYPE_OPTIONS.find((option) => option.value === sale.type)?.label ?? sale.type },
-        { label: 'Paid Status', value: statusLabel(sale.status) },
+        { label: 'Payment Status', value: paymentStatusLabel(getPaymentStatus(sale)) },
+        ...(sale.type === 'MEDICINE' ? [{ label: 'Dispense Status', value: dispenseStatusLabel(getDispenseStatus(sale)) }] : []),
       ],
       medicineItems: sale.medicineItems.map((item) => ({
         Medicine: item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`,
@@ -223,7 +261,7 @@ export const SalesPage = () => {
         { label: sale.type === 'CONSULTATION' ? 'Consultation Fee' : sale.type === 'APPOINTMENT' ? 'Appointment' : sale.type === 'MEDICAL_CHECKUP' ? 'Medical Checkup' : 'Medicine Total', value: `RM ${formatMoney(sale.receipt?.totalAmount ?? sale.amount)}` },
       ],
       grandTotal: formatMoney(sale.receipt?.totalAmount ?? sale.amount),
-      paidStatus: statusLabel(sale.status),
+      paidStatus: paymentStatusLabel(getPaymentStatus(sale)),
       footerNote: 'Thank you for your payment. Please keep this receipt for your records.',
     });
   };
@@ -297,7 +335,8 @@ export const SalesPage = () => {
               <th>Quantity</th>
               <th>Amount (RM)</th>
               <th>Method</th>
-              <th>Status</th>
+              <th>Payment Status</th>
+              <th>Dispense Status</th>
               <th>Dispense Date</th>
               <th>Action</th>
             </tr>
@@ -320,12 +359,13 @@ export const SalesPage = () => {
                   <td>{qty || '-'}</td>
                   <td>{formatMoney(sale.receipt?.totalAmount ?? sale.amount)}</td>
                   <td>{prettifyMethod(sale.paymentMethod)}</td>
-                  <td><span className={`status-badge ${statusClass(sale.status)}`}>{statusLabel(sale.status)}</span></td>
+                  <td><span className={`status-badge ${paymentStatusClass(getPaymentStatus(sale))}`}>{paymentStatusLabel(getPaymentStatus(sale))}</span></td>
+                  <td><span className={`status-badge ${dispenseStatusClass(getDispenseStatus(sale))}`}>{dispenseStatusLabel(getDispenseStatus(sale))}</span></td>
                   <td>{sale.dispensedAt ? new Date(sale.dispensedAt).toLocaleString() : '-'}</td>
                   <td>
                     <div className="sales-actions">
                       <button type="button" className="btn-secondary sales-view-btn" onClick={() => setSelectedSale(sale)}>View Details</button>
-                      {isPharmacist && sale.type === 'MEDICINE' && sale.status === 'PENDING_DISPENSE' && (
+                      {isPharmacist && sale.type === 'MEDICINE' && getDispenseStatus(sale) === 'PENDING_DISPENSE' && (
                         <button type="button" onClick={() => setDispenseSale(sale)} disabled={dispensingId === sale.paymentId}>Dispense</button>
                       )}
                       <button type="button" className="btn-secondary" onClick={() => exportSaleReceipt(sale)}>Export PDF Receipt</button>
@@ -349,7 +389,10 @@ export const SalesPage = () => {
               <h3>Sale Details</h3>
               <p className="muted">Sale #{selectedSale.paymentId} processed successfully.</p>
             </div>
-            <span className={`status-badge ${statusClass(selectedSale.status)}`}>{statusLabel(selectedSale.status)}</span>
+            <div className="action-row">
+              <span className={`status-badge ${paymentStatusClass(getPaymentStatus(selectedSale))}`}>{paymentStatusLabel(getPaymentStatus(selectedSale))}</span>
+              <span className={`status-badge ${dispenseStatusClass(getDispenseStatus(selectedSale))}`}>{dispenseStatusLabel(getDispenseStatus(selectedSale))}</span>
+            </div>
           </div>
 
           <div className="sales-detail-grid">
@@ -378,11 +421,12 @@ export const SalesPage = () => {
             <section className="sales-detail-card">
               <h4>Dispense Information</h4>
               <dl className="sales-detail-kv">
-                <div><dt>Status</dt><dd><span className={`status-badge ${statusClass(selectedSale.status)}`}>{statusLabel(selectedSale.status)}</span></dd></div>
+                <div><dt>Payment Status</dt><dd><span className={`status-badge ${paymentStatusClass(getPaymentStatus(selectedSale))}`}>{paymentStatusLabel(getPaymentStatus(selectedSale))}</span></dd></div>
+                <div><dt>Dispense Status</dt><dd><span className={`status-badge ${dispenseStatusClass(getDispenseStatus(selectedSale))}`}>{dispenseStatusLabel(getDispenseStatus(selectedSale))}</span></dd></div>
                 <div><dt>Dispensed By</dt><dd>{selectedSale.dispensedByUsername || '-'}</dd></div>
                 <div><dt>Dispensed At</dt><dd>{selectedSale.dispensedAt ? new Date(selectedSale.dispensedAt).toLocaleString() : '-'}</dd></div>
               </dl>
-              {isPharmacist && selectedSale.type === 'MEDICINE' && selectedSale.status === 'PENDING_DISPENSE' && (
+              {isPharmacist && selectedSale.type === 'MEDICINE' && getDispenseStatus(selectedSale) === 'PENDING_DISPENSE' && (
                 <button type="button" onClick={() => setDispenseSale(selectedSale)} disabled={dispensingId === selectedSale.paymentId}>Dispense Medicine</button>
               )}
             </section>

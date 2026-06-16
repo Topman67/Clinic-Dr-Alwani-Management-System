@@ -162,6 +162,58 @@ const parseWalkInItems = (value: unknown): Array<{ medicineId: number; qty: numb
   return [...merged.entries()].map(([medicineId, qty]) => ({ medicineId, qty }));
 };
 
+const derivePaymentWorkflowStatus = (payment: { type: PaymentType; status: PaymentStatus }) => {
+  if (payment.status === PaymentStatus.CANCELLED) {
+    return {
+      paymentStatus: PaymentStatus.CANCELLED,
+      dispenseStatus: 'NOT_REQUIRED',
+      displayStatus: 'Cancelled',
+    };
+  }
+
+  if (payment.type === PaymentType.MEDICINE) {
+    if (payment.status === PaymentStatus.DISPENSED) {
+      return {
+        paymentStatus: PaymentStatus.PAID,
+        dispenseStatus: PaymentStatus.DISPENSED,
+        displayStatus: 'Paid - Dispensed',
+      };
+    }
+
+    if (payment.status === PaymentStatus.PENDING_DISPENSE) {
+      return {
+        paymentStatus: PaymentStatus.PAID,
+        dispenseStatus: PaymentStatus.PENDING_DISPENSE,
+        displayStatus: 'Paid - Pending Dispense',
+      };
+    }
+  }
+
+  return {
+    paymentStatus:
+      payment.status === PaymentStatus.PAID ||
+      payment.status === PaymentStatus.PENDING_DISPENSE ||
+      payment.status === PaymentStatus.DISPENSED
+        ? PaymentStatus.PAID
+        : PaymentStatus.PENDING_PAYMENT,
+    dispenseStatus: 'NOT_REQUIRED',
+    displayStatus:
+      payment.status === PaymentStatus.PAID ||
+      payment.status === PaymentStatus.PENDING_DISPENSE ||
+      payment.status === PaymentStatus.DISPENSED
+        ? 'Paid'
+        : 'Pending Payment',
+  };
+};
+
+const withPaymentWorkflowStatus = <T extends { type: PaymentType; status: PaymentStatus }>(payment: T) => ({
+  ...payment,
+  ...derivePaymentWorkflowStatus(payment),
+});
+
+const withPaymentWorkflowStatuses = <T extends { type: PaymentType; status: PaymentStatus }>(payments: T[]) =>
+  payments.map(withPaymentWorkflowStatus);
+
 export const listWalkInMedicines = async (_req: Request, res: Response) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -226,6 +278,14 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
   const normalizedCustomerName = normalizeWalkInCustomerName(customerName);
   const normalizedCustomerPhone = normalizeWalkInCustomerPhone(customerPhone);
   const normalizedCustomerId = normalizeWalkInCustomerId(customerId);
+
+  if (!hasExplicitPatientId && normalizedCustomerName === WALKIN_CUSTOMER_NAME) {
+    return res.status(400).json({ message: 'Customer name is required.' });
+  }
+
+  if (!hasExplicitPatientId && normalizedCustomerPhone === WALKIN_CUSTOMER_PHONE) {
+    return res.status(400).json({ message: 'Customer phone is required.' });
+  }
 
   if (!hasExplicitPatientId && !normalizedCustomerId) {
     return res.status(400).json({ message: 'Customer IC / identity card number is required.' });
@@ -363,8 +423,8 @@ export const recordWalkInMedicineSale = async (req: Request, res: Response) => {
   } catch (_) {}
 
   return res.status(201).json({
-    message: 'Walk-in Medicine Sale Paid - Pending Dispense',
-    payment: result.payment,
+    message: 'Walk-in medicine sale paid. Pending pharmacist dispense.',
+    payment: withPaymentWorkflowStatus(result.payment),
     receipt: result.receipt,
     patient,
     items: result.paymentItems,
@@ -503,7 +563,7 @@ export const dispenseWalkInSale = async (req: Request, res: Response) => {
       await logActivity(performedById, `dispense_walkin_sale:${paymentId}`);
     } catch (_) {}
 
-    return res.json(result);
+    return res.json(withPaymentWorkflowStatus(result));
   } catch (error: unknown) {
     const httpStatus = error instanceof Error ? (error as { statusCode?: unknown }).statusCode : undefined;
     if (error instanceof Error && typeof httpStatus === 'number') {
@@ -534,7 +594,7 @@ export const listPendingPayments = async (_req: Request, res: Response) => {
     orderBy: [{ date: 'asc' }, { paymentId: 'asc' }],
   });
 
-  res.json(payments);
+  res.json(withPaymentWorkflowStatuses(payments));
 };
 
 export const confirmPendingPayment = async (req: Request, res: Response) => {
@@ -656,7 +716,7 @@ export const confirmPendingPayment = async (req: Request, res: Response) => {
 
     return res.json({
       message: 'Payment Successful',
-      payment: result.payment,
+      payment: result.payment ? withPaymentWorkflowStatus(result.payment) : result.payment,
       receipt: result.receipt,
     });
   } catch (error: unknown) {
@@ -691,7 +751,7 @@ export const listPayments = async (req: Request, res: Response) => {
     include: clinicPaymentInclude,
     orderBy: { date: 'desc' },
   });
-  res.json(payments);
+  res.json(withPaymentWorkflowStatuses(payments));
 };
 
 export const listWalkInSales = async (req: Request, res: Response) => {
@@ -762,5 +822,5 @@ export const listWalkInSales = async (req: Request, res: Response) => {
     orderBy: { date: 'desc' },
   });
 
-  return res.json(sales);
+  return res.json(withPaymentWorkflowStatuses(sales));
 };
