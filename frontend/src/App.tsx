@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import './App.css';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/AppLayout';
@@ -17,6 +18,12 @@ import { AppointmentsPage } from './pages/AppointmentsPage';
 import { ConsultationsPage } from './pages/ConsultationsPage';
 
 function App() {
+  const location = useLocation();
+
+  useEffect(() => {
+    document.title = 'Clinic Dr. Alwani';
+  }, [location.pathname]);
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
