@@ -117,7 +117,30 @@ const paymentStatusClass = (status: PaymentWorkflowStatus) => {
 const dispenseStatusClass = (status: DispenseWorkflowStatus) => {
   if (status === 'DISPENSED') return 'status-good';
   if (status === 'PENDING_DISPENSE') return 'status-pending-dispense';
-  return 'status-warning';
+  return 'status-neutral';
+};
+
+const getSaleQuantity = (sale: WalkInSale) => {
+  return sale.medicineItems.reduce((sum, item) => sum + item.qty, 0);
+};
+
+const getSaleTotal = (sale: WalkInSale) => {
+  return Number(sale.receipt?.totalAmount ?? sale.amount);
+};
+
+const getSaleDateParts = (value: string) => {
+  const date = new Date(value);
+  return {
+    date: date.toLocaleDateString(),
+    time: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+  };
+};
+
+const getSaleItemTitle = (sale: WalkInSale) => {
+  const firstItem = sale.medicineItems[0];
+  const firstName = firstItem?.medicine?.name ?? (sale.type === 'MEDICINE' ? 'Medicine sale' : SALE_TYPE_OPTIONS.find((option) => option.value === sale.type)?.label ?? 'Sale');
+  const extraCount = Math.max(0, sale.medicineItems.length - 1);
+  return extraCount > 0 ? `${firstName} + ${extraCount} more` : firstName;
 };
 
 const getApiErrorMessage = (error: unknown, fallback: string) => {
@@ -144,6 +167,7 @@ export const SalesPage = () => {
   const [queryType, setQueryType] = useState<SaleType | ''>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
 
   const loadSales = useCallback(async (filters?: { dateFrom?: string; dateTo?: string; customerId?: string; type?: SaleType }) => {
     setLoading(true);
@@ -185,6 +209,17 @@ export const SalesPage = () => {
     });
   }, [dateRange.dateFrom, dateRange.dateTo, loadSales, queryCustomerId, queryType]);
 
+  useEffect(() => {
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.sales-action-menu')) return;
+      setOpenActionMenuId(null);
+    };
+
+    document.addEventListener('mousedown', closeMenu);
+    return () => document.removeEventListener('mousedown', closeMenu);
+  }, []);
+
   const onSearch = async (e: FormEvent) => {
     e.preventDefault();
     await loadSales({
@@ -196,7 +231,7 @@ export const SalesPage = () => {
   };
 
   const totalQuantity = useMemo(
-    () => sales.reduce((sum, sale) => sum + sale.medicineItems.reduce((inner, item) => inner + item.qty, 0), 0),
+    () => sales.reduce((sum, sale) => sum + getSaleQuantity(sale), 0),
     [sales],
   );
 
@@ -266,6 +301,61 @@ export const SalesPage = () => {
     });
   };
 
+  const renderSaleActionMenu = (sale: WalkInSale) => {
+    const isOpen = openActionMenuId === sale.paymentId;
+
+    return (
+      <div className={`action-menu sales-action-menu ${isOpen ? 'action-menu--open' : ''}`}>
+        <button
+          type="button"
+          className="action-menu__trigger sales-action-trigger"
+          aria-label={`Open actions for sale ${sale.paymentId}`}
+          aria-expanded={isOpen}
+          onClick={() => setOpenActionMenuId((current) => (current === sale.paymentId ? null : sale.paymentId))}
+        >
+          ...
+        </button>
+        {isOpen && (
+          <div className="action-menu__panel sales-action-panel">
+            <button
+              type="button"
+              className="action-menu__item"
+              onClick={() => {
+                setSelectedSale(sale);
+                setOpenActionMenuId(null);
+              }}
+            >
+              View Details
+            </button>
+            <button
+              type="button"
+              className="action-menu__item"
+              onClick={() => {
+                exportSaleReceipt(sale);
+                setOpenActionMenuId(null);
+              }}
+            >
+              Export PDF Receipt
+            </button>
+            {isPharmacist && sale.type === 'MEDICINE' && getDispenseStatus(sale) === 'PENDING_DISPENSE' && (
+              <button
+                type="button"
+                className="action-menu__item"
+                onClick={() => {
+                  setDispenseSale(sale);
+                  setOpenActionMenuId(null);
+                }}
+                disabled={dispensingId === sale.paymentId}
+              >
+                Dispense
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <section className="sales-page">
       <PageHeader
@@ -324,58 +414,90 @@ export const SalesPage = () => {
       {error && <p className="error">{error}</p>}
       {loading && <p className="muted">Loading...</p>}
 
-      <div className="table-wrap table-card" style={{ marginTop: 12 }}>
-        <table className="data-table">
+      <div className="table-wrap table-card sales-table-wrap" style={{ marginTop: 12 }}>
+        <table className="data-table sales-table">
+          <colgroup>
+            <col className="sales-col-date" />
+            <col className="sales-col-customer" />
+            <col className="sales-col-details" />
+            <col className="sales-col-receipt" />
+            <col className="sales-col-status" />
+            <col className="sales-col-action" />
+          </colgroup>
           <thead>
             <tr>
               <th>Date</th>
               <th>Customer</th>
+              <th>Sale Details</th>
               <th>Receipt</th>
-              <th>Items Sold</th>
-              <th>Quantity</th>
-              <th>Amount (RM)</th>
-              <th>Method</th>
-              <th>Payment Status</th>
-              <th>Dispense Status</th>
-              <th>Dispense Date</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {paginatedSales.map((sale) => {
-              const qty = sale.medicineItems.reduce((sum, item) => sum + item.qty, 0);
-              const itemSummary = sale.medicineItems.map((item) => item.medicine?.name ?? `Medicine #${item.medicine?.medicineId ?? ''}`);
+              const qty = getSaleQuantity(sale);
+              const saleDate = getSaleDateParts(sale.date);
 
               return (
                 <tr key={`sale-${sale.paymentId}`}>
-                  <td>{new Date(sale.date).toLocaleString()}</td>
-                  <td>
-                    {sale.patient?.name || '-'}
-                    <br />
-                    <small className="muted">{sale.patient?.icOrPassport || '-'}</small>
+                  <td className="sales-date-cell">
+                    <span>{saleDate.date}</span>
+                    <small>{saleDate.time}</small>
                   </td>
-                  <td>{sale.receipt?.receiptNo || '-'}</td>
-                  <td>{itemSummary.join(', ') || '-'}</td>
-                  <td>{qty || '-'}</td>
-                  <td>{formatMoney(sale.receipt?.totalAmount ?? sale.amount)}</td>
-                  <td>{prettifyMethod(sale.paymentMethod)}</td>
-                  <td><span className={`status-badge ${paymentStatusClass(getPaymentStatus(sale))}`}>{paymentStatusLabel(getPaymentStatus(sale))}</span></td>
-                  <td><span className={`status-badge ${dispenseStatusClass(getDispenseStatus(sale))}`}>{dispenseStatusLabel(getDispenseStatus(sale))}</span></td>
-                  <td>{sale.dispensedAt ? new Date(sale.dispensedAt).toLocaleString() : '-'}</td>
-                  <td>
-                    <div className="sales-actions">
-                      <button type="button" className="btn-secondary sales-view-btn" onClick={() => setSelectedSale(sale)}>View Details</button>
-                      {isPharmacist && sale.type === 'MEDICINE' && getDispenseStatus(sale) === 'PENDING_DISPENSE' && (
-                        <button type="button" onClick={() => setDispenseSale(sale)} disabled={dispensingId === sale.paymentId}>Dispense</button>
-                      )}
-                      <button type="button" className="btn-secondary" onClick={() => exportSaleReceipt(sale)}>Export PDF Receipt</button>
+                  <td className="sales-customer-cell">
+                    <strong>{sale.patient?.name || '-'}</strong>
+                    <small>{sale.patient?.icOrPassport || sale.patient?.phone || '-'}</small>
+                  </td>
+                  <td className="sales-detail-cell">
+                    <strong>{getSaleItemTitle(sale)}</strong>
+                    <small>Qty: {qty || '-'} - RM {formatMoney(getSaleTotal(sale))} - {prettifyMethod(sale.paymentMethod)}</small>
+                  </td>
+                  <td className="sales-receipt-cell">{sale.receipt?.receiptNo || '-'}</td>
+                  <td className="sales-status-cell">
+                    <div>
+                      <span>Payment:</span>
+                      <span className={`status-badge ${paymentStatusClass(getPaymentStatus(sale))}`}>{paymentStatusLabel(getPaymentStatus(sale))}</span>
+                    </div>
+                    <div>
+                      <span>Dispense:</span>
+                      <span className={`status-badge ${dispenseStatusClass(getDispenseStatus(sale))}`}>{dispenseStatusLabel(getDispenseStatus(sale))}</span>
                     </div>
                   </td>
+                  <td className="sales-action-cell">{renderSaleActionMenu(sale)}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="mobile-cards sales-mobile-cards">
+        {paginatedSales.map((sale) => {
+          const qty = getSaleQuantity(sale);
+          const saleDate = getSaleDateParts(sale.date);
+
+          return (
+            <article key={`sale-card-${sale.paymentId}`} className="mobile-card sales-mobile-card">
+              <div className="sales-mobile-card-head">
+                <div>
+                  <h4>{sale.patient?.name || '-'}</h4>
+                  <p className="muted">{saleDate.date} - {saleDate.time}</p>
+                </div>
+                {renderSaleActionMenu(sale)}
+              </div>
+              <dl className="kv">
+                <div><dt>IC / ID</dt><dd>{sale.patient?.icOrPassport || sale.patient?.phone || '-'}</dd></div>
+                <div><dt>Sale</dt><dd>{getSaleItemTitle(sale)}</dd></div>
+                <div><dt>Details</dt><dd>Qty: {qty || '-'} - RM {formatMoney(getSaleTotal(sale))} - {prettifyMethod(sale.paymentMethod)}</dd></div>
+                <div><dt>Receipt</dt><dd className="sales-receipt-text">{sale.receipt?.receiptNo || '-'}</dd></div>
+                <div><dt>Payment</dt><dd><span className={`status-badge ${paymentStatusClass(getPaymentStatus(sale))}`}>{paymentStatusLabel(getPaymentStatus(sale))}</span></dd></div>
+                <div><dt>Dispense</dt><dd><span className={`status-badge ${dispenseStatusClass(getDispenseStatus(sale))}`}>{dispenseStatusLabel(getDispenseStatus(sale))}</span></dd></div>
+                <div><dt>Dispensed</dt><dd>{sale.dispensedAt ? new Date(sale.dispensedAt).toLocaleString() : '-'}</dd></div>
+              </dl>
+            </article>
+          );
+        })}
       </div>
 
       <Pagination page={listPage} totalPages={listTotalPages} onPageChange={setListPage} />
