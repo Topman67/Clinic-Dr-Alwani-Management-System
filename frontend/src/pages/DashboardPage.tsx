@@ -359,9 +359,11 @@ const HorizontalBarChart = ({ data, format = 'number', emptyMessage }: { data: A
         <div key={item.label} className="dashboard-hbar-row">
           <span>{item.label}</span>
           <div className="dashboard-hbar-track">
-            <i style={{ width: `${Math.max(5, (item.value / max) * 100)}%`, background: item.color }}>
-              <title>{`${item.label}: ${formatShortValue(item.value, format)}`}</title>
-            </i>
+            <i
+              style={{ width: `${Math.max(5, (item.value / max) * 100)}%`, background: item.color }}
+              title={`${item.label}: ${formatShortValue(item.value, format)}`}
+              aria-label={`${item.label}: ${formatShortValue(item.value, format)}`}
+            />
           </div>
           <b>{formatShortValue(item.value, format)}</b>
         </div>
