@@ -95,8 +95,17 @@
 .login-logo {
   width: min(100%, 250px);
   max-width: 250px;
-  height: auto;
+  height: 148px;
   object-fit: contain;
+  display: block;
+  margin: 0 auto 10px;
+  background: transparent;
+}
+
+.login-logo--dark {
+  display: none;
+  transform: scale(1.14);
+  transform-origin: center;
 }
 
 .login-field > span {
@@ -273,6 +282,14 @@
 :root[data-theme='dark'] .login-head h1,
 :root[data-theme='dark'] .login-field > span {
   color: #e2e8f0;
+}
+
+:root[data-theme='dark'] .login-logo--light {
+  display: none;
+}
+
+:root[data-theme='dark'] .login-logo--dark {
+  display: block;
 }
 
 :root[data-theme='dark'] .login-head p {

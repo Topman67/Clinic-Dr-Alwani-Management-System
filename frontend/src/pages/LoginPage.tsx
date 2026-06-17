@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { roleBasePath } from '../config/rbac';
-import clinicLogo from '../assets/Logo_Clinic_Dr.Alwani.png';
+import clinicLogoDark from '../assets/Logo_Clinic_no_background.png';
+import clinicLogoLight from '../assets/Logo_Clinic_Dr.Alwani.png';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -49,7 +50,8 @@ export const LoginPage = () => {
     <div className="login-wrap">
       <form className="card login-card" onSubmit={onSubmit}>
         <div className="section-head login-head">
-          <img className="login-logo" src={clinicLogo} alt="Clinic Dr. Alwani" />
+          <img className="login-logo login-logo--light" src={clinicLogoLight} alt="Clinic Dr. Alwani" />
+          <img className="login-logo login-logo--dark" src={clinicLogoDark} alt="Clinic Dr. Alwani" />
           <h1>Welcome Back</h1>
           <p className="muted">Sign in to continue to Clinic Dr. Alwani CMS</p>
         </div>
